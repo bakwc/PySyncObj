@@ -52,7 +52,8 @@ class _Connection(object):
 
 	def __init__(self, socket = None):
 		self.__socket = socket
-		self.__buffer = ''
+		self.__readBuffer = ''
+		self.__writeBuffer = ''
 		self.__lastReadTime = time.time()
 		self.__timeout = 10.0
 		self.__disconnected = False
@@ -66,8 +67,11 @@ class _Connection(object):
 	def connect(self, host, port):
 		self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.__socket.settimeout(CONFIG.CONNECTION_TIMEOUT)
-		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 524288)
+		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 ** 13)
+		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 ** 13)
 		self.__socket.setblocking(0)
+		self.__readBuffer = ''
+		self.__writeBuffer = ''
 		self.__lastReadTime = time.time()
 
 		try:
@@ -81,36 +85,62 @@ class _Connection(object):
 	def send(self, message):
 		data = zlib.compress(pickle.dumps(message, -1))
 		data = struct.pack('i', len(data)) + data
+		self.__writeBuffer += data
+		self.trySendBuffer()
+
+	def trySendBuffer(self):
+		while self.processSend():
+			pass
+
+	def processSend(self):
+		if not self.__writeBuffer:
+			return False
 		try:
-			res = self.__socket.send(data)
-			if res != len(data):
+			res = self.__socket.send(self.__writeBuffer)
+			if res < 0:
+				self.__writeBuffer = ''
+				self.__readBuffer = ''
 				self.__disconnected = True
 				return False
+			if res == 0:
+				return False
+
+			self.__writeBuffer = self.__writeBuffer[res:]
 			return True
-		except:
-			self.__disconnected = True
+		except socket.error as e:
+			if e.errno != socket.errno.EAGAIN:
+				self.__writeBuffer = ''
+				self.__readBuffer = ''
+				self.__disconnected = True
 			return False
+
+	def getWriteBufferSize(self):
+		return len(self.__writeBuffer)
 
 	def read(self):
 		try:
-			incoming = self.__socket.recv(1024)
+			incoming = self.__socket.recv(2 ** 13)
 		except socket.error as e:
 			if e.errno != socket.errno.EAGAIN:
 				self.__disconnected = True
-			return None
-		if not incoming or self.__socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):
+			return
+		if self.__socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):
 			self.__disconnected = True
-			return None
+			return
+		if not incoming:
+			return
 		self.__lastReadTime = time.time()
-		self.__buffer += incoming
-		if len(self.__buffer) < 4:
+		self.__readBuffer += incoming
+
+	def getMessage(self):
+		if len(self.__readBuffer) < 4:
 			return None
-		l = struct.unpack('i', self.__buffer[:4])[0]
-		if len(self.__buffer) - 4 < l:
+		l = struct.unpack('i', self.__readBuffer[:4])[0]
+		if len(self.__readBuffer) - 4 < l:
 			return None
-		data = self.__buffer[4:4+l]
+		data = self.__readBuffer[4:4 + l]
 		message = pickle.loads(zlib.decompress(data))
-		self.__buffer = self.__buffer[4+l:]
+		self.__readBuffer = self.__readBuffer[4 + l:]
 		return message
 
 	def close(self):
@@ -121,8 +151,6 @@ class _Connection(object):
 
 
 class _Node(object):
-
-	PING_INTERVAL = 3.0
 
 	def __init__(self, syncObj, nodeAddr):
 		self.__syncObj = weakref.ref(syncObj)
@@ -150,7 +178,10 @@ class _Node(object):
 		if self.__shouldConnect and self.__status == NODE_STATUS.CONNECTING:
 			return (self.__conn.socket(), self.__conn.socket(), self.__conn.socket())
 		if self.__status == NODE_STATUS.CONNECTED:
-			return (self.__conn.socket(), None, self.__conn.socket())
+			readyWriteSocket = None
+			if self.__conn.getWriteBufferSize() > 0:
+				readyWriteSocket = self.__conn.socket()
+			return (self.__conn.socket(), readyWriteSocket, self.__conn.socket())
 		return None
 
 	def getStatus(self):
@@ -167,11 +198,14 @@ class _Node(object):
 
 		if self.__status == NODE_STATUS.CONNECTED:
 			if self.__conn.socket() in rlist:
+				self.__conn.read()
 				while True:
-					message = self.__conn.read()
+					message = self.__conn.getMessage()
 					if message is None:
 						break
 					self.__syncObj()._onMessageReceived(self.__nodeAddr, message)
+			if self.__conn.socket() in wlist:
+				self.__conn.trySendBuffer()
 
 			if self.__conn.socket() in xlist or self.__conn.isDisconnected():
 				self.__status = NODE_STATUS.DISCONNECTED
@@ -180,7 +214,8 @@ class _Node(object):
 	def send(self, message):
 		if self.__status != NODE_STATUS.CONNECTED:
 			return False
-		if not self.__conn.send(message):
+		self.__conn.send(message)
+		if self.__conn.isDisconnected():
 			self.__status = NODE_STATUS.DISCONNECTED
 			self.__conn.close()
 			return False
@@ -234,7 +269,7 @@ class SyncObj(object):
 
 		self.__debugLog = ''
 		self.__thread = None
-		self.__commandsQueue = Queue.Queue(100)
+		self.__commandsQueue = Queue.Queue(1000)
 
 		if autoTick:
 			self.__mainThread = threading.current_thread()
@@ -270,7 +305,7 @@ class SyncObj(object):
 				break
 			if self.__raftState == _RAFT_STATE.LEADER:
 				self.__raftLog.append((command, self.__getCurrentLogIndex() + 1, self.__raftCurrentTerm))
-				self.__sendAppendEntries()
+				#self.__sendAppendEntries()
 			elif self.__raftLeader is not None:
 				self.__send(self.__raftLeader, {
 					'type': 'apply_command',
@@ -292,6 +327,45 @@ class SyncObj(object):
 
 	def _onTick(self, timeToWait = 0.0):
 
+		if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
+			if self.__raftElectionDeadline < time.time():
+				self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
+				self.__raftLeader = None
+				self.__raftState = _RAFT_STATE.CANDIDATE
+				self.__raftCurrentTerm += 1
+				self.__votesCount = 1
+				for node in self.__nodes:
+					node.send({
+						'type': 'request_vote',
+						'term': self.__raftCurrentTerm,
+						'last_log_index': self.__raftLog[-1][1],
+						'last_log_term': self.__raftLog[-1][2],
+					})
+
+		if self.__raftState == _RAFT_STATE.LEADER:
+			while self.__raftCommitIndex < self.__raftLog[-1][1]:
+				nextCommitIndex = self.__raftCommitIndex + 1
+				count = 1
+				for node in self.__nodes:
+					if self.__raftMatchIndex[node.getAddress()] >= nextCommitIndex:
+						count += 1
+				if count > (len(self.__nodes) + 1) / 2:
+					self.__raftCommitIndex = nextCommitIndex
+				else:
+					break
+
+			if time.time() > self.__newAppendEntriesTime:
+				self.__sendAppendEntries()
+
+		if self.__raftCommitIndex > self.__raftLastApplied:
+			count = self.__raftCommitIndex - self.__raftLastApplied
+			entries = self.__getEntries(self.__raftLastApplied + 1, count)
+			for entry in entries:
+				self.__doApplyCommand(entry[0])
+				self.__raftLastApplied += 1
+
+		self._checkCommandsToApply()
+
 		socketsToCheckR = [self.__socket]
 		socketsToCheckW = [self.__socket]
 		socketsToCheckX = [self.__socket]
@@ -310,50 +384,14 @@ class SyncObj(object):
 				if sockX is not None:
 					socketsToCheckX.append(sockX)
 
-		if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
-			if self.__raftElectionDeadline < time.time():
-				self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
-				self.__raftLeader = None
-				self.__raftState = _RAFT_STATE.CANDIDATE
-				self.__raftCurrentTerm += 1
-				self.__votesCount = 1
-				for node in self.__nodes:
-					node.send({
-						'type': 'request_vote',
-						'term': self.__raftCurrentTerm,
-						'last_log_index': self.__raftLog[-1][1],
-						'last_log_term': self.__raftLog[-1][2],
-					})
-
-		if self.__raftState == _RAFT_STATE.LEADER:
-			if self.__raftCommitIndex < self.__raftLog[-1][1]:
-				nextCommitIndex = self.__raftCommitIndex + 1
-				count = 1
-				for node in self.__nodes:
-					if self.__raftMatchIndex[node.getAddress()] >= nextCommitIndex:
-						count += 1
-				if count > (len(self.__nodes) + 1) / 2:
-					self.__raftCommitIndex = nextCommitIndex
-
-			if time.time() > self.__newAppendEntriesTime:
-				self.__sendAppendEntries()
-
-		if self.__raftCommitIndex > self.__raftLastApplied:
-			count = self.__raftCommitIndex - self.__raftLastApplied
-			entries = self.__getEntries(self.__raftLastApplied + 1, count)
-			for entry in entries:
-				self.__doApplyCommand(entry[0])
-				self.__raftLastApplied += 1
-
-		self._checkCommandsToApply()
-
 		rlist, wlist, xlist = select.select(socketsToCheckR, socketsToCheckW, socketsToCheckX, timeToWait)
 
 		if self.__socket in rlist:
 			try:
 				sock, addr = self.__socket.accept()
 				sock.settimeout(CONFIG.CONNECTION_TIMEOUT)
-				sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 524288)
+				sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 ** 13)
+				sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 ** 13)
 				sock.setblocking(0)
 				self.__unknownConnections.append(_Connection(sock))
 			except socket.error as e:
@@ -368,6 +406,9 @@ class SyncObj(object):
 
 		for node in self.__nodes:
 			node.onTickStage2(rlist, wlist, xlist)
+
+	def _getLastCommitIndex(self):
+		return self.__raftCommitIndex
 
 	def printStatus(self):
 		print 'self:    ', self.__selfNodeAddr
@@ -428,8 +469,8 @@ class SyncObj(object):
 				if len(prevEntries) > 1:
 					self.__deleteEntries(prevLogIdx + 1)
 				self.__raftLog += newEntries
+				self.__sendNextNodeIdx(nodeAddr)
 
-			self.__sendNextNodeIdx(nodeAddr)
 			self.__raftCommitIndex = min(leaderCommitIndex, self.__raftLog[-1][1])
 
 		if message['type'] == 'apply_command':
@@ -446,6 +487,7 @@ class SyncObj(object):
 			if message['type'] == 'next_node_idx':
 				reset = message['reset']
 				nextNodeIdx = message['next_node_idx']
+
 				currentNodeIdx = nextNodeIdx - 1
 				if reset:
 					self.__raftNextIndex[nodeAddr] = nextNodeIdx
@@ -463,7 +505,8 @@ class SyncObj(object):
 
 	def __bind(self):
 		self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 524288)
+		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 ** 13)
+		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 ** 13)
 		self.__socket.setblocking(0)
 		host, port = self.__selfNodeAddr.split(':')
 		self.__socket.bind((host, int(port)))
@@ -490,6 +533,9 @@ class SyncObj(object):
 
 	def _isLeader(self):
 		return self.__raftState == _RAFT_STATE.LEADER
+
+	def _getLeader(self):
+		return self.__raftLeader
 
 	def __deleteEntries(self, fromIDx):
 		firstEntryIDx = self.__raftLog[0][1]
@@ -544,7 +590,8 @@ class SyncObj(object):
 		for conn in self.__unknownConnections:
 			remove = False
 			if conn.socket() in rlist:
-				nodeAddr = conn.read()
+				conn.read()
+				nodeAddr = conn.getMessage()
 				if nodeAddr is not None:
 					for node in self.__nodes:
 						if node.getAddress() == nodeAddr:

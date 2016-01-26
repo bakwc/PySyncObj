@@ -30,7 +30,13 @@ if __name__ == '__main__':
 		partners.append('localhost:%d' % int(sys.argv[i]))
 
 	o = TestObj('localhost:%d' % port, partners)
+	n = 0
 	while True:
-		time.sleep(1)
-		o.incCounter()
-		print 'Counter value:', o.getCounter()
+		time.sleep(0.001)
+		if o._getLeader() is None:
+			continue
+		if n < 2000:
+			o.incCounter()
+		n += 1
+		if n % 500 == 0:
+			print 'Counter value:', o.getCounter()
