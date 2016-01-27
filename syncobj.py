@@ -69,6 +69,7 @@ class _Connection(object):
 		self.__socket.settimeout(CONFIG.CONNECTION_TIMEOUT)
 		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 ** 13)
 		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 ** 13)
+		self.__socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 		self.__socket.setblocking(0)
 		self.__readBuffer = ''
 		self.__writeBuffer = ''
@@ -83,7 +84,7 @@ class _Connection(object):
 		return True
 
 	def send(self, message):
-		data = zlib.compress(pickle.dumps(message, -1))
+		data = zlib.compress(pickle.dumps(message, -1), 3)
 		data = struct.pack('i', len(data)) + data
 		self.__writeBuffer += data
 		self.trySendBuffer()
@@ -114,7 +115,7 @@ class _Connection(object):
 				self.__disconnected = True
 			return False
 
-	def getWriteBufferSize(self):
+	def getSendBufferSize(self):
 		return len(self.__writeBuffer)
 
 	def read(self):
@@ -179,7 +180,7 @@ class _Node(object):
 			return (self.__conn.socket(), self.__conn.socket(), self.__conn.socket())
 		if self.__status == NODE_STATUS.CONNECTED:
 			readyWriteSocket = None
-			if self.__conn.getWriteBufferSize() > 0:
+			if self.__conn.getSendBufferSize() > 0:
 				readyWriteSocket = self.__conn.socket()
 			return (self.__conn.socket(), readyWriteSocket, self.__conn.socket())
 		return None
@@ -187,8 +188,14 @@ class _Node(object):
 	def getStatus(self):
 		return self.__status
 
+	def isConnected(self):
+		return self.__status == NODE_STATUS.CONNECTED
+
 	def getAddress(self):
 		return self.__nodeAddr
+
+	def getSendBufferSize(self):
+		return self.__conn.getSendBufferSize()
 
 	def onTickStage2(self, rlist, wlist, xlist):
 
@@ -327,7 +334,7 @@ class SyncObj(object):
 			while True:
 				if not self.__mainThread.is_alive():
 					break
-				self._onTick(0.1)
+				self._onTick(0.05)
 		except ReferenceError:
 			pass
 
@@ -398,6 +405,7 @@ class SyncObj(object):
 				sock.settimeout(CONFIG.CONNECTION_TIMEOUT)
 				sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 ** 13)
 				sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 ** 13)
+				sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 				sock.setblocking(0)
 				self.__unknownConnections.append(_Connection(sock))
 			except socket.error as e:
@@ -479,7 +487,8 @@ class SyncObj(object):
 				if len(prevEntries) > 1:
 					self.__deleteEntries(prevLogIdx + 1)
 				self.__raftLog += newEntries
-				self.__sendNextNodeIdx(nodeAddr)
+
+			self.__sendNextNodeIdx(nodeAddr)
 
 			self.__raftCommitIndex = min(leaderCommitIndex, self.__raftLog[-1][1])
 
@@ -517,6 +526,7 @@ class SyncObj(object):
 		self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 ** 13)
 		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 ** 13)
+		self.__socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 		self.__socket.setblocking(0)
 		host, port = self.__selfNodeAddr.split(':')
 		self.__socket.bind((host, int(port)))
@@ -568,25 +578,41 @@ class SyncObj(object):
 	def __sendAppendEntries(self):
 		self.__newAppendEntriesTime = time.time() + 0.3
 
-		for node in self.__nodes:
-			nodeAddr = node.getAddress()
-			entries = []
-			prevLogIdx, prevLogTerm = None, None
-			nextNodeIndex = self.__raftNextIndex[nodeAddr]
-			if nextNodeIndex <= self.__getCurrentLogIndex():
-				entries = self.__getEntries(nextNodeIndex)
-				prevLogIdx, prevLogTerm = self.__getPrevLogIndexTerm(nextNodeIndex)
-				self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
+		startTime = time.time()
 
-			message = {
-				'type': 'append_entries',
-				'term': self.__raftCurrentTerm,
-				'commit_index': self.__raftCommitIndex,
-				'entries': entries,
-				'prevLogIdx': prevLogIdx,
-				'prevLogTerm': prevLogTerm,
-			}
-			node.send(message)
+		for node in self.__nodes:
+			if not node.isConnected():
+				continue
+
+			nodeAddr = node.getAddress()
+			sendSingle = True
+			nextNodeIndex = self.__raftNextIndex[nodeAddr]
+			prevLogIdx, prevLogTerm = None, None
+			entries = []
+
+			while nextNodeIndex <= self.__getCurrentLogIndex() or sendSingle:
+				#canSendEntries = node.getSendBufferSize() < 2 ** 13
+				if nextNodeIndex <= self.__getCurrentLogIndex():
+					entries = self.__getEntries(nextNodeIndex, 1000)
+					prevLogIdx, prevLogTerm = self.__getPrevLogIndexTerm(nextNodeIndex)
+					self.__raftNextIndex[nodeAddr] = entries[-1][1] + 1
+
+				message = {
+					'type': 'append_entries',
+					'term': self.__raftCurrentTerm,
+					'commit_index': self.__raftCommitIndex,
+					'entries': entries,
+					'prevLogIdx': prevLogIdx,
+					'prevLogTerm': prevLogTerm,
+				}
+				node.send(message)
+
+				sendSingle = False
+				nextNodeIndex = self.__raftNextIndex[nodeAddr]
+
+				delta = time.time() - startTime
+				if delta > 0.3:
+					break
 
 
 	def __send(self, nodeAddr, message):

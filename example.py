@@ -35,16 +35,11 @@ if __name__ == '__main__':
 
 	o = TestObj('localhost:%d' % port, partners)
 	n = 0
-	p = False
 	while True:
 		time.sleep(0.001)
 		if o._getLeader() is None:
 			continue
-		if n < 2000:
-			o.incCounter()
+		o.addValue(10)
 		n += 1
-		if n % 500 == 0:
-			print 'Counter value:', o.getCounter()
-		if o.getCounter() == 4000 and not p:
-			o.printStatus()
-			p = True
+		if n % 1000 == 0:
+			print 'Counter value:', o.getCounter(), o._getLeader()
