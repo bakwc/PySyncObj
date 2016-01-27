@@ -15,6 +15,10 @@ class TestObj(SyncObj):
 	def incCounter(self):
 		self.__counter += 1
 
+	@replicated
+	def addValue(self, value):
+		self.__counter += value
+
 	def getCounter(self):
 		return self.__counter
 
@@ -31,6 +35,7 @@ if __name__ == '__main__':
 
 	o = TestObj('localhost:%d' % port, partners)
 	n = 0
+	p = False
 	while True:
 		time.sleep(0.001)
 		if o._getLeader() is None:
@@ -40,3 +45,6 @@ if __name__ == '__main__':
 		n += 1
 		if n % 500 == 0:
 			print 'Counter value:', o.getCounter()
+		if o.getCounter() == 4000 and not p:
+			o.printStatus()
+			p = True

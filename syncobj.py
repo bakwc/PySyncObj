@@ -274,7 +274,6 @@ class SyncObj(object):
 			self._methodToID[method] = i
 			self._idToMethod[i] = getattr(self, method)
 
-		self.__debugLog = ''
 		self.__thread = None
 		self.__commandsQueue = Queue.Queue(1000)
 
@@ -423,18 +422,22 @@ class SyncObj(object):
 		print 'partner nodes:', len(self.__nodes)
 		for n in self.__nodes:
 			print n.getAddress(), n.getStatus()
+		print 'log size:', len(zlib.compress(pickle.dumps(self.__raftLog, -1)))
 		print ''
-		print self.__raftCommitIndex
-		print [e[0] for e in self.__raftLog]
-		print ''
-		print self.__raftMatchIndex
-		print self.__raftNextIndex
-		print ''
-		print self.__debugLog
 
 	def __doApplyCommand(self, command):
-		funcID, args, kwargs = command
-		kwargs['_doApply'] = True
+		args = []
+		kwargs = {
+			'_doApply': True,
+		}
+		if not isinstance(command, tuple):
+			funcID = command
+		elif len(command) == 2:
+			funcID, args = command
+		else:
+			funcID, args, newKwArgs = command
+			kwargs.update(newKwArgs)
+
 		self._idToMethod[funcID](*args, **kwargs)
 
 	def _onMessageReceived(self, nodeAddr, message):
@@ -624,6 +627,11 @@ def replicated(func):
 		if kwargs.pop('_doApply', False):
 			func(self, *args, **kwargs)
 		else:
-			cmd = (self._methodToID[func.__name__], args, kwargs)
+			if args and kwargs:
+				cmd = (self._methodToID[func.__name__], args, kwargs)
+			elif args and not kwargs:
+				cmd = (self._methodToID[func.__name__], args)
+			else:
+				cmd = self._methodToID[func.__name__]
 			self._applyCommand(cmd)
 	return newFunc
