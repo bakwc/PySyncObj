@@ -267,6 +267,13 @@ class SyncObj(object):
 		self.__raftNextIndex = {}
 		self.__raftMatchIndex = {}
 
+		self._methodToID = {}
+		self._idToMethod = {}
+		methods = sorted([m for m in dir(self) if callable(getattr(self, m))])
+		for i, method in enumerate(methods):
+			self._methodToID[method] = i
+			self._idToMethod[i] = getattr(self, method)
+
 		self.__debugLog = ''
 		self.__thread = None
 		self.__commandsQueue = Queue.Queue(1000)
@@ -426,9 +433,9 @@ class SyncObj(object):
 		print self.__debugLog
 
 	def __doApplyCommand(self, command):
-		funcName, args, kwargs = command
+		funcID, args, kwargs = command
 		kwargs['_doApply'] = True
-		getattr(self, funcName)(*args, **kwargs)
+		self._idToMethod[funcID](*args, **kwargs)
 
 	def _onMessageReceived(self, nodeAddr, message):
 		if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
@@ -617,6 +624,6 @@ def replicated(func):
 		if kwargs.pop('_doApply', False):
 			func(self, *args, **kwargs)
 		else:
-			cmd = (func.__name__, args, kwargs)
+			cmd = (self._methodToID[func.__name__], args, kwargs)
 			self._applyCommand(cmd)
 	return newFunc
