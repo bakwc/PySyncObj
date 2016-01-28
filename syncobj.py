@@ -2,7 +2,7 @@ import time
 import random
 import select
 import socket
-import pickle
+import cPickle
 import zlib
 import struct
 import threading
@@ -84,7 +84,7 @@ class _Connection(object):
 		return True
 
 	def send(self, message):
-		data = zlib.compress(pickle.dumps(message, -1), 3)
+		data = zlib.compress(cPickle.dumps(message, -1), 3)
 		data = struct.pack('i', len(data)) + data
 		self.__writeBuffer += data
 		self.trySendBuffer()
@@ -140,7 +140,7 @@ class _Connection(object):
 		if len(self.__readBuffer) - 4 < l:
 			return None
 		data = self.__readBuffer[4:4 + l]
-		message = pickle.loads(zlib.decompress(data))
+		message = cPickle.loads(zlib.decompress(data))
 		self.__readBuffer = self.__readBuffer[4 + l:]
 		return message
 
@@ -275,6 +275,8 @@ class SyncObj(object):
 		self.__raftMatchIndex = {}
 		self.__lastSerialized = None
 		self.__lastSerializedTime = 0
+		self.__outgoingSerializedData = {}
+		self.__incomingSerializedData = None
 		self.__socket = None
 
 		self._methodToID = {}
@@ -442,7 +444,7 @@ class SyncObj(object):
 		print 'partner nodes:', len(self.__nodes)
 		for n in self.__nodes:
 			print n.getAddress(), n.getStatus()
-		print 'log size:', len(zlib.compress(pickle.dumps(self.__raftLog, -1)))
+		print 'log size:', len(zlib.compress(cPickle.dumps(self.__raftLog, -1)))
 		print ''
 
 	def __doApplyCommand(self, command):
@@ -502,8 +504,15 @@ class SyncObj(object):
 				self.__raftLog += newEntries
 
 			if serialized is not None:
-				self.__lastSerialized = serialized
-				self._deserialize()
+				isLast = message.get('is_last')
+				isFirst = message.get('is_first')
+				if isFirst:
+					self.__incomingSerializedData = ''
+				self.__incomingSerializedData += serialized
+				if isLast:
+					self.__lastSerialized = self.__incomingSerializedData
+					self.__incomingSerializedData = ''
+					self._deserialize()
 
 			self.__sendNextNodeIdx(nodeAddr)
 
@@ -608,16 +617,19 @@ class SyncObj(object):
 		startTime = time.time()
 
 		for node in self.__nodes:
+			nodeAddr = node.getAddress()
+
 			if not node.isConnected():
+				self.__outgoingSerializedData.pop(nodeAddr, 0)
 				continue
 
-			nodeAddr = node.getAddress()
 			sendSingle = True
+			sendingSerialized = False
 			nextNodeIndex = self.__raftNextIndex[nodeAddr]
 			prevLogIdx, prevLogTerm = None, None
 			entries = []
 
-			while nextNodeIndex <= self.__getCurrentLogIndex() or sendSingle:
+			while nextNodeIndex <= self.__getCurrentLogIndex() or sendSingle or sendingSerialized:
 				if nextNodeIndex >= self.__raftLog[0][1]:
 					if nextNodeIndex <= self.__getCurrentLogIndex():
 						entries = self.__getEntries(nextNodeIndex, 1000)
@@ -635,14 +647,26 @@ class SyncObj(object):
 					node.send(message)
 					nextNodeIndex = self.__raftNextIndex[nodeAddr]
 				else:
+					alreadyTansmitted = self.__outgoingSerializedData.get(nodeAddr, 0)
+					currentChunk = self.__lastSerialized[alreadyTansmitted:alreadyTansmitted + 2 ** 13]
+					isLast = alreadyTansmitted + len(currentChunk) == len(self.__lastSerialized)
+					isFirst = alreadyTansmitted == 0
 					message = {
 						'type': 'append_entries',
 						'term': self.__raftCurrentTerm,
 						'commit_index': self.__raftCommitIndex,
-						'serialized': self.__lastSerialized,
+						'serialized': currentChunk,
+						'is_last': isLast,
+						'is_first': isFirst,
 					}
 					node.send(message)
-					nextNodeIndex = self.__raftLog[0][1]
+					if isLast:
+						nextNodeIndex = self.__raftLog[0][1]
+						self.__outgoingSerializedData.pop(nodeAddr, 0)
+						sendingSerialized = False
+					else:
+						sendingSerialized = True
+						self.__outgoingSerializedData[nodeAddr] = alreadyTansmitted + len(currentChunk)
 
 				sendSingle = False
 
@@ -692,11 +716,15 @@ class SyncObj(object):
 	def _serialize(self):
 		data = dict([(k, self.__dict__[k]) for k in self.__dict__.keys() if k not in self.__properies])
 		lastAppliedEntry = self.__getEntries(self.__raftLastApplied, 1)[0]
-		self.__lastSerialized = zlib.compress(pickle.dumps((data, lastAppliedEntry), -1), 3)
+		self.__lastSerialized = zlib.compress(cPickle.dumps((data, lastAppliedEntry), -1), 3)
 		self.__deleteEntriesTo(lastAppliedEntry[1])
+		self.__outgoingSerializedData = {}
 
 	def _deserialize(self):
-		data = pickle.loads(zlib.decompress(self.__lastSerialized))
+		try:
+			data = cPickle.loads(zlib.decompress(self.__lastSerialized))
+		except:
+			return
 		for k, v in data[0].iteritems():
 			self.__dict__[k] = v
 		self.__raftLog = [data[1]]
