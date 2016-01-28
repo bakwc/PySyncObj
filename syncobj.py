@@ -273,6 +273,9 @@ class SyncObj(object):
 		self.__raftLastApplied = 1
 		self.__raftNextIndex = {}
 		self.__raftMatchIndex = {}
+		self.__lastSerialized = None
+		self.__lastSerializedTime = 0
+		self.__socket = None
 
 		self._methodToID = {}
 		self._idToMethod = {}
@@ -282,7 +285,16 @@ class SyncObj(object):
 			self._idToMethod[i] = getattr(self, method)
 
 		self.__thread = None
+		self.__mainThread = None
+		self.__initialised = None
 		self.__commandsQueue = Queue.Queue(1000)
+		self.__resolver = None
+		self.__nodes = []
+		self.__newAppendEntriesTime = 0
+
+		self.__properies = set()
+		for key in self.__dict__:
+			self.__properies.add(key)
 
 		if autoTick:
 			self.__mainThread = threading.current_thread()
@@ -296,7 +308,6 @@ class SyncObj(object):
 
 	def __initInTickThread(self):
 		self.__resolver = _DnsCachingResolver()
-		self.__nodes = []
 		self.__bind()
 		for nodeAddr in self.__otherNodesAddrs:
 			self.__nodes.append(_Node(self, nodeAddr))
@@ -378,6 +389,7 @@ class SyncObj(object):
 				self.__raftLastApplied += 1
 
 		self._checkCommandsToApply()
+		self.__tryLogCompaction()
 
 		socketsToCheckR = [self.__socket]
 		socketsToCheckW = [self.__socket]
@@ -471,7 +483,8 @@ class SyncObj(object):
 			self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
 			self.__raftLeader = nodeAddr
 			self.__raftState = _RAFT_STATE.FOLLOWER
-			newEntries = message['entries']
+			newEntries = message.get('entries', [])
+			serialized = message.get('serialized', None)
 			leaderCommitIndex = message['commit_index']
 			if newEntries:
 				prevLogIdx = message['prevLogIdx']
@@ -481,12 +494,16 @@ class SyncObj(object):
 					self.__sendNextNodeIdx(nodeAddr, reset = True)
 					return
 				if prevEntries[0][2] != prevLogTerm:
-					self.__deleteEntries(prevLogIdx)
+					self.__deleteEntriesFrom(prevLogIdx)
 					self.__sendNextNodeIdx(nodeAddr, reset = True)
 					return
 				if len(prevEntries) > 1:
-					self.__deleteEntries(prevLogIdx + 1)
+					self.__deleteEntriesFrom(prevLogIdx + 1)
 				self.__raftLog += newEntries
+
+			if serialized is not None:
+				self.__lastSerialized = serialized
+				self._deserialize()
 
 			self.__sendNextNodeIdx(nodeAddr)
 
@@ -557,12 +574,22 @@ class SyncObj(object):
 	def _getLeader(self):
 		return self.__raftLeader
 
-	def __deleteEntries(self, fromIDx):
+	def _getRaftLogSize(self):
+		return len(self.__raftLog)
+
+	def __deleteEntriesFrom(self, fromIDx):
 		firstEntryIDx = self.__raftLog[0][1]
 		diff = fromIDx - firstEntryIDx
 		if diff < 0:
 			return
 		self.__raftLog = self.__raftLog[:diff]
+
+	def __deleteEntriesTo(self, toIDx):
+		firstEntryIDx = self.__raftLog[0][1]
+		diff = toIDx - firstEntryIDx
+		if diff < 0:
+			return
+		self.__raftLog = self.__raftLog[diff:]
 
 	def __onBecomeLeader(self):
 		self.__raftLeader = self.__selfNodeAddr
@@ -591,24 +618,33 @@ class SyncObj(object):
 			entries = []
 
 			while nextNodeIndex <= self.__getCurrentLogIndex() or sendSingle:
-				#canSendEntries = node.getSendBufferSize() < 2 ** 13
-				if nextNodeIndex <= self.__getCurrentLogIndex():
-					entries = self.__getEntries(nextNodeIndex, 1000)
-					prevLogIdx, prevLogTerm = self.__getPrevLogIndexTerm(nextNodeIndex)
-					self.__raftNextIndex[nodeAddr] = entries[-1][1] + 1
+				if nextNodeIndex >= self.__raftLog[0][1]:
+					if nextNodeIndex <= self.__getCurrentLogIndex():
+						entries = self.__getEntries(nextNodeIndex, 1000)
+						prevLogIdx, prevLogTerm = self.__getPrevLogIndexTerm(nextNodeIndex)
+						self.__raftNextIndex[nodeAddr] = entries[-1][1] + 1
 
-				message = {
-					'type': 'append_entries',
-					'term': self.__raftCurrentTerm,
-					'commit_index': self.__raftCommitIndex,
-					'entries': entries,
-					'prevLogIdx': prevLogIdx,
-					'prevLogTerm': prevLogTerm,
-				}
-				node.send(message)
+					message = {
+						'type': 'append_entries',
+						'term': self.__raftCurrentTerm,
+						'commit_index': self.__raftCommitIndex,
+						'entries': entries,
+						'prevLogIdx': prevLogIdx,
+						'prevLogTerm': prevLogTerm,
+					}
+					node.send(message)
+					nextNodeIndex = self.__raftNextIndex[nodeAddr]
+				else:
+					message = {
+						'type': 'append_entries',
+						'term': self.__raftCurrentTerm,
+						'commit_index': self.__raftCommitIndex,
+						'serialized': self.__lastSerialized,
+					}
+					node.send(message)
+					nextNodeIndex = self.__raftLog[0][1]
 
 				sendSingle = False
-				nextNodeIndex = self.__raftNextIndex[nodeAddr]
 
 				delta = time.time() - startTime
 				if delta > 0.3:
@@ -647,6 +683,24 @@ class SyncObj(object):
 	def _getResolver(self):
 		return self.__resolver
 
+	def __tryLogCompaction(self):
+		currTime = time.time()
+		if len(self.__raftLog) > 5000 and currTime - self.__lastSerializedTime > 60:
+			self._serialize()
+			self.__lastSerializedTime = currTime
+
+	def _serialize(self):
+		data = dict([(k, self.__dict__[k]) for k in self.__dict__.keys() if k not in self.__properies])
+		lastAppliedEntry = self.__getEntries(self.__raftLastApplied, 1)[0]
+		self.__lastSerialized = zlib.compress(pickle.dumps((data, lastAppliedEntry), -1), 3)
+		self.__deleteEntriesTo(lastAppliedEntry[1])
+
+	def _deserialize(self):
+		data = pickle.loads(zlib.decompress(self.__lastSerialized))
+		for k, v in data[0].iteritems():
+			self.__dict__[k] = v
+		self.__raftLog = [data[1]]
+		self.__raftLastApplied = data[1][1]
 
 def replicated(func):
 	def newFunc(self, *args, **kwargs):

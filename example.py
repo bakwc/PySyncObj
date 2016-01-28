@@ -36,10 +36,11 @@ if __name__ == '__main__':
 	o = TestObj('localhost:%d' % port, partners)
 	n = 0
 	while True:
-		time.sleep(0.001)
+		time.sleep(0.005)
 		if o._getLeader() is None:
 			continue
-		o.addValue(10)
+		if n < 2000:
+			o.addValue(10)
 		n += 1
-		if n % 1000 == 0:
-			print 'Counter value:', o.getCounter(), o._getLeader()
+		if n % 200 == 0:
+			print 'Counter value:', o.getCounter(), o._getLeader(), o._getRaftLogSize()
