@@ -488,7 +488,9 @@ class SyncObj(object):
 			newEntries = message.get('entries', [])
 			serialized = message.get('serialized', None)
 			leaderCommitIndex = message['commit_index']
-			if newEntries:
+
+			# Regular appen entries
+			if serialized is None:
 				prevLogIdx = message['prevLogIdx']
 				prevLogTerm = message['prevLogTerm']
 				prevEntries = self.__getEntries(prevLogIdx)
@@ -503,7 +505,8 @@ class SyncObj(object):
 					self.__deleteEntriesFrom(prevLogIdx + 1)
 				self.__raftLog += newEntries
 
-			if serialized is not None:
+			# Install snapshot
+			else:
 				isLast = message.get('is_last')
 				isFirst = message.get('is_first')
 				if isFirst:
@@ -626,14 +629,13 @@ class SyncObj(object):
 			sendSingle = True
 			sendingSerialized = False
 			nextNodeIndex = self.__raftNextIndex[nodeAddr]
-			prevLogIdx, prevLogTerm = None, None
 			entries = []
 
 			while nextNodeIndex <= self.__getCurrentLogIndex() or sendSingle or sendingSerialized:
 				if nextNodeIndex >= self.__raftLog[0][1]:
+					prevLogIdx, prevLogTerm = self.__getPrevLogIndexTerm(nextNodeIndex)
 					if nextNodeIndex <= self.__getCurrentLogIndex():
 						entries = self.__getEntries(nextNodeIndex, 1000)
-						prevLogIdx, prevLogTerm = self.__getPrevLogIndexTerm(nextNodeIndex)
 						self.__raftNextIndex[nodeAddr] = entries[-1][1] + 1
 
 					message = {
@@ -645,7 +647,6 @@ class SyncObj(object):
 						'prevLogTerm': prevLogTerm,
 					}
 					node.send(message)
-					nextNodeIndex = self.__raftNextIndex[nodeAddr]
 				else:
 					alreadyTansmitted = self.__outgoingSerializedData.get(nodeAddr, 0)
 					currentChunk = self.__lastSerialized[alreadyTansmitted:alreadyTansmitted + 2 ** 13]
@@ -661,12 +662,14 @@ class SyncObj(object):
 					}
 					node.send(message)
 					if isLast:
-						nextNodeIndex = self.__raftLog[0][1]
+						self.__raftNextIndex[nodeAddr] = self.__raftLog[0][1]
 						self.__outgoingSerializedData.pop(nodeAddr, 0)
 						sendingSerialized = False
 					else:
 						sendingSerialized = True
 						self.__outgoingSerializedData[nodeAddr] = alreadyTansmitted + len(currentChunk)
+
+				nextNodeIndex = self.__raftNextIndex[nodeAddr]
 
 				sendSingle = False
 
@@ -715,9 +718,9 @@ class SyncObj(object):
 
 	def _serialize(self):
 		data = dict([(k, self.__dict__[k]) for k in self.__dict__.keys() if k not in self.__properies])
-		lastAppliedEntry = self.__getEntries(self.__raftLastApplied, 1)[0]
-		self.__lastSerialized = zlib.compress(cPickle.dumps((data, lastAppliedEntry), -1), 3)
-		self.__deleteEntriesTo(lastAppliedEntry[1])
+		lastAppliedEntries = self.__getEntries(self.__raftLastApplied - 1, 2)
+		self.__lastSerialized = zlib.compress(cPickle.dumps((data, lastAppliedEntries[1], lastAppliedEntries[0]), -1), 3)
+		self.__deleteEntriesTo(lastAppliedEntries[1][1])
 		self.__outgoingSerializedData = {}
 
 	def _deserialize(self):
@@ -727,7 +730,7 @@ class SyncObj(object):
 			return
 		for k, v in data[0].iteritems():
 			self.__dict__[k] = v
-		self.__raftLog = [data[1]]
+		self.__raftLog = [data[2], data[1]]
 		self.__raftLastApplied = data[1][1]
 
 def replicated(func):

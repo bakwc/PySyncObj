@@ -43,4 +43,4 @@ if __name__ == '__main__':
 			o.addValue(10)
 		n += 1
 		if n % 200 == 0:
-			print 'Counter value:', o.getCounter(), o._getLeader(), o._getRaftLogSize()
+			print 'Counter value:', o.getCounter(), o._getLeader(), o._getRaftLogSize(), o._getLastCommitIndex()
