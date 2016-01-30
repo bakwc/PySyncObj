@@ -738,7 +738,7 @@ def replicated(func):
 		if kwargs.pop('_doApply', False):
 			func(self, *args, **kwargs)
 		else:
-			if args and kwargs:
+			if kwargs:
 				cmd = (self._methodToID[func.__name__], args, kwargs)
 			elif args and not kwargs:
 				cmd = (self._methodToID[func.__name__], args)
