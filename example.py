@@ -2,6 +2,7 @@
 
 import sys
 import time
+from functools import partial
 from syncobj import SyncObj, replicated
 
 
@@ -14,14 +15,18 @@ class TestObj(SyncObj):
 	@replicated
 	def incCounter(self):
 		self.__counter += 1
+		return self.__counter
 
 	@replicated
-	def addValue(self, value):
+	def addValue(self, value, cn):
 		self.__counter += value
+		return self.__counter, cn
 
 	def getCounter(self):
 		return self.__counter
 
+def onAdd(res, err, cnt):
+	print 'onAdd %d:' % cnt, res, err
 
 if __name__ == '__main__':
 	if len(sys.argv) < 3:
@@ -36,11 +41,14 @@ if __name__ == '__main__':
 	o = TestObj('localhost:%d' % port, partners)
 	n = 0
 	while True:
-		time.sleep(0.005)
+		#time.sleep(0.005)
+		time.sleep(0.5)
 		if o._getLeader() is None:
 			continue
-		if n < 2000:
-			o.addValue(10)
+		#if n < 2000:
+		if n < 20:
+			o.addValue(10, n, callback=partial(onAdd, cnt=n))
 		n += 1
-		if n % 200 == 0:
-			print 'Counter value:', o.getCounter(), o._getLeader(), o._getRaftLogSize(), o._getLastCommitIndex()
+		#if n % 200 == 0:
+		#if True:
+		#	print 'Counter value:', o.getCounter(), o._getLeader(), o._getRaftLogSize(), o._getLastCommitIndex()

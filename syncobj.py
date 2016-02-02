@@ -8,6 +8,7 @@ import struct
 import threading
 import Queue
 import weakref
+import collections
 import sys
 
 class CONFIG:
@@ -255,6 +256,14 @@ class _RAFT_STATE:
 	CANDIDATE = 1
 	LEADER = 2
 
+class FAIL_REASON:
+	SUCCESS	= 0
+	QUEUE_FULL = 1
+	MISSING_LEADER = 2
+	DISCARDED = 3
+	NOT_LEADER = 4
+	LEADER_CHANGED = 5
+
 
 class SyncObj(object):
 
@@ -267,7 +276,7 @@ class SyncObj(object):
 		self.__votesCount = 0
 		self.__raftLeader = None
 		self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
-		self.__raftLog = []
+		self.__raftLog = [] # (command, logID, term)
 		self.__raftLog.append((None, 1, self.__raftCurrentTerm))
 		self.__raftCommitIndex = 1
 		self.__raftLastApplied = 1
@@ -294,6 +303,10 @@ class SyncObj(object):
 		self.__nodes = []
 		self.__newAppendEntriesTime = 0
 
+		self.__commandsWaitingCommit = collections.defaultdict(list) # logID => [(termID, callback), ...]
+		self.__commandsLocalCounter = 0
+		self.__commandsWaitingReply = {} # commandLocalCounter => callback
+
 		self.__properies = set()
 		for key in self.__dict__:
 			self.__properies.add(key)
@@ -316,29 +329,65 @@ class SyncObj(object):
 			self.__raftNextIndex[nodeAddr] = 0
 			self.__raftMatchIndex[nodeAddr] = 0
 
-	def _applyCommand(self, command):
+	def _applyCommand(self, command, callback):
 		try:
-			self.__commandsQueue.put_nowait(command)
+			self.__commandsQueue.put_nowait((command, callback))
 		except Queue.Full:
-			#todo: call fail callback
-			pass
+			callback(None, FAIL_REASON.QUEUE_FULL)
 
 	def _checkCommandsToApply(self):
 		while True:
 			try:
-				command = self.__commandsQueue.get_nowait()
+				command, callback = self.__commandsQueue.get_nowait()
 			except Queue.Empty:
 				break
+
+			requestNode, requestID = None, None
+			if isinstance(callback, tuple):
+				requestNode, requestID = callback
+
 			if self.__raftState == _RAFT_STATE.LEADER:
-				self.__raftLog.append((command, self.__getCurrentLogIndex() + 1, self.__raftCurrentTerm))
-				#self.__sendAppendEntries()
+				idx, term = self.__getCurrentLogIndex() + 1, self.__raftCurrentTerm
+				self.__raftLog.append((command, idx, term))
+				if requestNode is None:
+					if callback is not None:
+						self.__commandsWaitingCommit[idx].append((term, callback))
+				else:
+					self.__send(requestNode, {
+						'type': 'apply_command_response',
+						'request_id': requestID,
+						'log_idx': idx,
+						'log_term': term,
+					})
+				self.__sendAppendEntries()
 			elif self.__raftLeader is not None:
-				self.__send(self.__raftLeader, {
-					'type': 'apply_command',
-					'command': command,
-				})
+				if requestNode is None:
+					message = {
+						'type': 'apply_command',
+						'command': command,
+					}
+
+					if callback is not None:
+						self.__commandsLocalCounter += 1
+						self.__commandsWaitingReply[self.__commandsLocalCounter] = callback
+						message['request_id'] = self.__commandsLocalCounter
+
+					self.__send(self.__raftLeader, message)
+				else:
+					self.__send(requestNode, {
+						'type': 'apply_command_response',
+						'request_id': requestID,
+						'error': FAIL_REASON.NOT_LEADER,
+					})
 			else:
-				pass
+				if requestNode is None:
+					callback(None, FAIL_REASON.MISSING_LEADER)
+				else:
+					self.__send(requestNode, {
+						'type': 'apply_command_response',
+						'request_id': requestID,
+						'error': FAIL_REASON.NOT_LEADER,
+					})
 
 	def _autoTickThread(self):
 		self.__initInTickThread()
@@ -367,6 +416,7 @@ class SyncObj(object):
 						'last_log_index': self.__raftLog[-1][1],
 						'last_log_term': self.__raftLog[-1][2],
 					})
+				self.__onLeaderChanged()
 
 		if self.__raftState == _RAFT_STATE.LEADER:
 			while self.__raftCommitIndex < self.__raftLog[-1][1]:
@@ -387,7 +437,15 @@ class SyncObj(object):
 			count = self.__raftCommitIndex - self.__raftLastApplied
 			entries = self.__getEntries(self.__raftLastApplied + 1, count)
 			for entry in entries:
-				self.__doApplyCommand(entry[0])
+				currentTermID = entry[2]
+				subscribers = self.__commandsWaitingCommit.pop(entry[1], [])
+				res = self.__doApplyCommand(entry[0])
+				for subscribeTermID, callback in subscribers:
+					if subscribeTermID == currentTermID:
+						callback(res, FAIL_REASON.SUCCESS)
+					else:
+						callback(None, FAIL_REASON.DISCARDED)
+
 				self.__raftLastApplied += 1
 
 		self._checkCommandsToApply()
@@ -460,7 +518,7 @@ class SyncObj(object):
 			funcID, args, newKwArgs = command
 			kwargs.update(newKwArgs)
 
-		self._idToMethod[funcID](*args, **kwargs)
+		return self._idToMethod[funcID](*args, **kwargs)
 
 	def _onMessageReceived(self, nodeAddr, message):
 		if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
@@ -483,6 +541,8 @@ class SyncObj(object):
 
 		if message['type'] == 'append_entries' and message['term'] >= self.__raftCurrentTerm:
 			self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
+			if self.__raftLeader != nodeAddr:
+				self.__onLeaderChanged()
 			self.__raftLeader = nodeAddr
 			self.__raftState = _RAFT_STATE.FOLLOWER
 			newEntries = message.get('entries', [])
@@ -522,7 +582,23 @@ class SyncObj(object):
 			self.__raftCommitIndex = min(leaderCommitIndex, self.__raftLog[-1][1])
 
 		if message['type'] == 'apply_command':
-			self._applyCommand(message['command'])
+			if 'request_id' in message:
+				self._applyCommand(message['command'], (nodeAddr, message['request_id']))
+			else:
+				self._applyCommand(message['command'], None)
+
+		if message['type'] == 'apply_command_response':
+			requestID = message['request_id']
+			error = message.get('error', None)
+			callback = self.__commandsWaitingReply.pop(requestID, None)
+			if callback is not None:
+				if error is not None:
+					callback(None, error)
+				else:
+					idx = message['log_idx']
+					term = message['log_term']
+					assert idx > self.__raftLastApplied
+					self.__commandsWaitingCommit[idx].append((term, callback))
 
 		if self.__raftState == _RAFT_STATE.CANDIDATE:
 			if message['type'] == 'response_vote' and message['term'] == self.__raftCurrentTerm:
@@ -613,6 +689,11 @@ class SyncObj(object):
 			self.__raftMatchIndex[nodeAddr] = 0
 
 		self.__sendAppendEntries()
+
+	def __onLeaderChanged(self):
+		for id in sorted(self.__commandsWaitingReply):
+			self.__commandsWaitingReply[id](None, FAIL_REASON.LEADER_CHANGED)
+		self.__commandsWaitingReply = {}
 
 	def __sendAppendEntries(self):
 		self.__newAppendEntriesTime = time.time() + 0.3
@@ -736,13 +817,14 @@ class SyncObj(object):
 def replicated(func):
 	def newFunc(self, *args, **kwargs):
 		if kwargs.pop('_doApply', False):
-			func(self, *args, **kwargs)
+			return func(self, *args, **kwargs)
 		else:
+			callback = kwargs.pop('callback', None)
 			if kwargs:
 				cmd = (self._methodToID[func.__name__], args, kwargs)
 			elif args and not kwargs:
 				cmd = (self._methodToID[func.__name__], args)
 			else:
 				cmd = self._methodToID[func.__name__]
-			self._applyCommand(cmd)
+			self._applyCommand(cmd, callback)
 	return newFunc
