@@ -4,7 +4,7 @@ import sys
 import time
 import random
 from functools import partial
-from syncobj import SyncObj, SyncObjConf, replicated
+from syncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON
 
 class TestObj(SyncObj):
 
@@ -160,11 +160,44 @@ def manyActionsLogCompaction():
 	assert o2._getRaftLogSize() <= 10
 	assert o3._getRaftLogSize() <= 10
 
+def onAddValue(res, err, info):
+	assert res == 3
+	assert err == FAIL_REASON.SUCCESS
+	info['callback'] = True
+
+def checkCallbacksSimple():
+
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1], a[2]])
+	o2 = TestObj(a[1], [a[2], a[0]])
+	o3 = TestObj(a[2], [a[0], a[1]])
+	objs = [o1, o2, o3]
+
+	doTicks(objs, 3.5)
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+	assert o1._getLeader() == o3._getLeader()
+
+
+	callbackInfo = {
+		'callback': False
+	}
+	o1.addValue(3, callback=partial(onAddValue, info=callbackInfo))
+
+	doTicks(objs, 0.5)
+
+	assert o2.getCounter() == 3
+	assert callbackInfo['callback'] == True
 
 def runTests():
 	syncTwoObjects()
 	syncThreeObjectsLeaderFail()
 	manyActionsLogCompaction()
+	checkCallbacksSimple()
 	print '[SUCCESS]'
 
 if __name__ == '__main__':
