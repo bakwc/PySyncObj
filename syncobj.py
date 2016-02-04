@@ -9,30 +9,20 @@ import threading
 import Queue
 import weakref
 import collections
-import sys
-
-class CONFIG:
-	CONNECTION_RETRY_TIME = 5.0
-	CONNECTION_TIMEOUT = 5.0
-	DNS_CACHE_TIME = 600.0
-	DNS_FAIL_CACHE_TIME = 30.0
-
-class NODE_STATUS:
-	DISCONNECTED = 0
-	CONNECTING = 1
-	CONNECTED = 2
 
 
 class _DnsCachingResolver(object):
 
-	def __init__(self):
+	def __init__(self, cacheTime, failCacheTime):
 		self.__cache = {}
+		self.__cacheTime = cacheTime
+		self.__failCacheTime = failCacheTime
 
 	def resolve(self, hostname):
 		currTime = time.time()
 		cachedTime, ips = self.__cache.get(hostname, (0, []))
 		timePassed = currTime - cachedTime
-		if (timePassed > CONFIG.DNS_CACHE_TIME) or (not ips and timePassed > CONFIG.DNS_FAIL_CACHE_TIME):
+		if (timePassed > self.__cacheTime) or (not ips and timePassed > self.__failCacheTime):
 			prevIps = ips
 			ips = self.__doResolve(hostname)
 			if not ips:
@@ -67,7 +57,6 @@ class _Connection(object):
 
 	def connect(self, host, port):
 		self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.__socket.settimeout(CONFIG.CONNECTION_TIMEOUT)
 		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 ** 13)
 		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 ** 13)
 		self.__socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
@@ -152,6 +141,11 @@ class _Connection(object):
 		return self.__socket
 
 
+class _NODE_STATUS:
+	DISCONNECTED = 0
+	CONNECTING = 1
+	CONNECTED = 2
+
 class _Node(object):
 
 	def __init__(self, syncObj, nodeAddr):
@@ -163,23 +157,23 @@ class _Node(object):
 		self.__shouldConnect = syncObj._getSelfNodeAddr() > nodeAddr
 		self.__lastConnectAttemptTime = 0
 		self.__lastPingTime = 0
-		self.__status = NODE_STATUS.DISCONNECTED
+		self.__status = _NODE_STATUS.DISCONNECTED
 
 	def __del__(self):
 		self.__conn = None
 
 	def onPartnerConnected(self, conn):
 		self.__conn = conn
-		self.__status = NODE_STATUS.CONNECTED
+		self.__status = _NODE_STATUS.CONNECTED
 
 	def onTickStage1(self):
 		if self.__shouldConnect:
-			if self.__status == NODE_STATUS.DISCONNECTED:
+			if self.__status == _NODE_STATUS.DISCONNECTED:
 				self.__connect()
 
-		if self.__shouldConnect and self.__status == NODE_STATUS.CONNECTING:
+		if self.__shouldConnect and self.__status == _NODE_STATUS.CONNECTING:
 			return (self.__conn.socket(), self.__conn.socket(), self.__conn.socket())
-		if self.__status == NODE_STATUS.CONNECTED:
+		if self.__status == _NODE_STATUS.CONNECTED:
 			readyWriteSocket = None
 			if self.__conn.getSendBufferSize() > 0:
 				readyWriteSocket = self.__conn.socket()
@@ -190,7 +184,7 @@ class _Node(object):
 		return self.__status
 
 	def isConnected(self):
-		return self.__status == NODE_STATUS.CONNECTED
+		return self.__status == _NODE_STATUS.CONNECTED
 
 	def getAddress(self):
 		return self.__nodeAddr
@@ -201,10 +195,10 @@ class _Node(object):
 	def onTickStage2(self, rlist, wlist, xlist):
 
 		if self.__shouldConnect:
-			if self.__status == NODE_STATUS.CONNECTING:
+			if self.__status == _NODE_STATUS.CONNECTING:
 				self.__checkConnected(rlist, wlist, xlist)
 
-		if self.__status == NODE_STATUS.CONNECTED:
+		if self.__status == _NODE_STATUS.CONNECTED:
 			if self.__conn.socket() in rlist:
 				self.__conn.read()
 				while True:
@@ -216,38 +210,38 @@ class _Node(object):
 				self.__conn.trySendBuffer()
 
 			if self.__conn.socket() in xlist or self.__conn.isDisconnected():
-				self.__status = NODE_STATUS.DISCONNECTED
+				self.__status = _NODE_STATUS.DISCONNECTED
 				self.__conn.close()
 
 	def send(self, message):
-		if self.__status != NODE_STATUS.CONNECTED:
+		if self.__status != _NODE_STATUS.CONNECTED:
 			return False
 		self.__conn.send(message)
 		if self.__conn.isDisconnected():
-			self.__status = NODE_STATUS.DISCONNECTED
+			self.__status = _NODE_STATUS.DISCONNECTED
 			self.__conn.close()
 			return False
 		return True
 
 	def __connect(self):
-		if time.time() - self.__lastConnectAttemptTime < CONFIG.CONNECTION_RETRY_TIME:
+		if time.time() - self.__lastConnectAttemptTime < self.__syncObj()._getConf().connectionRetryTime:
 			return
 
-		self.__status = NODE_STATUS.CONNECTING
+		self.__status = _NODE_STATUS.CONNECTING
 
 		self.__lastConnectAttemptTime = time.time()
 
 		if not self.__conn.connect(self.__ip, self.__port):
-			self.__status = NODE_STATUS.DISCONNECTED
+			self.__status = _NODE_STATUS.DISCONNECTED
 
 	def __checkConnected(self, rlist, wlist, xlist):
 		if self.__conn.socket() in xlist:
-			self.__status = NODE_STATUS.DISCONNECTED
+			self.__status = _NODE_STATUS.DISCONNECTED
 		if self.__conn.socket() in rlist or self.__conn.socket() in wlist:
 			if self.__conn.socket().getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):
-				self.__status = NODE_STATUS.DISCONNECTED
+				self.__status = _NODE_STATUS.DISCONNECTED
 			else:
-				self.__status = NODE_STATUS.CONNECTED
+				self.__status = _NODE_STATUS.CONNECTED
 				self.__conn.send(self.__syncObj()._getSelfNodeAddr())
 
 
@@ -283,12 +277,17 @@ class SyncObjConf(object):
 		# Should be less then raftMinTimeout.
 		self.appendEntriesPeriod = kwargs.get('appendEntriesPeriod', 0.3)
 
-		# After connectionTimeout connection considered dead.
+		# When no data received for connectionTimeout - connection considered dead.
 		# Should be more then raftMaxTimeout.
 		self.connectionTimeout = kwargs.get('connectionTimeout', 3.5)
 
+		# Interval between connection attempts.
+		# Will try to connect to offline nodes each connectionRetryTime.
+		self.connectionRetryTime = kwargs.get('connectionRetryTime', 5.0)
+
 		# Max number of log entries per single append_entries command.
 		self.appendEntriesBatchSize = kwargs.get('appendEntriesBatchSize', 1000)
+
 		# Send multiple entries in a single command.
 		# Enabled (default) - improve overal perfomence (requests per second)
 		# Disabled - improve single request speed (don't wait till batch ready)
@@ -298,6 +297,11 @@ class SyncObjConf(object):
 		self.sendBufferSize = kwargs.get('sendBufferSize', 2 ** 13)
 		self.recvBufferSize = kwargs.get('recvBufferSize', 2 ** 13)
 
+		# Time to cache dns requests (improves performance,
+		# no need to resolve address for each connection attempt).
+		self.dnsCacheTime = kwargs.get('dnsCacheTime', 600.0)
+		self.dnsFailCacheTime = kwargs.get('dnsFailCacheTime', 30.0)
+
 		# Log will be compacted after it reach minEntries size and minTime
 		# after previous compaction.
 		self.logCompactionMinEntries = 5000
@@ -306,6 +310,11 @@ class SyncObjConf(object):
 		# Max number of bytes per single append_entries command
 		# while sending serialized object.
 		self.logCompactionBatchSize = kwargs.get('logCompactionBatchSize', 2 ** 13)
+
+		# If true - commands will be enqueued and executed after leader detected.
+		# Otherwise - FAIL_REASON.MISSING_LEADER error will be emitted.
+		# Leader is missing when esteblishing connection or when election in progress.
+		self.commandsWaitLeader = kwargs.get('commandsWaitLeader', True)
 
 class SyncObj(object):
 
@@ -370,7 +379,7 @@ class SyncObj(object):
 			self.__initInTickThread()
 
 	def __initInTickThread(self):
-		self.__resolver = _DnsCachingResolver()
+		self.__resolver = _DnsCachingResolver(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
 		self.__bind()
 		for nodeAddr in self.__otherNodesAddrs:
 			self.__nodes.append(_Node(self, nodeAddr))
@@ -385,6 +394,8 @@ class SyncObj(object):
 
 	def _checkCommandsToApply(self):
 		while True:
+			if self.__raftLeader is None and self.__conf.commandsWaitLeader:
+				break
 			try:
 				command, callback = self.__commandsQueue.get_nowait()
 			except Queue.Empty:
@@ -523,7 +534,6 @@ class SyncObj(object):
 		if self.__socket in rlist:
 			try:
 				sock, addr = self.__socket.accept()
-				sock.settimeout(CONFIG.CONNECTION_TIMEOUT)
 				sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self.__conf.sendBufferSize)
 				sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.__conf.recvBufferSize)
 				sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
