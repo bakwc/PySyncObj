@@ -51,12 +51,12 @@ class _DnsCachingResolver(object):
 
 class _Connection(object):
 
-	def __init__(self, socket = None):
+	def __init__(self, socket = None, timeout = 10.0):
 		self.__socket = socket
 		self.__readBuffer = ''
 		self.__writeBuffer = ''
 		self.__lastReadTime = time.time()
-		self.__timeout = 10.0
+		self.__timeout = timeout
 		self.__disconnected = False
 
 	def __del__(self):
@@ -159,7 +159,7 @@ class _Node(object):
 		self.__nodeAddr = nodeAddr
 		self.__ip = syncObj._getResolver().resolve(nodeAddr.split(':')[0])
 		self.__port = int(nodeAddr.split(':')[1])
-		self.__conn = _Connection()
+		self.__conn = _Connection(syncObj._getConf().connectionTimeout)
 		self.__shouldConnect = syncObj._getSelfNodeAddr() > nodeAddr
 		self.__lastConnectAttemptTime = 0
 		self.__lastPingTime = 0
@@ -264,10 +264,58 @@ class FAIL_REASON:
 	NOT_LEADER = 4
 	LEADER_CHANGED = 5
 
+class SyncObjConf(object):
+	def __init__(self, **kwargs):
+		# Disable autoTick if you want to call onTick manually.
+		# Otherwise it will be called automatically from separate thread.
+		self.autoTick = kwargs.get('autoTick', True)
+		self.autoTickPeriod = kwargs.get('autoTickPeriod', 0.05)
+
+		# Commands queue is used to store commands before real processing.
+		self.commandsQueueSize = kwargs.get('commandsQueueSize', 1000)
+
+		# After randomly selected timeout (in range from minTimeout to maxTimeout)
+		# leader considered dead, and leader election starts.
+		self.raftMinTimeout = kwargs.get('raftMinTimeout', 1.0)
+		self.raftMaxTimeout = kwargs.get('raftMaxTimeout', 3.0)
+
+		# Interval of sending append_entries (ping) command.
+		# Should be less then raftMinTimeout.
+		self.appendEntriesPeriod = kwargs.get('appendEntriesPeriod', 0.3)
+
+		# After connectionTimeout connection considered dead.
+		# Should be more then raftMaxTimeout.
+		self.connectionTimeout = kwargs.get('connectionTimeout', 3.5)
+
+		# Max number of log entries per single append_entries command.
+		self.appendEntriesBatchSize = kwargs.get('appendEntriesBatchSize', 1000)
+		# Send multiple entries in a single command.
+		# Enabled (default) - improve overal perfomence (requests per second)
+		# Disabled - improve single request speed (don't wait till batch ready)
+		self.appendEntriesUseBatch = kwargs.get('appendEntriesUseBatch', True)
+
+		# Size of receive and send buffer for sockets.
+		self.sendBufferSize = kwargs.get('sendBufferSize', 2 ** 13)
+		self.recvBufferSize = kwargs.get('recvBufferSize', 2 ** 13)
+
+		# Log will be compacted after it reach minEntries size and minTime
+		# after previous compaction.
+		self.logCompactionMinEntries = 5000
+		self.logCompactionMinTime = 60
+
+		# Max number of bytes per single append_entries command
+		# while sending serialized object.
+		self.logCompactionBatchSize = kwargs.get('logCompactionBatchSize', 2 ** 13)
 
 class SyncObj(object):
 
-	def __init__(self, selfNodeAddr, otherNodesAddrs, autoTick = True):
+	def __init__(self, selfNodeAddr, otherNodesAddrs, conf = None):
+
+		if conf is None:
+			self.__conf = SyncObjConf()
+		else:
+			self.__conf = conf
+
 		self.__selfNodeAddr = selfNodeAddr
 		self.__otherNodesAddrs = otherNodesAddrs
 		self.__unknownConnections = []
@@ -298,7 +346,7 @@ class SyncObj(object):
 		self.__thread = None
 		self.__mainThread = None
 		self.__initialised = None
-		self.__commandsQueue = Queue.Queue(1000)
+		self.__commandsQueue = Queue.Queue(self.__conf.commandsQueueSize)
 		self.__resolver = None
 		self.__nodes = []
 		self.__newAppendEntriesTime = 0
@@ -311,7 +359,7 @@ class SyncObj(object):
 		for key in self.__dict__:
 			self.__properies.add(key)
 
-		if autoTick:
+		if self.__conf.autoTick:
 			self.__mainThread = threading.current_thread()
 			self.__initialised = threading.Event()
 			self.__thread = threading.Thread(target=SyncObj._autoTickThread, args=(weakref.proxy(self),))
@@ -359,7 +407,8 @@ class SyncObj(object):
 						'log_idx': idx,
 						'log_term': term,
 					})
-				self.__sendAppendEntries()
+				if not self.__conf.appendEntriesUseBatch:
+					self.__sendAppendEntries()
 			elif self.__raftLeader is not None:
 				if requestNode is None:
 					message = {
@@ -396,7 +445,7 @@ class SyncObj(object):
 			while True:
 				if not self.__mainThread.is_alive():
 					break
-				self._onTick(0.05)
+				self._onTick(self.__conf.autoTickPeriod)
 		except ReferenceError:
 			pass
 
@@ -475,11 +524,11 @@ class SyncObj(object):
 			try:
 				sock, addr = self.__socket.accept()
 				sock.settimeout(CONFIG.CONNECTION_TIMEOUT)
-				sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 ** 13)
-				sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 ** 13)
+				sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self.__conf.sendBufferSize)
+				sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.__conf.recvBufferSize)
 				sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 				sock.setblocking(0)
-				self.__unknownConnections.append(_Connection(sock))
+				self.__unknownConnections.append(_Connection(sock, self.__conf.connectionTimeout))
 			except socket.error as e:
 				if e.errno != socket.errno.EAGAIN:
 					raise e
@@ -521,18 +570,23 @@ class SyncObj(object):
 		return self._idToMethod[funcID](*args, **kwargs)
 
 	def _onMessageReceived(self, nodeAddr, message):
-		if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
-			if message['type'] == 'request_vote':
+
+		if message['type'] == 'request_vote':
+
+			if message['term'] > self.__raftCurrentTerm:
+				self.__raftCurrentTerm = message['term']
+				self.__raftState = _RAFT_STATE.FOLLOWER
+
+			if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
 				lastLogTerm = message['last_log_term']
 				lastLogIdx = message['last_log_index']
-				if message['term'] > self.__raftCurrentTerm:
+				if message['term'] >= self.__raftCurrentTerm:
 					if lastLogTerm < self.__raftLog[-1][2]:
 						return
 					if lastLogTerm == self.__raftLog[-1][2] and \
 							lastLogIdx < self.__raftLog[-1][1]:
 						return
 
-					self.__raftCurrentTerm = message['term']
 					self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
 					self.__send(nodeAddr, {
 						'type': 'response_vote',
@@ -544,6 +598,7 @@ class SyncObj(object):
 			if self.__raftLeader != nodeAddr:
 				self.__onLeaderChanged()
 			self.__raftLeader = nodeAddr
+			self.__raftCurrentTerm = message['term']
 			self.__raftState = _RAFT_STATE.FOLLOWER
 			newEntries = message.get('entries', [])
 			serialized = message.get('serialized', None)
@@ -625,12 +680,14 @@ class SyncObj(object):
 		})
 
 	def __generateRaftTimeout(self):
-		return 1.0 + 2.0 * random.random()
+		minTimeout = self.__conf.raftMinTimeout
+		maxTimeout = self.__conf.raftMaxTimeout
+		return minTimeout + (maxTimeout - minTimeout) * random.random()
 
 	def __bind(self):
 		self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 ** 13)
-		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 ** 13)
+		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self.__conf.sendBufferSize)
+		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.__conf.recvBufferSize)
 		self.__socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 		self.__socket.setblocking(0)
 		host, port = self.__selfNodeAddr.split(':')
@@ -696,7 +753,7 @@ class SyncObj(object):
 		self.__commandsWaitingReply = {}
 
 	def __sendAppendEntries(self):
-		self.__newAppendEntriesTime = time.time() + 0.3
+		self.__newAppendEntriesTime = time.time() + self.__conf.appendEntriesPeriod
 
 		startTime = time.time()
 
@@ -716,7 +773,7 @@ class SyncObj(object):
 				if nextNodeIndex >= self.__raftLog[0][1]:
 					prevLogIdx, prevLogTerm = self.__getPrevLogIndexTerm(nextNodeIndex)
 					if nextNodeIndex <= self.__getCurrentLogIndex():
-						entries = self.__getEntries(nextNodeIndex, 1000)
+						entries = self.__getEntries(nextNodeIndex, self.__conf.appendEntriesBatchSize)
 						self.__raftNextIndex[nodeAddr] = entries[-1][1] + 1
 
 					message = {
@@ -730,7 +787,8 @@ class SyncObj(object):
 					node.send(message)
 				else:
 					alreadyTansmitted = self.__outgoingSerializedData.get(nodeAddr, 0)
-					currentChunk = self.__lastSerialized[alreadyTansmitted:alreadyTansmitted + 2 ** 13]
+					currentChunk = self.__lastSerialized[alreadyTansmitted:alreadyTansmitted +
+																self.__conf.logCompactionBatchSize]
 					isLast = alreadyTansmitted + len(currentChunk) == len(self.__lastSerialized)
 					isFirst = alreadyTansmitted == 0
 					message = {
@@ -755,7 +813,7 @@ class SyncObj(object):
 				sendSingle = False
 
 				delta = time.time() - startTime
-				if delta > 0.3:
+				if delta > self.__conf.appendEntriesPeriod:
 					break
 
 
@@ -788,21 +846,28 @@ class SyncObj(object):
 	def _getSelfNodeAddr(self):
 		return self.__selfNodeAddr
 
+	def _getConf(self):
+		return self.__conf
+
 	def _getResolver(self):
 		return self.__resolver
 
 	def __tryLogCompaction(self):
 		currTime = time.time()
-		if len(self.__raftLog) > 5000 and currTime - self.__lastSerializedTime > 60:
-			self._serialize()
-			self.__lastSerializedTime = currTime
+		if len(self.__raftLog) > self.__conf.logCompactionMinEntries and \
+				currTime - self.__lastSerializedTime > self.__conf.logCompactionMinTime:
+			if self._serialize():
+				self.__lastSerializedTime = currTime
 
 	def _serialize(self):
-		data = dict([(k, self.__dict__[k]) for k in self.__dict__.keys() if k not in self.__properies])
 		lastAppliedEntries = self.__getEntries(self.__raftLastApplied - 1, 2)
+		if not lastAppliedEntries:
+			return False
+		data = dict([(k, self.__dict__[k]) for k in self.__dict__.keys() if k not in self.__properies])
 		self.__lastSerialized = zlib.compress(cPickle.dumps((data, lastAppliedEntries[1], lastAppliedEntries[0]), -1), 3)
 		self.__deleteEntriesTo(lastAppliedEntries[1][1])
 		self.__outgoingSerializedData = {}
+		return True
 
 	def _deserialize(self):
 		try:
