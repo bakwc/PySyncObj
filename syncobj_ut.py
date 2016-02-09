@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import sys
+import os
 import time
 import random
 from functools import partial
@@ -8,12 +9,13 @@ from syncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON
 
 class TestObj(SyncObj):
 
-	def __init__(self, selfNodeAddr, otherNodeAddrs, compactionTest = False):
+	def __init__(self, selfNodeAddr, otherNodeAddrs, compactionTest = 0, dumpFile = None):
 		cfg = SyncObjConf(autoTick=False, commandsQueueSize=10000, appendEntriesUseBatch=False)
 		if compactionTest:
-			cfg.logCompactionMinEntries = 10
+			cfg.logCompactionMinEntries = compactionTest
 			cfg.logCompactionMinTime = 0.1
 			cfg.appendEntriesUseBatch = True
+			cfg.fullDumpFile = dumpFile
 		super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs, cfg)
 		self.__counter = 0
 
@@ -114,9 +116,9 @@ def manyActionsLogCompaction():
 
 	a = [getNextAddr(), getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1], a[2]], compactionTest=True)
-	o2 = TestObj(a[1], [a[2], a[0]], compactionTest=True)
-	o3 = TestObj(a[2], [a[0], a[1]], compactionTest=True)
+	o1 = TestObj(a[0], [a[1], a[2]], compactionTest=100)
+	o2 = TestObj(a[1], [a[2], a[0]], compactionTest=100)
+	o3 = TestObj(a[2], [a[0], a[1]], compactionTest=100)
 	objs = [o1, o2, o3]
 
 	doTicks(objs, 3.5)
@@ -135,9 +137,9 @@ def manyActionsLogCompaction():
 	assert o2.getCounter() == 1000
 	assert o3.getCounter() == 1000
 
-	assert o1._getRaftLogSize() <= 10
-	assert o2._getRaftLogSize() <= 10
-	assert o3._getRaftLogSize() <= 10
+	assert o1._getRaftLogSize() <= 100
+	assert o2._getRaftLogSize() <= 100
+	assert o3._getRaftLogSize() <= 100
 
 	newObjs = [o1, o2]
 	doTicks(newObjs, 3.5)
@@ -156,9 +158,9 @@ def manyActionsLogCompaction():
 
 	assert o3.getCounter() == 2000
 
-	assert o1._getRaftLogSize() <= 10
-	assert o2._getRaftLogSize() <= 10
-	assert o3._getRaftLogSize() <= 10
+	assert o1._getRaftLogSize() <= 100
+	assert o2._getRaftLogSize() <= 100
+	assert o3._getRaftLogSize() <= 100
 
 def onAddValue(res, err, info):
 	assert res == 3
@@ -193,11 +195,60 @@ def checkCallbacksSimple():
 	assert o2.getCounter() == 3
 	assert callbackInfo['callback'] == True
 
+def removeFiles(files):
+	for f in (files):
+		try:
+			os.remove(f)
+		except:
+			pass
+
+def checkDumpToFile():
+	removeFiles(['dump1.bin', 'dump2.bin'])
+
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]], compactionTest=True, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], compactionTest=True, dumpFile = 'dump2.bin')
+	objs = [o1, o2]
+	doTicks(objs, 3.5)
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	o1.addValue(150)
+	o2.addValue(200)
+
+	doTicks(objs, 1.0)
+
+	assert o1.getCounter() == 350
+	assert o2.getCounter() == 350
+
+	del o1
+	del o2
+
+	a = [getNextAddr(), getNextAddr()]
+	o1 = TestObj(a[0], [a[1]], compactionTest=1, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], compactionTest=1, dumpFile = 'dump2.bin')
+	objs = [o1, o2]
+	doTicks(objs, 3.5)
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	assert o1.getCounter() == 350
+	assert o2.getCounter() == 350
+
+	removeFiles(['dump1.bin', 'dump2.bin'])
+
+
 def runTests():
 	syncTwoObjects()
 	syncThreeObjectsLeaderFail()
 	manyActionsLogCompaction()
 	checkCallbacksSimple()
+	checkDumpToFile()
 	print '[SUCCESS]'
 
 if __name__ == '__main__':

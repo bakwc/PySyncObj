@@ -1,5 +1,6 @@
 import time
 import random
+import os
 import select
 import socket
 import cPickle
@@ -304,8 +305,8 @@ class SyncObjConf(object):
 
 		# Log will be compacted after it reach minEntries size and minTime
 		# after previous compaction.
-		self.logCompactionMinEntries = 5000
-		self.logCompactionMinTime = 60
+		self.logCompactionMinEntries = kwargs.get('logCompactionMinEntries', 5000)
+		self.logCompactionMinTime = kwargs.get('logCompactionMinTime', 60)
 
 		# Max number of bytes per single append_entries command
 		# while sending serialized object.
@@ -315,6 +316,12 @@ class SyncObjConf(object):
 		# Otherwise - FAIL_REASON.MISSING_LEADER error will be emitted.
 		# Leader is missing when esteblishing connection or when election in progress.
 		self.commandsWaitLeader = kwargs.get('commandsWaitLeader', True)
+
+		# File to store full serialized object. Save full dump on disc when doing log compaction.
+		# None - to disable store.
+		self.fullDumpFile = kwargs.get('fullDumpFile', None)
+
+
 
 class SyncObj(object):
 
@@ -385,6 +392,7 @@ class SyncObj(object):
 			self.__nodes.append(_Node(self, nodeAddr))
 			self.__raftNextIndex[nodeAddr] = 0
 			self.__raftMatchIndex[nodeAddr] = 0
+		self.__needLoadDumpFile = True
 
 	def _applyCommand(self, command, callback):
 		try:
@@ -452,6 +460,7 @@ class SyncObj(object):
 	def _autoTickThread(self):
 		self.__initInTickThread()
 		self.__initialised.set()
+		time.sleep(0.1)
 		try:
 			while True:
 				if not self.__mainThread.is_alive():
@@ -461,6 +470,10 @@ class SyncObj(object):
 			pass
 
 	def _onTick(self, timeToWait = 0.0):
+
+		if self.__needLoadDumpFile:
+			self.__loadDumpFile()
+			self.__needLoadDumpFile = False
 
 		if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
 			if self.__raftElectionDeadline < time.time():
@@ -873,11 +886,37 @@ class SyncObj(object):
 		lastAppliedEntries = self.__getEntries(self.__raftLastApplied - 1, 2)
 		if not lastAppliedEntries:
 			return False
+
 		data = dict([(k, self.__dict__[k]) for k in self.__dict__.keys() if k not in self.__properies])
 		self.__lastSerialized = zlib.compress(cPickle.dumps((data, lastAppliedEntries[1], lastAppliedEntries[0]), -1), 3)
+
 		self.__deleteEntriesTo(lastAppliedEntries[1][1])
 		self.__outgoingSerializedData = {}
+
+		fullDumpFile = self.__conf.fullDumpFile
+		if fullDumpFile is None:
+			return True
+
+		try:
+			with open(fullDumpFile + '.tmp', 'wb') as f:
+				f.write(self.__lastSerialized)
+			os.rename(fullDumpFile + '.tmp', fullDumpFile)
+		except Exception as e:
+			print 'WARNING: failed to store full dump:', e
+			return True
+
 		return True
+
+	def __loadDumpFile(self):
+		if self.__conf.fullDumpFile is not None:
+			if os.path.isfile(self.__conf.fullDumpFile):
+				try:
+					with open(self.__conf.fullDumpFile, 'rb') as f:
+						self.__lastSerialized = f.read()
+						self._deserialize()
+				except Exception as e:
+					self.__lastSerialized = None
+					print 'WARNING: failed to load full dump:', e
 
 	def _deserialize(self):
 		try:
