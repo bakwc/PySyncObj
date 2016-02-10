@@ -303,8 +303,8 @@ class SyncObjConf(object):
 		self.dnsCacheTime = kwargs.get('dnsCacheTime', 600.0)
 		self.dnsFailCacheTime = kwargs.get('dnsFailCacheTime', 30.0)
 
-		# Log will be compacted after it reach minEntries size and minTime
-		# after previous compaction.
+		# Log will be compacted after it reach minEntries size or
+		# minTime after previous compaction.
 		self.logCompactionMinEntries = kwargs.get('logCompactionMinEntries', 5000)
 		self.logCompactionMinTime = kwargs.get('logCompactionMinTime', 60)
 
@@ -877,7 +877,7 @@ class SyncObj(object):
 
 	def __tryLogCompaction(self):
 		currTime = time.time()
-		if len(self.__raftLog) > self.__conf.logCompactionMinEntries and \
+		if len(self.__raftLog) > self.__conf.logCompactionMinEntries or \
 				currTime - self.__lastSerializedTime > self.__conf.logCompactionMinTime:
 			if self._serialize():
 				self.__lastSerializedTime = currTime
