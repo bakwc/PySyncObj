@@ -10,6 +10,7 @@ import threading
 import Queue
 import weakref
 import collections
+from debug_utils import *
 
 
 class _DnsCachingResolver(object):
@@ -35,7 +36,7 @@ class _DnsCachingResolver(object):
 		try:
 			ips = socket.gethostbyname_ex(hostname)[2]
 		except socket.gaierror:
-			print 'failed to resolve host %s' % hostname
+			LOG_WARNING('failed to resolve host %s' % hostname)
 			ips = []
 		return ips
 
@@ -48,7 +49,7 @@ class _Connection(object):
 		self.__writeBuffer = ''
 		self.__lastReadTime = time.time()
 		self.__timeout = timeout
-		self.__disconnected = False
+		self.__disconnected = socket is None
 
 	def __del__(self):
 		self.__socket = None
@@ -131,12 +132,17 @@ class _Connection(object):
 		if len(self.__readBuffer) - 4 < l:
 			return None
 		data = self.__readBuffer[4:4 + l]
-		message = cPickle.loads(zlib.decompress(data))
+		try:
+			message = cPickle.loads(zlib.decompress(data))
+		except (zlib.error, cPickle.UnpicklingError):
+			self.__disconnected = True
+			return None
 		self.__readBuffer = self.__readBuffer[4 + l:]
 		return message
 
 	def close(self):
 		self.__socket.close()
+		self.__disconnected = True
 
 	def socket(self):
 		return self.__socket
@@ -154,7 +160,7 @@ class _Node(object):
 		self.__nodeAddr = nodeAddr
 		self.__ip = syncObj._getResolver().resolve(nodeAddr.split(':')[0])
 		self.__port = int(nodeAddr.split(':')[1])
-		self.__conn = _Connection(syncObj._getConf().connectionTimeout)
+		self.__conn = _Connection(socket=None, timeout=syncObj._getConf().connectionTimeout)
 		self.__shouldConnect = syncObj._getSelfNodeAddr() > nodeAddr
 		self.__lastConnectAttemptTime = 0
 		self.__lastPingTime = 0
@@ -172,8 +178,9 @@ class _Node(object):
 			if self.__status == _NODE_STATUS.DISCONNECTED:
 				self.__connect()
 
-		if self.__shouldConnect and self.__status == _NODE_STATUS.CONNECTING:
-			return (self.__conn.socket(), self.__conn.socket(), self.__conn.socket())
+			if self.__status == _NODE_STATUS.CONNECTING:
+				return (self.__conn.socket(), self.__conn.socket(), self.__conn.socket())
+
 		if self.__status == _NODE_STATUS.CONNECTED:
 			readyWriteSocket = None
 			if self.__conn.getSendBufferSize() > 0:
@@ -321,7 +328,11 @@ class SyncObjConf(object):
 		# None - to disable store.
 		self.fullDumpFile = kwargs.get('fullDumpFile', None)
 
+		# Will try to bind port every bindRetryTime seconds until success.
+		self.bindRetryTime = kwargs.get('bindRetryTime', 1.0)
 
+
+# http://ramcloud.stanford.edu/raft.pdf
 
 class SyncObj(object):
 
@@ -351,6 +362,9 @@ class SyncObj(object):
 		self.__outgoingSerializedData = {}
 		self.__incomingSerializedData = None
 		self.__socket = None
+		self.__resolver = _DnsCachingResolver(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
+		self.__isInitialized = False
+		self.__lastInitTryTime = 0
 
 		self._methodToID = {}
 		self._idToMethod = {}
@@ -363,7 +377,6 @@ class SyncObj(object):
 		self.__mainThread = None
 		self.__initialised = None
 		self.__commandsQueue = Queue.Queue(self.__conf.commandsQueueSize)
-		self.__resolver = None
 		self.__nodes = []
 		self.__newAppendEntriesTime = 0
 
@@ -386,13 +399,18 @@ class SyncObj(object):
 			self.__initInTickThread()
 
 	def __initInTickThread(self):
-		self.__resolver = _DnsCachingResolver(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
-		self.__bind()
-		for nodeAddr in self.__otherNodesAddrs:
-			self.__nodes.append(_Node(self, nodeAddr))
-			self.__raftNextIndex[nodeAddr] = 0
-			self.__raftMatchIndex[nodeAddr] = 0
-		self.__needLoadDumpFile = True
+		try:
+			self.__lastInitTryTime = time.time()
+			self.__bind()
+			self.__nodes = []
+			for nodeAddr in self.__otherNodesAddrs:
+				self.__nodes.append(_Node(self, nodeAddr))
+				self.__raftNextIndex[nodeAddr] = 0
+				self.__raftMatchIndex[nodeAddr] = 0
+			self.__needLoadDumpFile = True
+			self.__isInitialized = True
+		except:
+			LOG_CURRENT_EXCEPTION()
 
 	def _applyCommand(self, command, callback):
 		try:
@@ -470,6 +488,13 @@ class SyncObj(object):
 			pass
 
 	def _onTick(self, timeToWait = 0.0):
+		if not self.__isInitialized:
+			if time.time() >= self.__lastInitTryTime + self.__conf.bindRetryTime:
+				self.__initInTickThread()
+
+		if not self.__isInitialized:
+			time.sleep(timeToWait)
+			return
 
 		if self.__needLoadDumpFile:
 			self.__loadDumpFile()
@@ -486,13 +511,13 @@ class SyncObj(object):
 					node.send({
 						'type': 'request_vote',
 						'term': self.__raftCurrentTerm,
-						'last_log_index': self.__raftLog[-1][1],
-						'last_log_term': self.__raftLog[-1][2],
+						'last_log_index': self.__getCurrentLogIndex(),
+						'last_log_term': self.__getCurrentLogTerm(),
 					})
 				self.__onLeaderChanged()
 
 		if self.__raftState == _RAFT_STATE.LEADER:
-			while self.__raftCommitIndex < self.__raftLog[-1][1]:
+			while self.__raftCommitIndex < self.__getCurrentLogIndex():
 				nextCommitIndex = self.__raftCommitIndex + 1
 				count = 1
 				for node in self.__nodes:
@@ -551,14 +576,14 @@ class SyncObj(object):
 				sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.__conf.recvBufferSize)
 				sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 				sock.setblocking(0)
-				self.__unknownConnections.append(_Connection(sock, self.__conf.connectionTimeout))
+				self.__unknownConnections.append(_Connection(socket=sock, timeout=self.__conf.connectionTimeout))
 			except socket.error as e:
 				if e.errno != socket.errno.EAGAIN:
 					raise e
 
 		if self.__socket in xlist:
-			print ' === some error for main socket'
-			# todo: handle
+			self.__isInitialized = False
+			LOG_WARNING('Error in main socket')
 
 		self.__processUnknownConnections(rlist, xlist)
 
@@ -569,13 +594,12 @@ class SyncObj(object):
 		return self.__raftCommitIndex
 
 	def printStatus(self):
-		print 'self:    ', self.__selfNodeAddr
-		print 'leader:  ', self.__raftLeader
-		print 'partner nodes:', len(self.__nodes)
+		LOG_DEBUG('self', self.__selfNodeAddr)
+		LOG_DEBUG('leader', self.__raftLeader)
+		LOG_DEBUG('partner nodes', len(self.__nodes))
 		for n in self.__nodes:
-			print n.getAddress(), n.getStatus()
-		print 'log size:', len(zlib.compress(cPickle.dumps(self.__raftLog, -1)))
-		print ''
+			LOG_DEBUG(n.getAddress(), n.getStatus())
+		LOG_DEBUG('log size:', len(zlib.compress(cPickle.dumps(self.__raftLog, -1))))
 
 	def __doApplyCommand(self, command):
 		args = []
@@ -604,10 +628,10 @@ class SyncObj(object):
 				lastLogTerm = message['last_log_term']
 				lastLogIdx = message['last_log_index']
 				if message['term'] >= self.__raftCurrentTerm:
-					if lastLogTerm < self.__raftLog[-1][2]:
+					if lastLogTerm < self.__getCurrentLogTerm():
 						return
-					if lastLogTerm == self.__raftLog[-1][2] and \
-							lastLogIdx < self.__raftLog[-1][1]:
+					if lastLogTerm == self.__getCurrentLogTerm() and \
+							lastLogIdx < self.__getCurrentLogIndex():
 						return
 
 					self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
@@ -657,7 +681,7 @@ class SyncObj(object):
 
 			self.__sendNextNodeIdx(nodeAddr)
 
-			self.__raftCommitIndex = min(leaderCommitIndex, self.__raftLog[-1][1])
+			self.__raftCommitIndex = min(leaderCommitIndex, self.__getCurrentLogIndex())
 
 		if message['type'] == 'apply_command':
 			if 'request_id' in message:
@@ -698,7 +722,7 @@ class SyncObj(object):
 	def __sendNextNodeIdx(self, nodeAddr, reset = False):
 		self.__send(nodeAddr, {
 			'type': 'next_node_idx',
-			'next_node_idx': self.__raftLog[-1][1] + 1,
+			'next_node_idx': self.__getCurrentLogIndex() + 1,
 			'reset': reset,
 		})
 
@@ -719,6 +743,9 @@ class SyncObj(object):
 
 	def __getCurrentLogIndex(self):
 		return self.__raftLog[-1][1]
+
+	def __getCurrentLogTerm(self):
+		return self.__raftLog[-1][2]
 
 	def __getPrevLogIndexTerm(self, nextNodeIndex):
 		prevIndex = nextNodeIndex - 1
@@ -901,8 +928,9 @@ class SyncObj(object):
 			with open(fullDumpFile + '.tmp', 'wb') as f:
 				f.write(self.__lastSerialized)
 			os.rename(fullDumpFile + '.tmp', fullDumpFile)
-		except Exception as e:
-			print 'WARNING: failed to store full dump:', e
+		except:
+			LOG_WARNING('Failed to store full dump')
+			LOG_CURRENT_EXCEPTION()
 			return True
 
 		return True
@@ -914,9 +942,10 @@ class SyncObj(object):
 					with open(self.__conf.fullDumpFile, 'rb') as f:
 						self.__lastSerialized = f.read()
 						self._deserialize()
-				except Exception as e:
+				except:
 					self.__lastSerialized = None
-					print 'WARNING: failed to load full dump:', e
+					LOG_WARNING('Failed to load full dump')
+					LOG_CURRENT_EXCEPTION()
 
 	def _deserialize(self):
 		try:
