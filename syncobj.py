@@ -5,6 +5,7 @@ import select
 import socket
 import cPickle
 import zlib
+import gzip
 import struct
 import threading
 import Queue
@@ -253,6 +254,181 @@ class _Node(object):
 				self.__conn.send(self.__syncObj()._getSelfNodeAddr())
 
 
+class _SERIALIZER_STATE:
+	NOT_SERIALIZING = 0
+	SERIALIZING = 1
+	SUCCESS = 2
+	FAILED = 3
+
+class _Serializer(object):
+
+	def __init__(self, fileName, transmissionBatchSize):
+		self.__fileName = fileName
+		self.__transmissionBatchSize = transmissionBatchSize
+		self.__pid = 0
+		self.__currentID = 0
+		self.__transmissions = {}
+		self.__incomingTransmissionFile = None
+		self.__inMemorySerializedData = None
+
+	def checkSerializing(self):
+		# In-memory case
+		if self.__fileName is None:
+			if self.__pid == -1:
+				self.__pid = 0
+				self.__transmissions = {}
+				return _SERIALIZER_STATE.SUCCESS, self.__currentID
+			return _SERIALIZER_STATE.NOT_SERIALIZING, None
+
+		# File case
+		pid = self.__pid
+		if pid == 0:
+			return _SERIALIZER_STATE.NOT_SERIALIZING, None
+		try:
+			rpid, status = os.waitpid(pid, os.WNOHANG)
+		except OSError:
+			self.__pid = 0
+			return _SERIALIZER_STATE.FAILED, self.__currentID
+		if rpid == pid:
+			if status == 0:
+				self.__transmissions = {}
+				self.__pid = 0
+				return _SERIALIZER_STATE.SUCCESS, self.__currentID
+			self.__pid = 0
+			return _SERIALIZER_STATE.FAILED, self.__currentID
+		return _SERIALIZER_STATE.SERIALIZING, self.__currentID
+
+	def serialize(self, data, id):
+		if self.__pid != 0:
+			return
+
+		self.__currentID = id
+
+		# In-memory case
+		if self.__fileName is None:
+			self.__inMemorySerializedData = zlib.compress(cPickle.dumps(data, -1))
+			self.__pid = -1
+			return
+
+		# File case
+		pid = os.fork()
+		if pid != 0:
+			self.__pid = pid
+			return
+
+		try:
+			tmpFile = self.__fileName + '.tmp'
+			with open(tmpFile, 'wb') as f:
+				with gzip.GzipFile(fileobj=f) as g:
+					cPickle.dump(data, g, -1)
+			os.rename(tmpFile, self.__fileName)
+			os._exit(0)
+		except:
+			os._exit(-1)
+
+	def deserialize(self):
+		if self.__fileName is None:
+			return cPickle.loads(zlib.decompress(self.__inMemorySerializedData))
+
+		with open(self.__fileName, 'rb') as f:
+			with gzip.GzipFile(fileobj=f) as g:
+				return cPickle.load(g)
+
+	def getTransmissionData(self, transmissionID):
+		if self.__pid != 0:
+			return None
+		transmission = self.__transmissions.get(transmissionID, None)
+		if transmission is None:
+			try:
+				if self.__fileName is None:
+					data = self.__inMemorySerializedData
+					assert data is not None
+					self.__transmissions[transmissionID] = transmission = {
+						'transmitted': 0,
+						'data': data,
+					}
+				else:
+					self.__transmissions[transmissionID] = transmission = {
+						'file': open(self.__fileName, 'rb'),
+						'transmitted': 0,
+					}
+			except:
+				LOG_WARNING('Failed to open file for transmission')
+				self.__transmissions.pop(transmissionID, None)
+				return None
+		isFirst = transmission['transmitted'] == 0
+		try:
+			if self.__fileName is None:
+				transmitted = transmission['transmitted']
+				data = transmission['data'][transmitted:transmitted + self.__transmissionBatchSize]
+			else:
+				data = transmission['file'].read(self.__transmissionBatchSize)
+		except:
+			LOG_WARNING('Error reading transmission file')
+			self.__transmissions.pop(transmissionID, None)
+			return False
+		size = len(data)
+		transmission['transmitted'] += size
+		isLast = size == 0
+		if isLast:
+			self.__transmissions.pop(transmissionID, None)
+		return data, isFirst, isLast
+
+	def setTransmissionData(self, data):
+		if data is None:
+			return False
+		data, isFirst, isLast = data
+
+		# In-memory case
+		if self.__fileName is None:
+			if isFirst:
+				self.__incomingTransmissionFile = ''
+			elif self.__incomingTransmissionFile is None:
+				return False
+			self.__incomingTransmissionFile += data
+			if isLast:
+				self.__inMemorySerializedData = self.__incomingTransmissionFile
+				self.__incomingTransmissionFile = None
+				return True
+			return False
+
+		# File case
+		tmpFile = self.__fileName + '.1.tmp'
+		if isFirst:
+			if self.__incomingTransmissionFile is not None:
+				self.__incomingTransmissionFile.close()
+			try:
+				self.__incomingTransmissionFile = open(tmpFile, 'wb')
+			except:
+				LOG_WARNING('Failed to open file for incoming transition')
+				LOG_CURRENT_EXCEPTION()
+				self.__incomingTransmissionFile = None
+				return False
+		elif self.__incomingTransmissionFile is None:
+			return False
+		try:
+			self.__incomingTransmissionFile.write(data)
+		except:
+			LOG_WARNING('Failed to write incoming transition data')
+			LOG_CURRENT_EXCEPTION()
+			self.__incomingTransmissionFile = None
+			return False
+		if isLast:
+			self.__incomingTransmissionFile.close()
+			self.__incomingTransmissionFile = None
+			try:
+				os.rename(tmpFile, self.__fileName)
+			except:
+				LOG_WARNING('Failed to rename temporary incoming transition file')
+				LOG_CURRENT_EXCEPTION()
+				return False
+			return True
+		return False
+
+	def cancelTransmisstion(self, id):
+		self.__transmissions.pop(id, None)
+
+
 class _RAFT_STATE:
 	FOLLOWER = 0
 	CANDIDATE = 1
@@ -357,12 +533,10 @@ class SyncObj(object):
 		self.__raftLastApplied = 1
 		self.__raftNextIndex = {}
 		self.__raftMatchIndex = {}
-		self.__lastSerialized = None
 		self.__lastSerializedTime = 0
-		self.__outgoingSerializedData = {}
-		self.__incomingSerializedData = None
 		self.__socket = None
 		self.__resolver = _DnsCachingResolver(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
+		self.__serializer = _Serializer(self.__conf.fullDumpFile, self.__conf.logCompactionBatchSize)
 		self.__isInitialized = False
 		self.__lastInitTryTime = 0
 
@@ -497,7 +671,8 @@ class SyncObj(object):
 			return
 
 		if self.__needLoadDumpFile:
-			self.__loadDumpFile()
+			if self.__conf.fullDumpFile is not None and os.path.isfile(self.__conf.fullDumpFile):
+				self.__loadDumpFile()
 			self.__needLoadDumpFile = False
 
 		if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
@@ -669,15 +844,8 @@ class SyncObj(object):
 
 			# Install snapshot
 			else:
-				isLast = message.get('is_last')
-				isFirst = message.get('is_first')
-				if isFirst:
-					self.__incomingSerializedData = ''
-				self.__incomingSerializedData += serialized
-				if isLast:
-					self.__lastSerialized = self.__incomingSerializedData
-					self.__incomingSerializedData = ''
-					self._deserialize()
+				if self.__serializer.setTransmissionData(serialized):
+					self.__loadDumpFile()
 
 			self.__sendNextNodeIdx(nodeAddr)
 
@@ -811,7 +979,7 @@ class SyncObj(object):
 			nodeAddr = node.getAddress()
 
 			if not node.isConnected():
-				self.__outgoingSerializedData.pop(nodeAddr, 0)
+				self.__serializer.cancelTransmisstion(nodeAddr)
 				continue
 
 			sendSingle = True
@@ -836,27 +1004,23 @@ class SyncObj(object):
 					}
 					node.send(message)
 				else:
-					alreadyTansmitted = self.__outgoingSerializedData.get(nodeAddr, 0)
-					currentChunk = self.__lastSerialized[alreadyTansmitted:alreadyTansmitted +
-																self.__conf.logCompactionBatchSize]
-					isLast = alreadyTansmitted + len(currentChunk) == len(self.__lastSerialized)
-					isFirst = alreadyTansmitted == 0
+					transmissionData = self.__serializer.getTransmissionData(nodeAddr)
 					message = {
 						'type': 'append_entries',
 						'term': self.__raftCurrentTerm,
 						'commit_index': self.__raftCommitIndex,
-						'serialized': currentChunk,
-						'is_last': isLast,
-						'is_first': isFirst,
+						'serialized': transmissionData,
 					}
 					node.send(message)
-					if isLast:
-						self.__raftNextIndex[nodeAddr] = self.__raftLog[0][1]
-						self.__outgoingSerializedData.pop(nodeAddr, 0)
-						sendingSerialized = False
+					if transmissionData is not None:
+						isLast = transmissionData[2]
+						if isLast:
+							self.__raftNextIndex[nodeAddr] = self.__raftLog[0][1]
+							sendingSerialized = False
+						else:
+							sendingSerialized = True
 					else:
-						sendingSerialized = True
-						self.__outgoingSerializedData[nodeAddr] = alreadyTansmitted + len(currentChunk)
+						sendingSerialized = False
 
 				nextNodeIndex = self.__raftNextIndex[nodeAddr]
 
@@ -904,58 +1068,40 @@ class SyncObj(object):
 
 	def __tryLogCompaction(self):
 		currTime = time.time()
-		if len(self.__raftLog) > self.__conf.logCompactionMinEntries or \
-				currTime - self.__lastSerializedTime > self.__conf.logCompactionMinTime:
-			if self._serialize():
-				self.__lastSerializedTime = currTime
+		serializeState, serializeID = self.__serializer.checkSerializing()
 
-	def _serialize(self):
+		if serializeState == _SERIALIZER_STATE.SUCCESS:
+			self.__lastSerializedTime = currTime
+			self.__deleteEntriesTo(serializeID)
+
+		if serializeState == _SERIALIZER_STATE.FAILED:
+			LOG_WARNING("Failed to store full dump")
+
+		if serializeState != _SERIALIZER_STATE.NOT_SERIALIZING:
+			return
+
+		if len(self.__raftLog) <= self.__conf.logCompactionMinEntries and \
+				currTime - self.__lastSerializedTime <= self.__conf.logCompactionMinTime:
+			return
+
 		lastAppliedEntries = self.__getEntries(self.__raftLastApplied - 1, 2)
 		if not lastAppliedEntries:
-			return False
+			return
 
 		data = dict([(k, self.__dict__[k]) for k in self.__dict__.keys() if k not in self.__properies])
-		self.__lastSerialized = zlib.compress(cPickle.dumps((data, lastAppliedEntries[1], lastAppliedEntries[0]), -1), 3)
-
-		self.__deleteEntriesTo(lastAppliedEntries[1][1])
-		self.__outgoingSerializedData = {}
-
-		fullDumpFile = self.__conf.fullDumpFile
-		if fullDumpFile is None:
-			return True
-
-		try:
-			with open(fullDumpFile + '.tmp', 'wb') as f:
-				f.write(self.__lastSerialized)
-			os.rename(fullDumpFile + '.tmp', fullDumpFile)
-		except:
-			LOG_WARNING('Failed to store full dump')
-			LOG_CURRENT_EXCEPTION()
-			return True
-
-		return True
+		self.__serializer.serialize((data, lastAppliedEntries[1], lastAppliedEntries[0]), lastAppliedEntries[1][1])
 
 	def __loadDumpFile(self):
-		if self.__conf.fullDumpFile is not None:
-			if os.path.isfile(self.__conf.fullDumpFile):
-				try:
-					with open(self.__conf.fullDumpFile, 'rb') as f:
-						self.__lastSerialized = f.read()
-						self._deserialize()
-				except:
-					self.__lastSerialized = None
-					LOG_WARNING('Failed to load full dump')
-					LOG_CURRENT_EXCEPTION()
-
-	def _deserialize(self):
 		try:
-			data = cPickle.loads(zlib.decompress(self.__lastSerialized))
+			data = self.__serializer.deserialize()
+			for k, v in data[0].iteritems():
+				self.__dict__[k] = v
+			self.__raftLog = [data[2], data[1]]
+			self.__raftLastApplied = data[1][1]
 		except:
-			return
-		for k, v in data[0].iteritems():
-			self.__dict__[k] = v
-		self.__raftLog = [data[2], data[1]]
-		self.__raftLastApplied = data[1][1]
+			LOG_WARNING('Failed to load full dump')
+			LOG_CURRENT_EXCEPTION()
+
 
 def replicated(func):
 	def newFunc(self, *args, **kwargs):
