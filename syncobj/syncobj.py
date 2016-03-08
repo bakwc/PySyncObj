@@ -1,623 +1,26 @@
 import time
 import random
 import os
-import select
 import socket
 import cPickle
 import zlib
-import gzip
-import struct
 import threading
 import Queue
 import weakref
 import collections
 from debug_utils import *
-
-
-class _DnsCachingResolver(object):
-
-	def __init__(self, cacheTime, failCacheTime):
-		self.__cache = {}
-		self.__cacheTime = cacheTime
-		self.__failCacheTime = failCacheTime
-
-	def resolve(self, hostname):
-		currTime = time.time()
-		cachedTime, ips = self.__cache.get(hostname, (0, []))
-		timePassed = currTime - cachedTime
-		if (timePassed > self.__cacheTime) or (not ips and timePassed > self.__failCacheTime):
-			prevIps = ips
-			ips = self.__doResolve(hostname)
-			if not ips:
-				ips = prevIps
-			self.__cache[hostname] = (currTime, ips)
-		return None if not ips else random.choice(ips)
-
-	def __doResolve(self, hostname):
-		try:
-			ips = socket.gethostbyname_ex(hostname)[2]
-		except socket.gaierror:
-			LOG_WARNING('failed to resolve host %s' % hostname)
-			ips = []
-		return ips
-
-
-class _POLL_EVENT_TYPE:
-	READ = 1
-	WRITE = 2
-	ERROR = 4
-
-class _Poller(object):
-
-	def subscribe(self, descr, callback, eventMask):
-		pass
-
-	def unsubscribe(self, descr):
-		pass
-
-	def poll(self, timeout):
-		pass
-
-class _SelectPoller(_Poller):
-
-	def __init__(self):
-		self.__descrsRead = set()
-		self.__descrsWrite = set()
-		self.__descrsError = set()
-		self.__descrToCallbacks = {}
-
-
-	def subscribe(self, descr, callback, eventMask):
-		if eventMask & _POLL_EVENT_TYPE.READ:
-			self.__descrsRead.add(descr)
-		if eventMask & _POLL_EVENT_TYPE.WRITE:
-			self.__descrsWrite.add(descr)
-		if eventMask & _POLL_EVENT_TYPE.ERROR:
-			self.__descrsError.add(descr)
-		self.__descrToCallbacks[descr] = callback
-
-	def unsubscribe(self, descr):
-		self.__descrsRead.discard(descr)
-		self.__descrsWrite.discard(descr)
-		self.__descrsError.discard(descr)
-		self.__descrToCallbacks.pop(descr, None)
-
-	def poll(self, timeout):
-		rlist, wlist, xlist = select.select(list(self.__descrsRead),
-											list(self.__descrsWrite),
-											list(self.__descrsError),
-											timeout)
-
-		allDescrs = set(rlist + wlist + xlist)
-		rlist = set(rlist)
-		wlist = set(wlist)
-		xlist = set(xlist)
-		for descr in allDescrs:
-			event = 0
-			if descr in rlist:
-				event |= _POLL_EVENT_TYPE.READ
-			if descr in wlist:
-				event |= _POLL_EVENT_TYPE.WRITE
-			if descr in xlist:
-				event |= _POLL_EVENT_TYPE.ERROR
-			self.__descrToCallbacks[descr](descr, event)
-
-class _PollPoller(_Poller):
-
-	def __init__(self):
-		self.__poll = select.poll()
-		self.__descrToCallbacks = {}
-
-	def subscribe(self, descr, callback, eventMask):
-		pollEventMask = 0
-		if eventMask & _POLL_EVENT_TYPE.READ:
-			pollEventMask |= select.POLLIN
-		if eventMask & _POLL_EVENT_TYPE.WRITE:
-			pollEventMask |= select.POLLOUT
-		if eventMask & _POLL_EVENT_TYPE.ERROR:
-			pollEventMask |= select.POLLERR
-		self.__descrToCallbacks[descr] = callback
-		self.__poll.register(descr, pollEventMask)
-
-	def unsubscribe(self, descr):
-		try:
-			self.__poll.unregister(descr)
-		except KeyError:
-			pass
-
-	def poll(self, timeout):
-		events = self.__poll.poll(timeout)
-		for descr, event in events:
-			eventMask = 0
-			if event & select.POLLIN:
-				eventMask |= _POLL_EVENT_TYPE.READ
-			if event & select.POLLOUT:
-				eventMask |= _POLL_EVENT_TYPE.WRITE
-			if event & select.POLLERR:
-				eventMask |= _POLL_EVENT_TYPE.ERROR
-			self.__descrToCallbacks[descr](descr, eventMask)
-
-def createPoller():
-	if hasattr(select, 'poll'):
-		return _PollPoller()
-	return _SelectPoller()
-
-
-class _Connection(object):
-
-	def __init__(self, socket = None, timeout = 10.0):
-		self.__socket = socket
-		self.__readBuffer = ''
-		self.__writeBuffer = ''
-		self.__lastReadTime = time.time()
-		self.__timeout = timeout
-		self.__disconnected = socket is None
-		self.__fileno = None if socket is None else socket.fileno()
-
-	def __del__(self):
-		self.__socket = None
-
-	def isDisconnected(self):
-		return self.__disconnected or time.time() - self.__lastReadTime > self.__timeout
-
-	def connect(self, host, port):
-		self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 ** 13)
-		self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 ** 13)
-		self.__socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-		self.__socket.setblocking(0)
-		self.__readBuffer = ''
-		self.__writeBuffer = ''
-		self.__lastReadTime = time.time()
-
-		try:
-			self.__socket.connect((host, port))
-		except socket.error as e:
-			if e.errno != socket.errno.EINPROGRESS:
-				return False
-		self.__fileno = self.__socket.fileno()
-		self.__disconnected = False
-		return True
-
-	def send(self, message):
-		data = zlib.compress(cPickle.dumps(message, -1), 3)
-		data = struct.pack('i', len(data)) + data
-		self.__writeBuffer += data
-		self.trySendBuffer()
-
-	def trySendBuffer(self):
-		while self.processSend():
-			pass
-
-	def processSend(self):
-		if not self.__writeBuffer:
-			return False
-		try:
-			res = self.__socket.send(self.__writeBuffer)
-			if res < 0:
-				self.__writeBuffer = ''
-				self.__readBuffer = ''
-				self.__disconnected = True
-				return False
-			if res == 0:
-				return False
-
-			self.__writeBuffer = self.__writeBuffer[res:]
-			return True
-		except socket.error as e:
-			if e.errno != socket.errno.EAGAIN:
-				self.__writeBuffer = ''
-				self.__readBuffer = ''
-				self.__disconnected = True
-			return False
-
-	def getSendBufferSize(self):
-		return len(self.__writeBuffer)
-
-	def read(self):
-		try:
-			incoming = self.__socket.recv(2 ** 13)
-		except socket.error as e:
-			if e.errno != socket.errno.EAGAIN:
-				self.__disconnected = True
-			return
-		if self.__socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):
-			self.__disconnected = True
-			return
-		if not incoming:
-			return
-		self.__lastReadTime = time.time()
-		self.__readBuffer += incoming
-
-	def getMessage(self):
-		if len(self.__readBuffer) < 4:
-			return None
-		l = struct.unpack('i', self.__readBuffer[:4])[0]
-		if len(self.__readBuffer) - 4 < l:
-			return None
-		data = self.__readBuffer[4:4 + l]
-		try:
-			message = cPickle.loads(zlib.decompress(data))
-		except (zlib.error, cPickle.UnpicklingError):
-			self.__disconnected = True
-			return None
-		self.__readBuffer = self.__readBuffer[4 + l:]
-		return message
-
-	def close(self):
-		self.__socket.close()
-		self.__disconnected = True
-
-	def socket(self):
-		return self.__socket
-
-	def fileno(self):
-		return self.__fileno
-
-
-class _NODE_STATUS:
-	DISCONNECTED = 0
-	CONNECTING = 1
-	CONNECTED = 2
-
-class _Node(object):
-
-	def __init__(self, syncObj, nodeAddr):
-		self.__syncObj = weakref.ref(syncObj)
-		self.__nodeAddr = nodeAddr
-		self.__ip = syncObj._getResolver().resolve(nodeAddr.split(':')[0])
-		self.__port = int(nodeAddr.split(':')[1])
-		self.__poller = syncObj._getPoller()
-		self.__conn = _Connection(socket=None,
-								  timeout=syncObj._getConf().connectionTimeout)
-
-		self.__shouldConnect = syncObj._getSelfNodeAddr() > nodeAddr
-		self.__lastConnectAttemptTime = 0
-		self.__lastPingTime = 0
-		self.__status = _NODE_STATUS.DISCONNECTED
-
-	def __del__(self):
-		self.__conn = None
-
-	def onPartnerConnected(self, conn):
-		self.__conn = conn
-		self.__status = _NODE_STATUS.CONNECTED
-		self.__poller.subscribe(self.__conn.fileno(),
-								self.__processConnection,
-								_POLL_EVENT_TYPE.READ | _POLL_EVENT_TYPE.WRITE | _POLL_EVENT_TYPE.ERROR)
-
-	def getStatus(self):
-		return self.__status
-
-	def isConnected(self):
-		return self.__status == _NODE_STATUS.CONNECTED
-
-	def getAddress(self):
-		return self.__nodeAddr
-
-	def getSendBufferSize(self):
-		return self.__conn.getSendBufferSize()
-
-	def send(self, message):
-		if self.__status != _NODE_STATUS.CONNECTED:
-			return False
-		self.__conn.send(message)
-		if self.__conn.isDisconnected():
-			self.__status = _NODE_STATUS.DISCONNECTED
-			self.__poller.unsubscribe(self.__conn.fileno())
-			self.__conn.close()
-			return False
-		return True
-
-	def connectIfRequired(self):
-		if not self.__shouldConnect:
-			return
-		if self.__status != _NODE_STATUS.DISCONNECTED:
-			return
-		if time.time() - self.__lastConnectAttemptTime < self.__syncObj()._getConf().connectionRetryTime:
-			return
-		self.__status = _NODE_STATUS.CONNECTING
-		self.__lastConnectAttemptTime = time.time()
-		if not self.__conn.connect(self.__ip, self.__port):
-			self.__status = _NODE_STATUS.DISCONNECTED
-			return
-		self.__poller.subscribe(self.__conn.fileno(),
-								self.__processConnection,
-								_POLL_EVENT_TYPE.READ | _POLL_EVENT_TYPE.WRITE | _POLL_EVENT_TYPE.ERROR)
-
-	def __processConnection(self, descr, eventType):
-		assert descr == self.__conn.fileno()
-
-		isError = False
-		if eventType & _POLL_EVENT_TYPE.ERROR:
-			isError = True
-
-		if eventType & _POLL_EVENT_TYPE.READ or eventType & _POLL_EVENT_TYPE.WRITE:
-			if self.__conn.socket().getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):
-				isError = True
-			else:
-				if self.__status == _NODE_STATUS.CONNECTING:
-					self.__conn.send(self.__syncObj()._getSelfNodeAddr())
-					self.__status = _NODE_STATUS.CONNECTED
-
-		if isError or self.__conn.isDisconnected():
-			self.__status = _NODE_STATUS.DISCONNECTED
-			self.__conn.close()
-			self.__poller.unsubscribe(descr)
-			return
-
-		if eventType & _POLL_EVENT_TYPE.WRITE:
-			if self.__status == _NODE_STATUS.CONNECTING:
-				self.__conn.send(self.__syncObj()._getSelfNodeAddr())
-				self.__status = _NODE_STATUS.CONNECTED
-			self.__conn.trySendBuffer()
-			event = _POLL_EVENT_TYPE.READ | _POLL_EVENT_TYPE.ERROR
-			if self.__conn.getSendBufferSize() > 0:
-				event |= _POLL_EVENT_TYPE.WRITE
-			if not self.__conn.isDisconnected():
-				self.__poller.subscribe(descr, self.__processConnection, event)
-
-		if eventType & _POLL_EVENT_TYPE.READ:
-			self.__conn.read()
-			while True:
-				message = self.__conn.getMessage()
-				if message is None:
-					break
-				self.__syncObj()._onMessageReceived(self.__nodeAddr, message)
-
-
-class _SERIALIZER_STATE:
-	NOT_SERIALIZING = 0
-	SERIALIZING = 1
-	SUCCESS = 2
-	FAILED = 3
-
-class _Serializer(object):
-
-	def __init__(self, fileName, transmissionBatchSize):
-		self.__fileName = fileName
-		self.__transmissionBatchSize = transmissionBatchSize
-		self.__pid = 0
-		self.__currentID = 0
-		self.__transmissions = {}
-		self.__incomingTransmissionFile = None
-		self.__inMemorySerializedData = None
-
-	def checkSerializing(self):
-		# In-memory case
-		if self.__fileName is None:
-			if self.__pid == -1:
-				self.__pid = 0
-				self.__transmissions = {}
-				return _SERIALIZER_STATE.SUCCESS, self.__currentID
-			return _SERIALIZER_STATE.NOT_SERIALIZING, None
-
-		# File case
-		pid = self.__pid
-		if pid == 0:
-			return _SERIALIZER_STATE.NOT_SERIALIZING, None
-		try:
-			rpid, status = os.waitpid(pid, os.WNOHANG)
-		except OSError:
-			self.__pid = 0
-			return _SERIALIZER_STATE.FAILED, self.__currentID
-		if rpid == pid:
-			if status == 0:
-				self.__transmissions = {}
-				self.__pid = 0
-				return _SERIALIZER_STATE.SUCCESS, self.__currentID
-			self.__pid = 0
-			return _SERIALIZER_STATE.FAILED, self.__currentID
-		return _SERIALIZER_STATE.SERIALIZING, self.__currentID
-
-	def serialize(self, data, id):
-		if self.__pid != 0:
-			return
-
-		self.__currentID = id
-
-		# In-memory case
-		if self.__fileName is None:
-			self.__inMemorySerializedData = zlib.compress(cPickle.dumps(data, -1))
-			self.__pid = -1
-			return
-
-		# File case
-		pid = os.fork()
-		if pid != 0:
-			self.__pid = pid
-			return
-
-		try:
-			tmpFile = self.__fileName + '.tmp'
-			with open(tmpFile, 'wb') as f:
-				with gzip.GzipFile(fileobj=f) as g:
-					cPickle.dump(data, g, -1)
-			os.rename(tmpFile, self.__fileName)
-			os._exit(0)
-		except:
-			os._exit(-1)
-
-	def deserialize(self):
-		if self.__fileName is None:
-			return cPickle.loads(zlib.decompress(self.__inMemorySerializedData))
-
-		with open(self.__fileName, 'rb') as f:
-			with gzip.GzipFile(fileobj=f) as g:
-				return cPickle.load(g)
-
-	def getTransmissionData(self, transmissionID):
-		if self.__pid != 0:
-			return None
-		transmission = self.__transmissions.get(transmissionID, None)
-		if transmission is None:
-			try:
-				if self.__fileName is None:
-					data = self.__inMemorySerializedData
-					assert data is not None
-					self.__transmissions[transmissionID] = transmission = {
-						'transmitted': 0,
-						'data': data,
-					}
-				else:
-					self.__transmissions[transmissionID] = transmission = {
-						'file': open(self.__fileName, 'rb'),
-						'transmitted': 0,
-					}
-			except:
-				LOG_WARNING('Failed to open file for transmission')
-				self.__transmissions.pop(transmissionID, None)
-				return None
-		isFirst = transmission['transmitted'] == 0
-		try:
-			if self.__fileName is None:
-				transmitted = transmission['transmitted']
-				data = transmission['data'][transmitted:transmitted + self.__transmissionBatchSize]
-			else:
-				data = transmission['file'].read(self.__transmissionBatchSize)
-		except:
-			LOG_WARNING('Error reading transmission file')
-			self.__transmissions.pop(transmissionID, None)
-			return False
-		size = len(data)
-		transmission['transmitted'] += size
-		isLast = size == 0
-		if isLast:
-			self.__transmissions.pop(transmissionID, None)
-		return data, isFirst, isLast
-
-	def setTransmissionData(self, data):
-		if data is None:
-			return False
-		data, isFirst, isLast = data
-
-		# In-memory case
-		if self.__fileName is None:
-			if isFirst:
-				self.__incomingTransmissionFile = ''
-			elif self.__incomingTransmissionFile is None:
-				return False
-			self.__incomingTransmissionFile += data
-			if isLast:
-				self.__inMemorySerializedData = self.__incomingTransmissionFile
-				self.__incomingTransmissionFile = None
-				return True
-			return False
-
-		# File case
-		tmpFile = self.__fileName + '.1.tmp'
-		if isFirst:
-			if self.__incomingTransmissionFile is not None:
-				self.__incomingTransmissionFile.close()
-			try:
-				self.__incomingTransmissionFile = open(tmpFile, 'wb')
-			except:
-				LOG_WARNING('Failed to open file for incoming transition')
-				LOG_CURRENT_EXCEPTION()
-				self.__incomingTransmissionFile = None
-				return False
-		elif self.__incomingTransmissionFile is None:
-			return False
-		try:
-			self.__incomingTransmissionFile.write(data)
-		except:
-			LOG_WARNING('Failed to write incoming transition data')
-			LOG_CURRENT_EXCEPTION()
-			self.__incomingTransmissionFile = None
-			return False
-		if isLast:
-			self.__incomingTransmissionFile.close()
-			self.__incomingTransmissionFile = None
-			try:
-				os.rename(tmpFile, self.__fileName)
-			except:
-				LOG_WARNING('Failed to rename temporary incoming transition file')
-				LOG_CURRENT_EXCEPTION()
-				return False
-			return True
-		return False
-
-	def cancelTransmisstion(self, id):
-		self.__transmissions.pop(id, None)
+from dns_resolver import DnsCachingResolver
+from poller import createPoller, POLL_EVENT_TYPE
+from serializer import Serializer, SERIALIZER_STATE
+from connection import Connection
+from node import Node
+from config import SyncObjConf, FAIL_REASON
 
 
 class _RAFT_STATE:
 	FOLLOWER = 0
 	CANDIDATE = 1
 	LEADER = 2
-
-class FAIL_REASON:
-	SUCCESS	= 0
-	QUEUE_FULL = 1
-	MISSING_LEADER = 2
-	DISCARDED = 3
-	NOT_LEADER = 4
-	LEADER_CHANGED = 5
-
-class SyncObjConf(object):
-	def __init__(self, **kwargs):
-		# Disable autoTick if you want to call onTick manually.
-		# Otherwise it will be called automatically from separate thread.
-		self.autoTick = kwargs.get('autoTick', True)
-		self.autoTickPeriod = kwargs.get('autoTickPeriod', 0.05)
-
-		# Commands queue is used to store commands before real processing.
-		self.commandsQueueSize = kwargs.get('commandsQueueSize', 1000)
-
-		# After randomly selected timeout (in range from minTimeout to maxTimeout)
-		# leader considered dead, and leader election starts.
-		self.raftMinTimeout = kwargs.get('raftMinTimeout', 1.0)
-		self.raftMaxTimeout = kwargs.get('raftMaxTimeout', 3.0)
-
-		# Interval of sending append_entries (ping) command.
-		# Should be less then raftMinTimeout.
-		self.appendEntriesPeriod = kwargs.get('appendEntriesPeriod', 0.3)
-
-		# When no data received for connectionTimeout - connection considered dead.
-		# Should be more then raftMaxTimeout.
-		self.connectionTimeout = kwargs.get('connectionTimeout', 3.5)
-
-		# Interval between connection attempts.
-		# Will try to connect to offline nodes each connectionRetryTime.
-		self.connectionRetryTime = kwargs.get('connectionRetryTime', 5.0)
-
-		# Max number of log entries per single append_entries command.
-		self.appendEntriesBatchSize = kwargs.get('appendEntriesBatchSize', 1000)
-
-		# Send multiple entries in a single command.
-		# Enabled (default) - improve overal perfomence (requests per second)
-		# Disabled - improve single request speed (don't wait till batch ready)
-		self.appendEntriesUseBatch = kwargs.get('appendEntriesUseBatch', True)
-
-		# Size of receive and send buffer for sockets.
-		self.sendBufferSize = kwargs.get('sendBufferSize', 2 ** 13)
-		self.recvBufferSize = kwargs.get('recvBufferSize', 2 ** 13)
-
-		# Time to cache dns requests (improves performance,
-		# no need to resolve address for each connection attempt).
-		self.dnsCacheTime = kwargs.get('dnsCacheTime', 600.0)
-		self.dnsFailCacheTime = kwargs.get('dnsFailCacheTime', 30.0)
-
-		# Log will be compacted after it reach minEntries size or
-		# minTime after previous compaction.
-		self.logCompactionMinEntries = kwargs.get('logCompactionMinEntries', 5000)
-		self.logCompactionMinTime = kwargs.get('logCompactionMinTime', 60)
-
-		# Max number of bytes per single append_entries command
-		# while sending serialized object.
-		self.logCompactionBatchSize = kwargs.get('logCompactionBatchSize', 2 ** 13)
-
-		# If true - commands will be enqueued and executed after leader detected.
-		# Otherwise - FAIL_REASON.MISSING_LEADER error will be emitted.
-		# Leader is missing when esteblishing connection or when election in progress.
-		self.commandsWaitLeader = kwargs.get('commandsWaitLeader', True)
-
-		# File to store full serialized object. Save full dump on disc when doing log compaction.
-		# None - to disable store.
-		self.fullDumpFile = kwargs.get('fullDumpFile', None)
-
-		# Will try to bind port every bindRetryTime seconds until success.
-		self.bindRetryTime = kwargs.get('bindRetryTime', 1.0)
 
 
 # http://ramcloud.stanford.edu/raft.pdf
@@ -647,8 +50,8 @@ class SyncObj(object):
 		self.__raftMatchIndex = {}
 		self.__lastSerializedTime = 0
 		self.__socket = None
-		self.__resolver = _DnsCachingResolver(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
-		self.__serializer = _Serializer(self.__conf.fullDumpFile, self.__conf.logCompactionBatchSize)
+		self.__resolver = DnsCachingResolver(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
+		self.__serializer = Serializer(self.__conf.fullDumpFile, self.__conf.logCompactionBatchSize)
 		self.__poller = createPoller()
 		self.__isInitialized = False
 		self.__lastInitTryTime = 0
@@ -691,7 +94,7 @@ class SyncObj(object):
 			self.__bind()
 			self.__nodes = []
 			for nodeAddr in self.__otherNodesAddrs:
-				self.__nodes.append(_Node(self, nodeAddr))
+				self.__nodes.append(Node(self, nodeAddr))
 				self.__raftNextIndex[nodeAddr] = 0
 				self.__raftMatchIndex[nodeAddr] = 0
 			self.__needLoadDumpFile = True
@@ -904,7 +307,7 @@ class SyncObj(object):
 			serialized = message.get('serialized', None)
 			leaderCommitIndex = message['commit_index']
 
-			# Regular appen entries
+			# Regular append entries
 			if serialized is None:
 				prevLogIdx = message['prevLogIdx']
 				prevLogTerm = message['prevLogTerm']
@@ -988,28 +391,28 @@ class SyncObj(object):
 		self.__socket.listen(5)
 		self.__poller.subscribe(self.__socket.fileno(),
 								self.__onNewConnection,
-								_POLL_EVENT_TYPE.READ | _POLL_EVENT_TYPE.ERROR)
+								POLL_EVENT_TYPE.READ | POLL_EVENT_TYPE.ERROR)
 
 	def __onNewConnection(self, localDescr, event):
-		if event & _POLL_EVENT_TYPE.READ:
+		if event & POLL_EVENT_TYPE.READ:
 			try:
 				sock, addr = self.__socket.accept()
 				sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self.__conf.sendBufferSize)
 				sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.__conf.recvBufferSize)
 				sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 				sock.setblocking(0)
-				conn = _Connection(socket=sock, timeout=self.__conf.connectionTimeout)
+				conn = Connection(socket=sock, timeout=self.__conf.connectionTimeout)
 				descr = conn.fileno()
 				self.__unknownConnections[descr] = conn
 				self.__poller.subscribe(descr,
 										self.__processUnknownConnections,
-										_POLL_EVENT_TYPE.READ | _POLL_EVENT_TYPE.ERROR)
+										POLL_EVENT_TYPE.READ | POLL_EVENT_TYPE.ERROR)
 			except socket.error as e:
 				if e.errno != socket.errno.EAGAIN:
 					self.__isInitialized = False
 					LOG_WARNING('Error in main socket:' + str(e))
 
-		if event & _POLL_EVENT_TYPE.ERROR:
+		if event & POLL_EVENT_TYPE.ERROR:
 			self.__isInitialized = False
 			LOG_WARNING('Error in main socket')
 
@@ -1145,7 +548,7 @@ class SyncObj(object):
 		conn = self.__unknownConnections[descr]
 		partnerNode = None
 		remove = False
-		if event & _POLL_EVENT_TYPE.READ:
+		if event & POLL_EVENT_TYPE.READ:
 			conn.read()
 			nodeAddr = conn.getMessage()
 			if nodeAddr is not None:
@@ -1156,7 +559,7 @@ class SyncObj(object):
 				else:
 					remove = True
 
-		if event & _POLL_EVENT_TYPE.ERROR:
+		if event & POLL_EVENT_TYPE.ERROR:
 			remove = True
 
 		if remove or conn.isDisconnected():
@@ -1186,14 +589,14 @@ class SyncObj(object):
 		currTime = time.time()
 		serializeState, serializeID = self.__serializer.checkSerializing()
 
-		if serializeState == _SERIALIZER_STATE.SUCCESS:
+		if serializeState == SERIALIZER_STATE.SUCCESS:
 			self.__lastSerializedTime = currTime
 			self.__deleteEntriesTo(serializeID)
 
-		if serializeState == _SERIALIZER_STATE.FAILED:
+		if serializeState == SERIALIZER_STATE.FAILED:
 			LOG_WARNING("Failed to store full dump")
 
-		if serializeState != _SERIALIZER_STATE.NOT_SERIALIZING:
+		if serializeState != SERIALIZER_STATE.NOT_SERIALIZING:
 			return
 
 		if len(self.__raftLog) <= self.__conf.logCompactionMinEntries and \
