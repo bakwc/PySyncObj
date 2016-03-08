@@ -42,6 +42,107 @@ class _DnsCachingResolver(object):
 		return ips
 
 
+class _POLL_EVENT_TYPE:
+	READ = 1
+	WRITE = 2
+	ERROR = 4
+
+class _Poller(object):
+
+	def subscribe(self, descr, callback, eventMask):
+		pass
+
+	def unsubscribe(self, descr):
+		pass
+
+	def poll(self, timeout):
+		pass
+
+class _SelectPoller(_Poller):
+
+	def __init__(self):
+		self.__descrsRead = set()
+		self.__descrsWrite = set()
+		self.__descrsError = set()
+		self.__descrToCallbacks = {}
+
+
+	def subscribe(self, descr, callback, eventMask):
+		if eventMask & _POLL_EVENT_TYPE.READ:
+			self.__descrsRead.add(descr)
+		if eventMask & _POLL_EVENT_TYPE.WRITE:
+			self.__descrsWrite.add(descr)
+		if eventMask & _POLL_EVENT_TYPE.ERROR:
+			self.__descrsError.add(descr)
+		self.__descrToCallbacks[descr] = callback
+
+	def unsubscribe(self, descr):
+		self.__descrsRead.discard(descr)
+		self.__descrsWrite.discard(descr)
+		self.__descrsError.discard(descr)
+		self.__descrToCallbacks.pop(descr, None)
+
+	def poll(self, timeout):
+		rlist, wlist, xlist = select.select(list(self.__descrsRead),
+											list(self.__descrsWrite),
+											list(self.__descrsError),
+											timeout)
+
+		allDescrs = set(rlist + wlist + xlist)
+		rlist = set(rlist)
+		wlist = set(wlist)
+		xlist = set(xlist)
+		for descr in allDescrs:
+			event = 0
+			if descr in rlist:
+				event |= _POLL_EVENT_TYPE.READ
+			if descr in wlist:
+				event |= _POLL_EVENT_TYPE.WRITE
+			if descr in xlist:
+				event |= _POLL_EVENT_TYPE.ERROR
+			self.__descrToCallbacks[descr](descr, event)
+
+class _PollPoller(_Poller):
+
+	def __init__(self):
+		self.__poll = select.poll()
+		self.__descrToCallbacks = {}
+
+	def subscribe(self, descr, callback, eventMask):
+		pollEventMask = 0
+		if eventMask & _POLL_EVENT_TYPE.READ:
+			pollEventMask |= select.POLLIN
+		if eventMask & _POLL_EVENT_TYPE.WRITE:
+			pollEventMask |= select.POLLOUT
+		if eventMask & _POLL_EVENT_TYPE.ERROR:
+			pollEventMask |= select.POLLERR
+		self.__descrToCallbacks[descr] = callback
+		self.__poll.register(descr, pollEventMask)
+
+	def unsubscribe(self, descr):
+		try:
+			self.__poll.unregister(descr)
+		except KeyError:
+			pass
+
+	def poll(self, timeout):
+		events = self.__poll.poll(timeout)
+		for descr, event in events:
+			eventMask = 0
+			if event & select.POLLIN:
+				eventMask |= _POLL_EVENT_TYPE.READ
+			if event & select.POLLOUT:
+				eventMask |= _POLL_EVENT_TYPE.WRITE
+			if event & select.POLLERR:
+				eventMask |= _POLL_EVENT_TYPE.ERROR
+			self.__descrToCallbacks[descr](descr, eventMask)
+
+def createPoller():
+	if hasattr(select, 'poll'):
+		return _PollPoller()
+	return _SelectPoller()
+
+
 class _Connection(object):
 
 	def __init__(self, socket = None, timeout = 10.0):
@@ -51,6 +152,7 @@ class _Connection(object):
 		self.__lastReadTime = time.time()
 		self.__timeout = timeout
 		self.__disconnected = socket is None
+		self.__fileno = None if socket is None else socket.fileno()
 
 	def __del__(self):
 		self.__socket = None
@@ -73,6 +175,7 @@ class _Connection(object):
 		except socket.error as e:
 			if e.errno != socket.errno.EINPROGRESS:
 				return False
+		self.__fileno = self.__socket.fileno()
 		self.__disconnected = False
 		return True
 
@@ -148,6 +251,9 @@ class _Connection(object):
 	def socket(self):
 		return self.__socket
 
+	def fileno(self):
+		return self.__fileno
+
 
 class _NODE_STATUS:
 	DISCONNECTED = 0
@@ -161,7 +267,10 @@ class _Node(object):
 		self.__nodeAddr = nodeAddr
 		self.__ip = syncObj._getResolver().resolve(nodeAddr.split(':')[0])
 		self.__port = int(nodeAddr.split(':')[1])
-		self.__conn = _Connection(socket=None, timeout=syncObj._getConf().connectionTimeout)
+		self.__poller = syncObj._getPoller()
+		self.__conn = _Connection(socket=None,
+								  timeout=syncObj._getConf().connectionTimeout)
+
 		self.__shouldConnect = syncObj._getSelfNodeAddr() > nodeAddr
 		self.__lastConnectAttemptTime = 0
 		self.__lastPingTime = 0
@@ -173,21 +282,9 @@ class _Node(object):
 	def onPartnerConnected(self, conn):
 		self.__conn = conn
 		self.__status = _NODE_STATUS.CONNECTED
-
-	def onTickStage1(self):
-		if self.__shouldConnect:
-			if self.__status == _NODE_STATUS.DISCONNECTED:
-				self.__connect()
-
-			if self.__status == _NODE_STATUS.CONNECTING:
-				return (self.__conn.socket(), self.__conn.socket(), self.__conn.socket())
-
-		if self.__status == _NODE_STATUS.CONNECTED:
-			readyWriteSocket = None
-			if self.__conn.getSendBufferSize() > 0:
-				readyWriteSocket = self.__conn.socket()
-			return (self.__conn.socket(), readyWriteSocket, self.__conn.socket())
-		return None
+		self.__poller.subscribe(self.__conn.fileno(),
+								self.__processConnection,
+								_POLL_EVENT_TYPE.READ | _POLL_EVENT_TYPE.WRITE | _POLL_EVENT_TYPE.ERROR)
 
 	def getStatus(self):
 		return self.__status
@@ -201,57 +298,72 @@ class _Node(object):
 	def getSendBufferSize(self):
 		return self.__conn.getSendBufferSize()
 
-	def onTickStage2(self, rlist, wlist, xlist):
-
-		if self.__shouldConnect:
-			if self.__status == _NODE_STATUS.CONNECTING:
-				self.__checkConnected(rlist, wlist, xlist)
-
-		if self.__status == _NODE_STATUS.CONNECTED:
-			if self.__conn.socket() in rlist:
-				self.__conn.read()
-				while True:
-					message = self.__conn.getMessage()
-					if message is None:
-						break
-					self.__syncObj()._onMessageReceived(self.__nodeAddr, message)
-			if self.__conn.socket() in wlist:
-				self.__conn.trySendBuffer()
-
-			if self.__conn.socket() in xlist or self.__conn.isDisconnected():
-				self.__status = _NODE_STATUS.DISCONNECTED
-				self.__conn.close()
-
 	def send(self, message):
 		if self.__status != _NODE_STATUS.CONNECTED:
 			return False
 		self.__conn.send(message)
 		if self.__conn.isDisconnected():
 			self.__status = _NODE_STATUS.DISCONNECTED
+			self.__poller.unsubscribe(self.__conn.fileno())
 			self.__conn.close()
 			return False
 		return True
 
-	def __connect(self):
+	def connectIfRequired(self):
+		if not self.__shouldConnect:
+			return
+		if self.__status != _NODE_STATUS.DISCONNECTED:
+			return
 		if time.time() - self.__lastConnectAttemptTime < self.__syncObj()._getConf().connectionRetryTime:
 			return
-
 		self.__status = _NODE_STATUS.CONNECTING
-
 		self.__lastConnectAttemptTime = time.time()
-
 		if not self.__conn.connect(self.__ip, self.__port):
 			self.__status = _NODE_STATUS.DISCONNECTED
+			return
+		self.__poller.subscribe(self.__conn.fileno(),
+								self.__processConnection,
+								_POLL_EVENT_TYPE.READ | _POLL_EVENT_TYPE.WRITE | _POLL_EVENT_TYPE.ERROR)
 
-	def __checkConnected(self, rlist, wlist, xlist):
-		if self.__conn.socket() in xlist:
-			self.__status = _NODE_STATUS.DISCONNECTED
-		if self.__conn.socket() in rlist or self.__conn.socket() in wlist:
+	def __processConnection(self, descr, eventType):
+		assert descr == self.__conn.fileno()
+
+		isError = False
+		if eventType & _POLL_EVENT_TYPE.ERROR:
+			isError = True
+
+		if eventType & _POLL_EVENT_TYPE.READ or eventType & _POLL_EVENT_TYPE.WRITE:
 			if self.__conn.socket().getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):
-				self.__status = _NODE_STATUS.DISCONNECTED
+				isError = True
 			else:
-				self.__status = _NODE_STATUS.CONNECTED
+				if self.__status == _NODE_STATUS.CONNECTING:
+					self.__conn.send(self.__syncObj()._getSelfNodeAddr())
+					self.__status = _NODE_STATUS.CONNECTED
+
+		if isError or self.__conn.isDisconnected():
+			self.__status = _NODE_STATUS.DISCONNECTED
+			self.__conn.close()
+			self.__poller.unsubscribe(descr)
+			return
+
+		if eventType & _POLL_EVENT_TYPE.WRITE:
+			if self.__status == _NODE_STATUS.CONNECTING:
 				self.__conn.send(self.__syncObj()._getSelfNodeAddr())
+				self.__status = _NODE_STATUS.CONNECTED
+			self.__conn.trySendBuffer()
+			event = _POLL_EVENT_TYPE.READ | _POLL_EVENT_TYPE.ERROR
+			if self.__conn.getSendBufferSize() > 0:
+				event |= _POLL_EVENT_TYPE.WRITE
+			if not self.__conn.isDisconnected():
+				self.__poller.subscribe(descr, self.__processConnection, event)
+
+		if eventType & _POLL_EVENT_TYPE.READ:
+			self.__conn.read()
+			while True:
+				message = self.__conn.getMessage()
+				if message is None:
+					break
+				self.__syncObj()._onMessageReceived(self.__nodeAddr, message)
 
 
 class _SERIALIZER_STATE:
@@ -521,7 +633,7 @@ class SyncObj(object):
 
 		self.__selfNodeAddr = selfNodeAddr
 		self.__otherNodesAddrs = otherNodesAddrs
-		self.__unknownConnections = []
+		self.__unknownConnections = {} # descr => _Connection
 		self.__raftState = _RAFT_STATE.FOLLOWER
 		self.__raftCurrentTerm = 0
 		self.__votesCount = 0
@@ -537,6 +649,7 @@ class SyncObj(object):
 		self.__socket = None
 		self.__resolver = _DnsCachingResolver(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
 		self.__serializer = _Serializer(self.__conf.fullDumpFile, self.__conf.logCompactionBatchSize)
+		self.__poller = createPoller()
 		self.__isInitialized = False
 		self.__lastInitTryTime = 0
 
@@ -724,46 +837,11 @@ class SyncObj(object):
 		self._checkCommandsToApply()
 		self.__tryLogCompaction()
 
-		socketsToCheckR = [self.__socket]
-		socketsToCheckW = [self.__socket]
-		socketsToCheckX = [self.__socket]
-		for conn in self.__unknownConnections:
-			socketsToCheckR.append(conn.socket())
-			socketsToCheckX.append(conn.socket())
-
 		for node in self.__nodes:
-			socks = node.onTickStage1()
-			if socks is not None:
-				sockR, sockW, sockX = socks
-				if sockR is not None:
-					socketsToCheckR.append(sockR)
-				if sockW is not None:
-					socketsToCheckW.append(sockW)
-				if sockX is not None:
-					socketsToCheckX.append(sockX)
+			node.connectIfRequired()
 
-		rlist, wlist, xlist = select.select(socketsToCheckR, socketsToCheckW, socketsToCheckX, timeToWait)
+		self.__poller.poll(timeToWait)
 
-		if self.__socket in rlist:
-			try:
-				sock, addr = self.__socket.accept()
-				sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self.__conf.sendBufferSize)
-				sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.__conf.recvBufferSize)
-				sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-				sock.setblocking(0)
-				self.__unknownConnections.append(_Connection(socket=sock, timeout=self.__conf.connectionTimeout))
-			except socket.error as e:
-				if e.errno != socket.errno.EAGAIN:
-					raise e
-
-		if self.__socket in xlist:
-			self.__isInitialized = False
-			LOG_WARNING('Error in main socket')
-
-		self.__processUnknownConnections(rlist, xlist)
-
-		for node in self.__nodes:
-			node.onTickStage2(rlist, wlist, xlist)
 
 	def _getLastCommitIndex(self):
 		return self.__raftCommitIndex
@@ -908,6 +986,32 @@ class SyncObj(object):
 		host, port = self.__selfNodeAddr.split(':')
 		self.__socket.bind((host, int(port)))
 		self.__socket.listen(5)
+		self.__poller.subscribe(self.__socket.fileno(),
+								self.__onNewConnection,
+								_POLL_EVENT_TYPE.READ | _POLL_EVENT_TYPE.ERROR)
+
+	def __onNewConnection(self, localDescr, event):
+		if event & _POLL_EVENT_TYPE.READ:
+			try:
+				sock, addr = self.__socket.accept()
+				sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self.__conf.sendBufferSize)
+				sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.__conf.recvBufferSize)
+				sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+				sock.setblocking(0)
+				conn = _Connection(socket=sock, timeout=self.__conf.connectionTimeout)
+				descr = conn.fileno()
+				self.__unknownConnections[descr] = conn
+				self.__poller.subscribe(descr,
+										self.__processUnknownConnections,
+										_POLL_EVENT_TYPE.READ | _POLL_EVENT_TYPE.ERROR)
+			except socket.error as e:
+				if e.errno != socket.errno.EAGAIN:
+					self.__isInitialized = False
+					LOG_WARNING('Error in main socket:' + str(e))
+
+		if event & _POLL_EVENT_TYPE.ERROR:
+			self.__isInitialized = False
+			LOG_WARNING('Error in main socket')
 
 	def __getCurrentLogIndex(self):
 		return self.__raftLog[-1][1]
@@ -1037,25 +1141,34 @@ class SyncObj(object):
 				node.send(message)
 				break
 
-	def __processUnknownConnections(self, rlist, xlist):
-		newUnknownConnections = []
-		for conn in self.__unknownConnections:
-			remove = False
-			if conn.socket() in rlist:
-				conn.read()
-				nodeAddr = conn.getMessage()
-				if nodeAddr is not None:
-					for node in self.__nodes:
-						if node.getAddress() == nodeAddr:
-							node.onPartnerConnected(conn)
-							break
+	def __processUnknownConnections(self, descr, event):
+		conn = self.__unknownConnections[descr]
+		partnerNode = None
+		remove = False
+		if event & _POLL_EVENT_TYPE.READ:
+			conn.read()
+			nodeAddr = conn.getMessage()
+			if nodeAddr is not None:
+				for node in self.__nodes:
+					if node.getAddress() == nodeAddr:
+						partnerNode = node
+						break
+				else:
 					remove = True
-			if conn.socket() in xlist:
-				remove = True
-			if not remove and not conn.isDisconnected():
-				newUnknownConnections.append(conn)
 
-		self.__unknownConnections = newUnknownConnections
+		if event & _POLL_EVENT_TYPE.ERROR:
+			remove = True
+
+		if remove or conn.isDisconnected():
+			self.__unknownConnections.pop(descr)
+			self.__poller.unsubscribe(descr)
+			conn.close()
+			return
+
+		if partnerNode is not None:
+			self.__unknownConnections.pop(descr)
+			assert conn.fileno() is not None
+			partnerNode.onPartnerConnected(conn)
 
 	def _getSelfNodeAddr(self):
 		return self.__selfNodeAddr
@@ -1065,6 +1178,9 @@ class SyncObj(object):
 
 	def _getResolver(self):
 		return self.__resolver
+
+	def _getPoller(self):
+		return self.__poller
 
 	def __tryLogCompaction(self):
 		currTime = time.time()
