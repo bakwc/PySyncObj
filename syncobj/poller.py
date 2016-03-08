@@ -84,14 +84,14 @@ class PollPoller(Poller):
 			pass
 
 	def poll(self, timeout):
-		events = self.__poll.poll(timeout)
+		events = self.__poll.poll(timeout * 1000)
 		for descr, event in events:
 			eventMask = 0
 			if event & select.POLLIN:
 				eventMask |= POLL_EVENT_TYPE.READ
 			if event & select.POLLOUT:
 				eventMask |= POLL_EVENT_TYPE.WRITE
-			if event & select.POLLERR:
+			if event & select.POLLERR or event & select.POLLHUP:
 				eventMask |= POLL_EVENT_TYPE.ERROR
 			self.__descrToCallbacks[descr](descr, eventMask)
 
