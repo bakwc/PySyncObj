@@ -3,7 +3,7 @@
 [![Build Status](https://travis-ci.org/bakwc/PySyncObj.svg?branch=master)](https://travis-ci.org/bakwc/PySyncObj)
 
 PySyncObj is a python library that provides ability to sync your data between multiple servers.
-- It use raft protocol for leader election and log replication.
+- It use [raft protocol](http://raft.github.io/) for leader election and log replication.
 - It supports log compaction. It use fork for copy-on-write while serializing data on disk.
 - It supports in-memory and on-disk serialization. You can use in-memory mode for small data and on-disk for big one.
 - No additional libraries required (you need only python2.6 or python2.7)
