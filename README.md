@@ -12,7 +12,6 @@ PySyncObj is a python library that provides ability to sync your data between mu
 
 # Usage
 Consider you have a class that implements counter:
-
 ```python
 class MyCounter(object):
 	def __init__(self):
@@ -24,15 +23,15 @@ class MyCounter(object):
 	def getCounter(self):
 		return self.__counter
 ```
-So, to transform your class to a replicated one:
+So, to transform your class into a replicated one:
  - Inherit it from SyncObj
- - Initialize SyncObj with a self address and a list of partner addresses. Eg. if you have serverA, serverB and serverC and want to use 4321 port, you should use self address serverA:4321 with partners [serverB:4321, serverC:4321] for your application, running at serverA; self address serverB:4321 with partners [serverA:4321, serverC:4321] for your application at serverB; self address serverC:4321 with partners [serverA:4321, serverB:4321] for app at serverC.
- - Mark all your methods that modifies your class fields with @replicated decorator.
+ - Initialize SyncObj with a self address and a list of partner addresses. Eg. if you have `serverA`, `serverB` and `serverC` and want to use 4321 port, you should use self address `serverA:4321` with partners `[serverB:4321, serverC:4321]` for your application, running at `serverA`; self address `serverB:4321` with partners `[serverA:4321, serverC:4321]` for your application at `serverB`; self address `serverC:4321` with partners `[serverA:4321, serverB:4321]` for app at `serverC`.
+ - Mark all your methods that modifies your class fields with `@replicated` decorator.
 So your final class will looks like:
 ```python
 class MyCounter(SyncObj):
 	def __init__(self):
-		super(MyCounter, self).__init__('serverA:1234', ['serverB:1234', 'serverC:1234'])
+		super(MyCounter, self).__init__('serverA:4321', ['serverB:4321', 'serverC:4321'])
 		self.__counter = 0
 
 	@replicated
