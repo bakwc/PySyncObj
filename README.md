@@ -41,4 +41,4 @@ class MyCounter(SyncObj):
 	def getCounter(self):
 		return self.__counter
 ```
-And thats all! Now you can call incCounter on serverA, and check counter value on serverB - they will be synchronized. You can look at example.py and syncobj_ut.py for more use-cases.
+And thats all! Now you can call `incCounter` on `serverA`, and check counter value on `serverB` - they will be synchronized. You can look at examples and syncobj_ut.py for more use-cases.
