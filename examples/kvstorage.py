@@ -1,5 +1,6 @@
 import sys
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+sys.path.append("../")
 from syncobj import SyncObj, SyncObjConf, replicated
 
 class KVStorage(SyncObj):
