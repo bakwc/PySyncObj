@@ -10,7 +10,12 @@ PySyncObj is a python library that provides ability to sync your data between mu
 - Configurable event loop - it can works in separate thread with it's own event loop - or you can call onTick function inside your own one.
 - Convenient interface - you can easily transform arbitrary class into a replicated one (see example below).
 
-# Usage
+## Install
+```bash
+pip install pysyncobj
+```
+
+## Usage
 Consider you have a class that implements counter:
 ```python
 class MyCounter(object):
