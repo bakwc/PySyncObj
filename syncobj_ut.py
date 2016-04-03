@@ -4,7 +4,7 @@ import os
 import time
 import random
 from functools import partial
-from syncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON
+from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON
 
 class TestObj(SyncObj):
 

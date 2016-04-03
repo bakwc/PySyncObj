@@ -4,7 +4,7 @@ import sys
 import time
 from functools import partial
 sys.path.append("../")
-from syncobj import SyncObj, replicated
+from pysyncobj import SyncObj, replicated
 
 
 class TestObj(SyncObj):

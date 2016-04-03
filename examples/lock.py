@@ -3,7 +3,7 @@ import threading
 import weakref
 import time
 sys.path.append("../")
-from syncobj import SyncObj, replicated
+from pysyncobj import SyncObj, replicated
 
 
 
