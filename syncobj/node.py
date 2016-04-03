@@ -108,9 +108,9 @@ class Node(object):
 				self.__poller.subscribe(descr, self.__processConnection, event)
 
 		if eventType & POLL_EVENT_TYPE.READ:
-			self.__conn.read()
-			while True:
-				message = self.__conn.getMessage()
-				if message is None:
-					break
-				self.__syncObj()._onMessageReceived(self.__nodeAddr, message)
+			if self.__conn.read():
+				while True:
+					message = self.__conn.getMessage()
+					if message is None:
+						break
+					self.__syncObj()._onMessageReceived(self.__nodeAddr, message)

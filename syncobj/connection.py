@@ -81,14 +81,15 @@ class Connection(object):
 		except socket.error as e:
 			if e.errno != socket.errno.EAGAIN:
 				self.__disconnected = True
-			return
+			return False
 		if self.__socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):
 			self.__disconnected = True
-			return
+			return False
 		if not incoming:
-			return
+			return False
 		self.__lastReadTime = time.time()
 		self.__readBuffer += incoming
+		return True
 
 	def getMessage(self):
 		if len(self.__readBuffer) < 4:

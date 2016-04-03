@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import sys
 import os
 import time
 import random
@@ -9,31 +8,55 @@ from syncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON
 
 class TestObj(SyncObj):
 
-	def __init__(self, selfNodeAddr, otherNodeAddrs, compactionTest = 0, dumpFile = None):
+	def __init__(self, selfNodeAddr, otherNodeAddrs,
+				 compactionTest = 0,
+				 dumpFile = None,
+				 compactionTest2 = False):
+
 		cfg = SyncObjConf(autoTick=False, commandsQueueSize=10000, appendEntriesUseBatch=False)
 		if compactionTest:
 			cfg.logCompactionMinEntries = compactionTest
 			cfg.logCompactionMinTime = 0.1
 			cfg.appendEntriesUseBatch = True
 			cfg.fullDumpFile = dumpFile
+		if compactionTest2:
+			cfg.logCompactionMinEntries = 99999
+			cfg.logCompactionMinTime = 99999
+			cfg.fullDumpFile = dumpFile
+			cfg.sendBufferSize = 2 ** 21
+			cfg.recvBufferSize = 2 ** 21
+			cfg.appendEntriesBatchSize = 10
+			cfg.maxCommandsPerTick = 5
+
 		super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs, cfg)
 		self.__counter = 0
+		self.__data = {}
 
 	@replicated
 	def addValue(self, value):
 		self.__counter += value
 		return self.__counter
 
+	@replicated
+	def addKeyValue(self, key, value):
+		self.__data[key] = value
+
 	def getCounter(self):
 		return self.__counter
+
+	def getValue(self, key):
+		return self.__data.get(key, None)
+
+	def dumpKeys(self):
+		print 'keys:', sorted(self.__data.keys())
 
 def doTicks(objects, timeToTick, interval = 0.05):
 	currTime = time.time()
 	finishTime = currTime + timeToTick
+	realInterval = float(interval) / float(len(objects))
 	while currTime < finishTime:
 		for o in objects:
-			o._onTick(0.0)
-		time.sleep(interval)
+			o._onTick(realInterval)
 		currTime = time.time()
 
 _g_nextAddress = 6000 + 60 * (int(time.time()) % 600)
@@ -243,12 +266,65 @@ def checkDumpToFile():
 	removeFiles(['dump1.bin', 'dump2.bin'])
 
 
+def getRandStr():
+	return '%0100000x' % random.randrange(16 ** 100000)
+
+
+def checkBigStorage():
+	removeFiles(['dump1.bin', 'dump2.bin'])
+
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]], compactionTest2=True, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], compactionTest2=True, dumpFile = 'dump2.bin')
+	objs = [o1, o2]
+	doTicks(objs, 3.5)
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	# Store ~50Mb data.
+	testRandStr = getRandStr()
+	for i in xrange(0, 500):
+		o1.addKeyValue(i, getRandStr())
+	o1.addKeyValue('test', testRandStr)
+
+	# Wait for replication.
+	doTicks(objs, 15.0, 0.05)
+
+	assert o1.getValue('test') == testRandStr
+
+	o1._forceLogCompaction()
+	o2._forceLogCompaction()
+
+	# Wait for disk dump
+	doTicks(objs, 5.0, 0.05)
+
+
+	a = [getNextAddr(), getNextAddr()]
+	o1 = TestObj(a[0], [a[1]], compactionTest=1, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], compactionTest=1, dumpFile = 'dump2.bin')
+	objs = [o1, o2]
+	doTicks(objs, 3.5)
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	assert o1.getValue('test') == testRandStr
+	assert o2.getValue('test') == testRandStr
+
+	removeFiles(['dump1.bin', 'dump2.bin'])
+
+
 def runTests():
 	syncTwoObjects()
 	syncThreeObjectsLeaderFail()
 	manyActionsLogCompaction()
 	checkCallbacksSimple()
 	checkDumpToFile()
+	checkBigStorage()
 	print '[SUCCESS]'
 
 if __name__ == '__main__':

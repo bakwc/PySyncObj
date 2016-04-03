@@ -23,7 +23,7 @@ class _RAFT_STATE:
 	LEADER = 2
 
 
-# http://ramcloud.stanford.edu/raft.pdf
+# https://github.com/bakwc/PySyncObj
 
 class SyncObj(object):
 
@@ -48,7 +48,8 @@ class SyncObj(object):
 		self.__raftLastApplied = 1
 		self.__raftNextIndex = {}
 		self.__raftMatchIndex = {}
-		self.__lastSerializedTime = 0
+		self.__lastSerializedTime = time.time()
+		self.__forceLogCompaction = False
 		self.__socket = None
 		self.__resolver = DnsCachingResolver(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
 		self.__serializer = Serializer(self.__conf.fullDumpFile, self.__conf.logCompactionBatchSize)
@@ -109,7 +110,7 @@ class SyncObj(object):
 			callback(None, FAIL_REASON.QUEUE_FULL)
 
 	def _checkCommandsToApply(self):
-		while True:
+		for i in xrange(self.__conf.maxCommandsPerTick):
 			if self.__raftLeader is None and self.__conf.commandsWaitLeader:
 				break
 			try:
@@ -249,13 +250,20 @@ class SyncObj(object):
 	def _getLastCommitIndex(self):
 		return self.__raftCommitIndex
 
-	def printStatus(self):
+	def _printStatus(self):
 		LOG_DEBUG('self', self.__selfNodeAddr)
 		LOG_DEBUG('leader', self.__raftLeader)
 		LOG_DEBUG('partner nodes', len(self.__nodes))
 		for n in self.__nodes:
 			LOG_DEBUG(n.getAddress(), n.getStatus())
-		LOG_DEBUG('log size:', len(zlib.compress(cPickle.dumps(self.__raftLog, -1))))
+		LOG_DEBUG('log len:', len(self.__raftLog))
+		LOG_DEBUG('log size bytes:', len(zlib.compress(cPickle.dumps(self.__raftLog, -1))))
+		LOG_DEBUG('last applied:', self.__raftLastApplied)
+		LOG_DEBUG('commit idx:', self.__raftCommitIndex)
+		LOG_DEBUG('next node idx:', self.__raftNextIndex)
+
+	def _forceLogCompaction(self):
+		self.__forceLogCompaction = True
 
 	def __doApplyCommand(self, command):
 		args = []
@@ -492,11 +500,11 @@ class SyncObj(object):
 			sendSingle = True
 			sendingSerialized = False
 			nextNodeIndex = self.__raftNextIndex[nodeAddr]
-			entries = []
 
 			while nextNodeIndex <= self.__getCurrentLogIndex() or sendSingle or sendingSerialized:
 				if nextNodeIndex >= self.__raftLog[0][1]:
 					prevLogIdx, prevLogTerm = self.__getPrevLogIndexTerm(nextNodeIndex)
+					entries = []
 					if nextNodeIndex <= self.__getCurrentLogIndex():
 						entries = self.__getEntries(nextNodeIndex, self.__conf.appendEntriesBatchSize)
 						self.__raftNextIndex[nodeAddr] = entries[-1][1] + 1
@@ -600,8 +608,11 @@ class SyncObj(object):
 			return
 
 		if len(self.__raftLog) <= self.__conf.logCompactionMinEntries and \
-				currTime - self.__lastSerializedTime <= self.__conf.logCompactionMinTime:
+				currTime - self.__lastSerializedTime <= self.__conf.logCompactionMinTime and\
+				not self.__forceLogCompaction:
 			return
+
+		self.__forceLogCompaction = False
 
 		lastAppliedEntries = self.__getEntries(self.__raftLastApplied - 1, 2)
 		if not lastAppliedEntries:
