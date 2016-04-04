@@ -2,13 +2,13 @@ from distutils.core import setup
 setup(
   name = 'pysyncobj',
   packages = ['pysyncobj'],
-  version = '0.1',
+  version = '0.1.1',
   description = 'A library for replicating your python class between multiple servers, '
 				'based on raft protocol',
   author = 'Filipp Ozinov',
   author_email = 'fippo@mail.ru',
   url = 'https://github.com/bakwc/PySyncObj',
-  download_url = 'https://github.com/bakwc/PySyncObj/tarball/0.1',
+  download_url = 'https://github.com/bakwc/PySyncObj/tarball/0.1.1',
   keywords = ['network', 'replication', 'raft', 'synchronization'],
   classifiers = [
 	  'Topic :: System :: Networking',
