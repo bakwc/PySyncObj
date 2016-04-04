@@ -129,7 +129,7 @@ def syncThreeObjectsLeaderFail():
 
 	assert newObjs[0].getCounter() == 400
 
-	doTicks(objs, 0.5)
+	doTicks(objs, 3.5)
 	for o in objs:
 		assert o.getCounter() == 400
 
