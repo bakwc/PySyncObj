@@ -76,7 +76,9 @@ class Node(object):
 								POLL_EVENT_TYPE.READ | POLL_EVENT_TYPE.WRITE | POLL_EVENT_TYPE.ERROR)
 
 	def __processConnection(self, descr, eventType):
-		assert descr == self.__conn.fileno()
+		if descr != self.__conn.fileno():
+			self.__poller.unsubscribe(descr)
+			return
 
 		isError = False
 		if eventType & POLL_EVENT_TYPE.ERROR:
