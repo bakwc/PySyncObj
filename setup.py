@@ -15,7 +15,7 @@ setup(
     author='Filipp Ozinov',
     author_email='fippo@mail.ru',
     url='https://github.com/bakwc/PySyncObj',
-    download_url='https://github.com/bakwc/PySyncObj/tarball/0.1.2',
+    download_url='https://github.com/bakwc/PySyncObj/tarball/0.1.3',
     keywords=['network', 'replication', 'raft', 'synchronization'],
     classifiers=[
         'Topic :: System :: Networking',
