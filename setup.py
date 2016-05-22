@@ -9,13 +9,13 @@ except(IOError, ImportError, RuntimeError):
 setup(
     name='pysyncobj',
     packages=['pysyncobj'],
-    version='0.1.2',
+    version='0.1.4',
     description='A library for replicating your python class between multiple servers, based on raft protocol',
     long_description=long_description,
     author='Filipp Ozinov',
     author_email='fippo@mail.ru',
     url='https://github.com/bakwc/PySyncObj',
-    download_url='https://github.com/bakwc/PySyncObj/tarball/0.1.3',
+    download_url='https://github.com/bakwc/PySyncObj/tarball/0.1.4',
     keywords=['network', 'replication', 'raft', 'synchronization'],
     classifiers=[
         'Topic :: System :: Networking',
