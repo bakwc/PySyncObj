@@ -1,0 +1,4 @@
+*.pyc
+.idea/
+MANIFEST
+dist/
