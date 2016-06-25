@@ -8,8 +8,8 @@ import struct
 class Connection(object):
     def __init__(self, socket=None, timeout=10.0):
         self.__socket = socket
-        self.__readBuffer = ''
-        self.__writeBuffer = ''
+        self.__readBuffer = bytes()
+        self.__writeBuffer = bytes()
         self.__lastReadTime = time.time()
         self.__timeout = timeout
         self.__disconnected = socket is None
@@ -27,8 +27,8 @@ class Connection(object):
         self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 ** 13)
         self.__socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self.__socket.setblocking(0)
-        self.__readBuffer = ''
-        self.__writeBuffer = ''
+        self.__readBuffer = bytes()
+        self.__writeBuffer = bytes()
         self.__lastReadTime = time.time()
 
         try:
@@ -56,8 +56,8 @@ class Connection(object):
         try:
             res = self.__socket.send(self.__writeBuffer)
             if res < 0:
-                self.__writeBuffer = ''
-                self.__readBuffer = ''
+                self.__writeBuffer = bytes()
+                self.__readBuffer = bytes()
                 self.__disconnected = True
                 return False
             if res == 0:
@@ -67,8 +67,8 @@ class Connection(object):
             return True
         except socket.error as e:
             if e.errno != socket.errno.EAGAIN:
-                self.__writeBuffer = ''
-                self.__readBuffer = ''
+                self.__writeBuffer = bytes()
+                self.__readBuffer = bytes()
                 self.__disconnected = True
             return False
 

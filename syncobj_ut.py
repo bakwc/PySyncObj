@@ -292,7 +292,7 @@ def checkBigStorage():
 	o1.addKeyValue('test', testRandStr)
 
 	# Wait for replication.
-	doTicks(objs, 15.0, 0.05)
+	doTicks(objs, 15.0, 0.005)
 
 	assert o1.getValue('test') == testRandStr
 

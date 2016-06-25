@@ -133,7 +133,7 @@ class Serializer(object):
         # In-memory case
         if self.__fileName is None:
             if isFirst:
-                self.__incomingTransmissionFile = ''
+                self.__incomingTransmissionFile = bytes()
             elif self.__incomingTransmissionFile is None:
                 return False
             self.__incomingTransmissionFile += data

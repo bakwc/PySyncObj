@@ -438,7 +438,7 @@ class SyncObj(object):
 
     def __getEntries(self, fromIDx, count=None):
         firstEntryIDx = self.__raftLog[0][1]
-        if fromIDx < firstEntryIDx:
+        if fromIDx is None or fromIDx < firstEntryIDx:
             return []
         diff = fromIDx - firstEntryIDx
         if count is None:
