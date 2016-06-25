@@ -1,7 +1,7 @@
 import time
 import socket
 import random
-from pysyncobj.debug_utils import LOG_WARNING
+from debug_utils import LOG_WARNING
 
 
 class DnsCachingResolver(object):

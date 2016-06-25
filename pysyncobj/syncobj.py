@@ -14,7 +14,7 @@ from serializer import Serializer, SERIALIZER_STATE
 from connection import Connection
 from node import Node
 from config import SyncObjConf, FAIL_REASON
-from pysyncobj.debug_utils import LOG_CURRENT_EXCEPTION, LOG_DEBUG, LOG_WARNING
+from debug_utils import LOG_CURRENT_EXCEPTION, LOG_DEBUG, LOG_WARNING
 
 
 class _RAFT_STATE:

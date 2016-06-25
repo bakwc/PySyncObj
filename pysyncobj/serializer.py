@@ -2,7 +2,7 @@ import os
 import zlib
 import cPickle
 import gzip
-from pysyncobj.debug_utils import LOG_WARNING, LOG_CURRENT_EXCEPTION
+from debug_utils import LOG_WARNING, LOG_CURRENT_EXCEPTION
 
 
 class SERIALIZER_STATE:
