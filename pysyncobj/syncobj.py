@@ -314,7 +314,7 @@ class SyncObj(object):
             leaderCommitIndex = message['commit_index']
 
             # Regular append entries
-            if serialized is None:
+            if 'prevLogIdx' in message:
                 prevLogIdx = message['prevLogIdx']
                 prevLogTerm = message['prevLogTerm']
                 prevEntries = self.__getEntries(prevLogIdx)
@@ -330,7 +330,7 @@ class SyncObj(object):
                 self.__raftLog += newEntries
 
             # Install snapshot
-            else:
+            elif serialized is not None:
                 if self.__serializer.setTransmissionData(serialized):
                     self.__loadDumpFile()
 
