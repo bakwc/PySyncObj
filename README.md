@@ -6,7 +6,7 @@ PySyncObj is a python library that provides ability to sync your data between mu
 - It use [raft protocol](http://raft.github.io/) for leader election and log replication.
 - It supports log compaction. It use fork for copy-on-write while serializing data on disk.
 - It supports in-memory and on-disk serialization. You can use in-memory mode for small data and on-disk for big one.
-- No additional libraries required (you need only python2.6 or python2.7)
+- No additional libraries required (you need only python2.7 or python3.4)
 - Configurable event loop - it can works in separate thread with it's own event loop - or you can call onTick function inside your own one.
 - Convenient interface - you can easily transform arbitrary class into a replicated one (see example below).
 
