@@ -4,6 +4,7 @@ rm -rf pysyncobj/pysyncobj3/
 mv pysyncobj3/ pysyncobj/pysyncobj3/
 mv pysyncobj/pysyncobj3/py3init.py pysyncobj/pysyncobj3/__init__.py
 cp syncobj_ut.py syncobj3_ut.py
+2to3 -w syncobj3_ut.py
 
 for f in pysyncobj/pysyncobj3/*
 do

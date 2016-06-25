@@ -49,7 +49,7 @@ class TestObj(SyncObj):
 		return self.__data.get(key, None)
 
 	def dumpKeys(self):
-		print 'keys:', sorted(self.__data.keys())
+		print('keys:', sorted(self.__data.keys()))
 
 def doTicks(objects, timeToTick, interval = 0.05):
 	currTime = time.time()
@@ -151,7 +151,7 @@ def manyActionsLogCompaction():
 	assert o1._getLeader() == o2._getLeader()
 	assert o1._getLeader() == o3._getLeader()
 
-	for i in xrange(0, 500):
+	for i in range(0, 500):
 		o1.addValue(1)
 		o2.addValue(1)
 
@@ -168,7 +168,7 @@ def manyActionsLogCompaction():
 	newObjs = [o1, o2]
 	doTicks(newObjs, 3.5)
 
-	for i in xrange(0, 500):
+	for i in range(0, 500):
 		o1.addValue(1)
 		o2.addValue(1)
 
@@ -288,7 +288,7 @@ def checkBigStorage():
 
 	# Store ~50Mb data.
 	testRandStr = getRandStr()
-	for i in xrange(0, 500):
+	for i in range(0, 500):
 		o1.addKeyValue(i, getRandStr())
 	o1.addKeyValue('test', testRandStr)
 
@@ -326,7 +326,7 @@ def runTests():
 	checkCallbacksSimple()
 	checkDumpToFile()
 	checkBigStorage()
-	print '[SUCCESS]'
+	print('[SUCCESS]')
 
 if __name__ == '__main__':
 	runTests()
