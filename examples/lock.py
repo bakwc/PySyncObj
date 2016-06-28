@@ -44,7 +44,7 @@ class LockImpl(SyncObj):
         if existingLock is not None and existingLock[0] == clientID:
             del self.__locks[lockPath]
 
-    def isAckquired(self, lockPath, clientID, currentTime):
+    def isAcquired(self, lockPath, clientID, currentTime):
         existingLock = self.__locks.get(lockPath, None)
         if existingLock is not None:
             if existingLock[0] == clientID:
@@ -81,7 +81,7 @@ class Lock(object):
         self.__lockImpl.acquire(path, self.__selfID, time.time())
 
     def isAcquired(self, path):
-        return self.__lockImpl.isAckquired(path, self.__selfID, time.time())
+        return self.__lockImpl.isAcquired(path, self.__selfID, time.time())
 
     def release(self, path):
         self.__lockImpl.release(path, self.__selfID)
