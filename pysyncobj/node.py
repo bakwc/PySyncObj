@@ -20,7 +20,9 @@ class Node(object):
         self.__conn = TcpConnection(onConnected=self.__onConnected,
                                     onMessageReceived=self.__onMessageReceived,
                                     onDisconnected=self.__onDisconnected,
-                                    timeout=syncObj._getConf().connectionTimeout)
+                                    timeout=syncObj._getConf().connectionTimeout,
+                                    sendBufferSize=syncObj._getConf().sendBufferSize,
+                                    recvBufferSize=syncObj._getConf().recvBufferSize)
 
         self.__shouldConnect = syncObj._getSelfNodeAddr() > nodeAddr
         self.__lastConnectAttemptTime = 0
