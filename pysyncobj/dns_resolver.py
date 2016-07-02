@@ -10,6 +10,10 @@ class DnsCachingResolver(object):
         self.__cacheTime = cacheTime
         self.__failCacheTime = failCacheTime
 
+    def setTimeouts(self, cacheTime, failCacheTime):
+        self.__cacheTime = cacheTime
+        self.__failCacheTime = failCacheTime
+
     def resolve(self, hostname):
         currTime = time.time()
         cachedTime, ips = self.__cache.get(hostname, (0, []))
@@ -29,3 +33,10 @@ class DnsCachingResolver(object):
             LOG_WARNING('failed to resolve host %s' % hostname)
             ips = []
         return ips
+
+_g_resolver = None
+def globalDnsResolver():
+    global _g_resolver
+    if _g_resolver is None:
+        _g_resolver = DnsCachingResolver(cacheTime=600.0, failCacheTime=30.0)
+    return _g_resolver

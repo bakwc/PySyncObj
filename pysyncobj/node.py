@@ -1,9 +1,8 @@
 import weakref
 import time
-import socket
-from connection import Connection
-from poller import POLL_EVENT_TYPE
-
+from tcp_connection import TcpConnection
+from dns_resolver import globalDnsResolver
+from poller import globalPoller
 
 class NODE_STATUS:
     DISCONNECTED = 0
@@ -15,10 +14,13 @@ class Node(object):
     def __init__(self, syncObj, nodeAddr):
         self.__syncObj = weakref.ref(syncObj)
         self.__nodeAddr = nodeAddr
-        self.__ip = syncObj._getResolver().resolve(nodeAddr.split(':')[0])
+        self.__ip = globalDnsResolver().resolve(nodeAddr.split(':')[0])
         self.__port = int(nodeAddr.split(':')[1])
-        self.__poller = syncObj._getPoller()
-        self.__conn = Connection(socket=None, timeout=syncObj._getConf().connectionTimeout)
+        self.__poller = globalPoller()
+        self.__conn = TcpConnection(onConnected=self.__onConnected,
+                                    onMessageReceived=self.__onMessageReceived,
+                                    onDisconnected=self.__onDisconnected,
+                                    timeout=syncObj._getConf().connectionTimeout)
 
         self.__shouldConnect = syncObj._getSelfNodeAddr() > nodeAddr
         self.__lastConnectAttemptTime = 0
@@ -29,12 +31,21 @@ class Node(object):
         self.__conn = None
         self.__poller = None
 
+    def __onConnected(self):
+        self.__status = NODE_STATUS.CONNECTED
+        self.__conn.send(self.__syncObj()._getSelfNodeAddr())
+
+    def __onDisconnected(self):
+        self.__status = NODE_STATUS.DISCONNECTED
+
+    def __onMessageReceived(self, message):
+        self.__syncObj()._onMessageReceived(self.__nodeAddr, message)
+
     def onPartnerConnected(self, conn):
         self.__conn = conn
+        conn.setOnMessageReceivedCallback(self.__onMessageReceived)
+        conn.setOnDisconnectedCallback(self.__onDisconnected)
         self.__status = NODE_STATUS.CONNECTED
-        self.__poller.subscribe(self.__conn.fileno(),
-                                self.__processConnection,
-                                POLL_EVENT_TYPE.READ | POLL_EVENT_TYPE.WRITE | POLL_EVENT_TYPE.ERROR)
 
     def getStatus(self):
         return self.__status
@@ -52,10 +63,7 @@ class Node(object):
         if self.__status != NODE_STATUS.CONNECTED:
             return False
         self.__conn.send(message)
-        if self.__conn.isDisconnected():
-            self.__status = NODE_STATUS.DISCONNECTED
-            self.__poller.unsubscribe(self.__conn.fileno())
-            self.__conn.close()
+        if self.__status != NODE_STATUS.CONNECTED:
             return False
         return True
 
@@ -71,48 +79,3 @@ class Node(object):
         if not self.__conn.connect(self.__ip, self.__port):
             self.__status = NODE_STATUS.DISCONNECTED
             return
-        self.__poller.subscribe(self.__conn.fileno(),
-                                self.__processConnection,
-                                POLL_EVENT_TYPE.READ | POLL_EVENT_TYPE.WRITE | POLL_EVENT_TYPE.ERROR)
-
-    def __processConnection(self, descr, eventType):
-        if descr != self.__conn.fileno():
-            self.__poller.unsubscribe(descr)
-            return
-
-        isError = False
-        if eventType & POLL_EVENT_TYPE.ERROR:
-            isError = True
-
-        if eventType & POLL_EVENT_TYPE.READ or eventType & POLL_EVENT_TYPE.WRITE:
-            if self.__conn.socket().getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):
-                isError = True
-            else:
-                if self.__status == NODE_STATUS.CONNECTING:
-                    self.__conn.send(self.__syncObj()._getSelfNodeAddr())
-                    self.__status = NODE_STATUS.CONNECTED
-
-        if isError or self.__conn.isDisconnected():
-            self.__status = NODE_STATUS.DISCONNECTED
-            self.__conn.close()
-            self.__poller.unsubscribe(descr)
-            return
-
-        if eventType & POLL_EVENT_TYPE.WRITE:
-            if self.__status == NODE_STATUS.CONNECTING:
-                self.__conn.send(self.__syncObj()._getSelfNodeAddr())
-                self.__status = NODE_STATUS.CONNECTED
-            self.__conn.trySendBuffer()
-            event = POLL_EVENT_TYPE.READ | POLL_EVENT_TYPE.ERROR
-            if self.__conn.getSendBufferSize() > 0:
-                event |= POLL_EVENT_TYPE.WRITE
-            if not self.__conn.isDisconnected():
-                self.__poller.subscribe(descr, self.__processConnection, event)
-
-        if eventType & POLL_EVENT_TYPE.READ:
-            if self.__conn.read():
-                while True:
-                    message = self.__conn.getMessage()
-                    if message is None:
-                        break
-                    self.__syncObj()._onMessageReceived(self.__nodeAddr, message)

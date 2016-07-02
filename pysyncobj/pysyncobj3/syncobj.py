@@ -4,17 +4,17 @@
 import time
 import random
 import os
-import socket
 import pickle
 import zlib
 import threading
 import queue
 import weakref
 import collections
-from .dns_resolver import DnsCachingResolver
-from .poller import createPoller, POLL_EVENT_TYPE
+import functools
+from .dns_resolver import globalDnsResolver
+from .poller import globalPoller
 from .serializer import Serializer, SERIALIZER_STATE
-from .connection import Connection
+from .tcp_server import TcpServer
 from .node import Node
 from .config import SyncObjConf, FAIL_REASON
 from .debug_utils import LOG_CURRENT_EXCEPTION, LOG_DEBUG, LOG_WARNING
@@ -52,12 +52,16 @@ class SyncObj(object):
         self.__raftMatchIndex = {}
         self.__lastSerializedTime = time.time()
         self.__forceLogCompaction = False
-        self.__socket = None
-        self.__resolver = DnsCachingResolver(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
+        globalDnsResolver().setTimeouts(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
         self.__serializer = Serializer(self.__conf.fullDumpFile, self.__conf.logCompactionBatchSize)
-        self.__poller = createPoller()
         self.__isInitialized = False
         self.__lastInitTryTime = 0
+
+        host, port = selfNodeAddr.split(':')
+        self.__server = TcpServer(host, port, onNewConnection=self.__onNewConnection,
+                                  sendBufferSize=self.__conf.sendBufferSize,
+                                  recvBufferSize=self.__conf.recvBufferSize,
+                                  connectionTimeout=self.__conf.connectionTimeout)
 
         self._methodToID = {}
         self._idToMethod = {}
@@ -94,7 +98,7 @@ class SyncObj(object):
     def __initInTickThread(self):
         try:
             self.__lastInitTryTime = time.time()
-            self.__bind()
+            self.__server.bind()
             self.__nodes = []
             for nodeAddr in self.__otherNodesAddrs:
                 self.__nodes.append(Node(self, nodeAddr))
@@ -246,7 +250,8 @@ class SyncObj(object):
         for node in self.__nodes:
             node.connectIfRequired()
 
-        self.__poller.poll(timeToWait)
+        globalPoller().poll(timeToWait)
+
 
     def _getLastCommitIndex(self):
         return self.__raftCommitIndex
@@ -389,42 +394,27 @@ class SyncObj(object):
         maxTimeout = self.__conf.raftMaxTimeout
         return minTimeout + (maxTimeout - minTimeout) * random.random()
 
-    def __bind(self):
-        self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self.__conf.sendBufferSize)
-        self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.__conf.recvBufferSize)
-        self.__socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.__socket.setblocking(0)
-        host, port = self.__selfNodeAddr.split(':')
-        self.__socket.bind((host, int(port)))
-        self.__socket.listen(5)
-        self.__poller.subscribe(self.__socket.fileno(),
-                                self.__onNewConnection,
-                                POLL_EVENT_TYPE.READ | POLL_EVENT_TYPE.ERROR)
+    def __onNewConnection(self, conn):
+        descr = conn.fileno()
+        self.__unknownConnections[descr] = conn
+        conn.setOnMessageReceivedCallback(functools.partial(self.__onMessageReceived, conn))
+        conn.setOnDisconnectedCallback(functools.partial(self.__onDisconnected, conn))
 
-    def __onNewConnection(self, localDescr, event):
-        if event & POLL_EVENT_TYPE.READ:
-            try:
-                sock, addr = self.__socket.accept()
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self.__conf.sendBufferSize)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.__conf.recvBufferSize)
-                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                sock.setblocking(0)
-                conn = Connection(socket=sock, timeout=self.__conf.connectionTimeout)
-                descr = conn.fileno()
-                self.__unknownConnections[descr] = conn
-                self.__poller.subscribe(descr,
-                                        self.__processUnknownConnections,
-                                        POLL_EVENT_TYPE.READ | POLL_EVENT_TYPE.ERROR)
-            except socket.error as e:
-                if e.errno != socket.errno.EAGAIN:
-                    self.__isInitialized = False
-                    LOG_WARNING('Error in main socket:' + str(e))
+    def __onMessageReceived(self, conn, message):
+        descr = conn.fileno()
+        partnerNode = None
+        for node in self.__nodes:
+            if node.getAddress() == message:
+                partnerNode = node
+                break
+        if partnerNode is None:
+            conn.disconnect()
+            return
+        partnerNode.onPartnerConnected(conn)
+        self.__unknownConnections.pop(descr, None)
 
-        if event & POLL_EVENT_TYPE.ERROR:
-            self.__isInitialized = False
-            LOG_WARNING('Error in main socket')
+    def __onDisconnected(self, conn):
+        self.__unknownConnections.pop(conn.fileno(), None)
 
     def __getCurrentLogIndex(self):
         return self.__raftLog[-1][1]
@@ -553,46 +543,11 @@ class SyncObj(object):
                 node.send(message)
                 break
 
-    def __processUnknownConnections(self, descr, event):
-        conn = self.__unknownConnections[descr]
-        partnerNode = None
-        remove = False
-        if event & POLL_EVENT_TYPE.READ:
-            conn.read()
-            nodeAddr = conn.getMessage()
-            if nodeAddr is not None:
-                for node in self.__nodes:
-                    if node.getAddress() == nodeAddr:
-                        partnerNode = node
-                        break
-                else:
-                    remove = True
-
-        if event & POLL_EVENT_TYPE.ERROR:
-            remove = True
-
-        if remove or conn.isDisconnected():
-            self.__unknownConnections.pop(descr)
-            self.__poller.unsubscribe(descr)
-            conn.close()
-            return
-
-        if partnerNode is not None:
-            self.__unknownConnections.pop(descr)
-            assert conn.fileno() is not None
-            partnerNode.onPartnerConnected(conn)
-
     def _getSelfNodeAddr(self):
         return self.__selfNodeAddr
 
     def _getConf(self):
         return self.__conf
-
-    def _getResolver(self):
-        return self.__resolver
-
-    def _getPoller(self):
-        return self.__poller
 
     def __tryLogCompaction(self):
         currTime = time.time()

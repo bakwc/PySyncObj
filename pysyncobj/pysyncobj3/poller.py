@@ -103,3 +103,12 @@ def createPoller():
     if hasattr(select, 'poll'):
         return PollPoller()
     return SelectPoller()
+
+
+_g_poller = None
+
+def globalPoller():
+    global _g_poller
+    if _g_poller is None:
+        _g_poller = createPoller()
+    return _g_poller
