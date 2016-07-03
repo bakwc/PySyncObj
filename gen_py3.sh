@@ -8,6 +8,10 @@ cp syncobj_ut.py syncobj3_ut.py
 
 for f in pysyncobj/pysyncobj3/*
 do
+  sed 's/\\/\\\\/g' $f > tmp
+  mv tmp $f
   echo -e "#\n#  WARNING: this is generated file, use gen_py3.sh to update it.\n#\n$(cat $f)" > $f
 done
+sed 's/\\/\\\\/g' syncobj3_ut.py > tmp
+mv tmp syncobj3_ut.py
 echo -e "#\n#  WARNING: this is generated file, use gen_py3.sh to update it.\n#\n$(cat syncobj3_ut.py)" > syncobj3_ut.py

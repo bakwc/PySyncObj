@@ -18,6 +18,10 @@ class TcpConnection(object):
     def __init__(self, onMessageReceived = None, onConnected = None, onDisconnected = None,
                  socket=None, timeout=10.0, sendBufferSize = 2 ** 13, recvBufferSize = 2 ** 13):
 
+        self.sendRandKey = None
+        self.recvRandKey = None
+        self.encryptor = None
+
         self.__socket = socket
         self.__readBuffer = bytes()
         self.__writeBuffer = bytes()
@@ -40,6 +44,7 @@ class TcpConnection(object):
         self.__onDisconnected = onDisconnected
         self.__sendBufferSize = sendBufferSize
         self.__recvBufferSize = recvBufferSize
+
 
     def __del__(self):
         self.disconnect()
@@ -80,7 +85,11 @@ class TcpConnection(object):
         return True
 
     def send(self, message):
+        if self.sendRandKey:
+            message = (self.sendRandKey, message)
         data = zlib.compress(cPickle.dumps(message, -1), 3)
+        if self.encryptor:
+            data = self.encryptor.encrypt(data)
         data = struct.pack('i', len(data)) + data
         self.__writeBuffer += data
         self.__trySendBuffer()
@@ -94,6 +103,9 @@ class TcpConnection(object):
     def disconnect(self):
         if self.__onDisconnected is not None:
             self.__onDisconnected()
+        self.sendRandKey = None
+        self.recvRandKey = None
+        self.encryptor = None
         if self.__socket is not None:
             self.__socket.close()
             self.__socket = None
@@ -205,8 +217,13 @@ class TcpConnection(object):
             return None
         data = self.__readBuffer[4:4 + l]
         try:
+            if self.encryptor:
+                data = self.encryptor.decrypt(data)
             message = cPickle.loads(zlib.decompress(data))
-        except (zlib.error, cPickle.UnpicklingError):
+            if self.recvRandKey:
+                randKey, message = message
+                assert randKey == self.recvRandKey
+        except:
             self.disconnect()
             return None
         self.__readBuffer = self.__readBuffer[4 + l:]

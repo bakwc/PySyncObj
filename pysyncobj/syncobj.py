@@ -15,6 +15,7 @@ from tcp_server import TcpServer
 from node import Node
 from config import SyncObjConf, FAIL_REASON
 from debug_utils import LOG_CURRENT_EXCEPTION, LOG_DEBUG, LOG_WARNING
+from encryptor import HAS_CRYPTO, getEncryptor
 
 
 class _RAFT_STATE:
@@ -32,6 +33,13 @@ class SyncObj(object):
             self.__conf = SyncObjConf()
         else:
             self.__conf = conf
+
+        if self.__conf.password is not None:
+            if not HAS_CRYPTO:
+                raise ImportError("Please install 'cryptography' module")
+            self.__encryptor = getEncryptor(self.__conf.password)
+        else:
+            self.__encryptor = None
 
         self.__selfNodeAddr = selfNodeAddr
         self.__otherNodesAddrs = otherNodesAddrs
@@ -394,10 +402,19 @@ class SyncObj(object):
     def __onNewConnection(self, conn):
         descr = conn.fileno()
         self.__unknownConnections[descr] = conn
+        if self.__encryptor:
+            conn.encryptor = self.__encryptor
+
         conn.setOnMessageReceivedCallback(functools.partial(self.__onMessageReceived, conn))
         conn.setOnDisconnectedCallback(functools.partial(self.__onDisconnected, conn))
 
     def __onMessageReceived(self, conn, message):
+        if self.__encryptor and not conn.sendRandKey:
+            conn.sendRandKey = message
+            conn.recvRandKey = os.urandom(32)
+            conn.send(conn.recvRandKey)
+            return
+
         descr = conn.fileno()
         partnerNode = None
         for node in self.__nodes:
@@ -545,6 +562,9 @@ class SyncObj(object):
 
     def _getConf(self):
         return self.__conf
+
+    def _getEncryptor(self):
+        return self.__encryptor
 
     def __tryLogCompaction(self):
         currTime = time.time()

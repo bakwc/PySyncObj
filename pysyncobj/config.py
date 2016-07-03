@@ -10,6 +10,11 @@ class FAIL_REASON:
 
 class SyncObjConf(object):
     def __init__(self, **kwargs):
+
+        # Encrypt session with specified password.
+        # Install 'cryptography' module to be able to set password.
+        self.password = kwargs.get('password', None)
+
         # Disable autoTick if you want to call onTick manually.
         # Otherwise it will be called automatically from separate thread.
         self.autoTick = kwargs.get('autoTick', True)

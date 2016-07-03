@@ -3,6 +3,7 @@
 #
 import weakref
 import time
+import os
 from .tcp_connection import TcpConnection
 from .dns_resolver import globalDnsResolver
 from .poller import globalPoller
@@ -26,6 +27,8 @@ class Node(object):
                                     timeout=syncObj._getConf().connectionTimeout,
                                     sendBufferSize=syncObj._getConf().sendBufferSize,
                                     recvBufferSize=syncObj._getConf().recvBufferSize)
+        self.__encryptor = syncObj._getEncryptor()
+        self.__conn.encryptor = self.__encryptor
 
         self.__shouldConnect = syncObj._getSelfNodeAddr() > nodeAddr
         self.__lastConnectAttemptTime = 0
@@ -38,12 +41,21 @@ class Node(object):
 
     def __onConnected(self):
         self.__status = NODE_STATUS.CONNECTED
+        if self.__encryptor:
+            self.__conn.recvRandKey = os.urandom(32)
+            self.__conn.send(self.__conn.recvRandKey)
+            return
         self.__conn.send(self.__syncObj()._getSelfNodeAddr())
 
     def __onDisconnected(self):
         self.__status = NODE_STATUS.DISCONNECTED
 
     def __onMessageReceived(self, message):
+        if self.__encryptor and not self.__conn.sendRandKey:
+            self.__conn.sendRandKey = message
+            self.__conn.send(self.__syncObj()._getSelfNodeAddr())
+            return
+
         self.__syncObj()._onMessageReceived(self.__nodeAddr, message)
 
     def onPartnerConnected(self, conn):

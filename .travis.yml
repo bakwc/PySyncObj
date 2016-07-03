@@ -2,6 +2,9 @@ language: python
 python:
   - "2.7"
   - "3.4"
+  - "3.5"
+install:
+  - pip install cryptography
 script:
   - if [[ $TRAVIS_PYTHON_VERSION == 3.4 ]]; then ./gen_py3.sh; fi
   - if [[ $TRAVIS_PYTHON_VERSION == 2.7 ]]; then python2.7 syncobj_ut.py; fi

@@ -9,7 +9,8 @@ class TestObj(SyncObj):
 	def __init__(self, selfNodeAddr, otherNodeAddrs,
 				 compactionTest = 0,
 				 dumpFile = None,
-				 compactionTest2 = False):
+				 compactionTest2 = False,
+				 password = None):
 
 		cfg = SyncObjConf(autoTick=False, commandsQueueSize=10000, appendEntriesUseBatch=False)
 		if compactionTest:
@@ -25,6 +26,8 @@ class TestObj(SyncObj):
 			cfg.recvBufferSize = 2 ** 21
 			cfg.appendEntriesBatchSize = 10
 			cfg.maxCommandsPerTick = 5
+		if password is not None:
+			cfg.password = password
 
 		super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs, cfg)
 		self.__counter = 0
@@ -315,6 +318,42 @@ def checkBigStorage():
 
 	removeFiles(['dump1.bin', 'dump2.bin'])
 
+def encryptionCorrectPassword():
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]], password='asd')
+	o2 = TestObj(a[1], [a[0]], password='asd')
+	objs = [o1, o2]
+	doTicks(objs, 3.5)
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	o1.addValue(150)
+	o2.addValue(200)
+
+	doTicks(objs, 0.5)
+
+	assert o1.getCounter() == 350
+	assert o2.getCounter() == 350
+
+def encryptionWrongPassword():
+	random.seed(12)
+
+	a = [getNextAddr(), getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1], a[2]], password='asd')
+	o2 = TestObj(a[1], [a[2], a[0]], password='asd')
+	o3 = TestObj(a[2], [a[0], a[1]], password='qwe')
+	objs = [o1, o2, o3]
+
+	doTicks(objs, 3.5)
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+	assert o3._getLeader() is None
 
 def runTests():
 	syncTwoObjects()
@@ -323,6 +362,8 @@ def runTests():
 	checkCallbacksSimple()
 	checkDumpToFile()
 	checkBigStorage()
+	encryptionCorrectPassword()
+	encryptionWrongPassword()
 	print '[SUCCESS]'
 
 if __name__ == '__main__':
