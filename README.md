@@ -1,7 +1,15 @@
 # PySyncObj
 
-[![Build Status](https://travis-ci.org/bakwc/PySyncObj.svg?branch=master)](https://travis-ci.org/bakwc/PySyncObj)   [![Version](https://img.shields.io/badge/release-0.1.7-blue.svg?style=flat](https://github.com/bakwc/PySyncObj/releases) [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat](https://github.com/bakwc/PySyncObj/blob/master/LICENSE.txt) 
+[ ![Build Status] [travis-image] ] [travis] [ ![Release] [release-image] ] [releases] [ ![License] [license-image] ] [license]
 
+[travis-image]: https://travis-ci.org/bakwc/PySyncObj.svg?branch=master
+[travis]: https://travis-ci.org/bakwc/PySyncObj
+
+[release-image]: https://img.shields.io/badge/release-0.1.7-blue.svg?style=flat
+[releases]: https://github.com/bakwc/PySyncObj/releases
+
+[license-image]: https://img.shields.io/badge/license-MIT-blue.svg?style=flat
+[license]: LICENSE.txt
 
 PySyncObj is a python library that provides ability to sync your data between multiple servers.
 - It use [raft protocol](http://raft.github.io/) for leader election and log replication.
