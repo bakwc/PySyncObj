@@ -7,5 +7,7 @@ install:
   - pip install cryptography
 script:
   - if [[ $TRAVIS_PYTHON_VERSION == 3.4 ]]; then ./gen_py3.sh; fi
+  - if [[ $TRAVIS_PYTHON_VERSION == 3.5 ]]; then ./gen_py3.sh; fi
   - if [[ $TRAVIS_PYTHON_VERSION == 2.7 ]]; then python2.7 syncobj_ut.py; fi
   - if [[ $TRAVIS_PYTHON_VERSION == 3.4 ]]; then python3.4 syncobj3_ut.py; fi
+  - if [[ $TRAVIS_PYTHON_VERSION == 3.5 ]]; then python3.5 syncobj3_ut.py; fi
