@@ -1,5 +1,7 @@
 # PySyncObj
 
+[![Join the chat at https://gitter.im/bakwc/PySyncObj](https://badges.gitter.im/bakwc/PySyncObj.svg)](https://gitter.im/bakwc/PySyncObj?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 [ ![Build Status] [travis-image] ] [travis] [ ![Release] [release-image] ] [releases] [ ![License] [license-image] ] [license]
 
 [travis-image]: https://travis-ci.org/bakwc/PySyncObj.svg?branch=master
