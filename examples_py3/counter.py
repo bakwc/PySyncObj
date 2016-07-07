@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+#
+#  WARNING: this is generated file, use gen_py3.sh to update it.
+#
 #!/usr/bin/env python2
 
 import sys
@@ -28,16 +32,16 @@ class TestObj(SyncObj):
 
 
 def onAdd(res, err, cnt):
-    print 'onAdd %d:' % cnt, res, err
+    print('onAdd %d:' % cnt, res, err)
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
-        print 'Usage: %s self_port partner1_port partner2_port ...' % sys.argv[0]
+        print('Usage: %s self_port partner1_port partner2_port ...' % sys.argv[0])
         sys.exit(-1)
 
     port = int(sys.argv[1])
     partners = []
-    for i in xrange(2, len(sys.argv)):
+    for i in range(2, len(sys.argv)):
         partners.append('localhost:%d' % int(sys.argv[i]))
 
     o = TestObj('localhost:%d' % port, partners)
@@ -48,7 +52,7 @@ if __name__ == '__main__':
         time.sleep(0.5)
         if o.getCounter() != old_value:
             old_value = o.getCounter()
-            print old_value
+            print(old_value)
         if o._getLeader() is None:
             continue
         # if n < 2000:

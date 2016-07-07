@@ -1,7 +1,11 @@
+#!/usr/bin/env python3
+#
+#  WARNING: this is generated file, use gen_py3.sh to update it.
+#
 #!/usr/bin/env python2
 
 import sys
-from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 sys.path.append("../")
 from pysyncobj import SyncObj, SyncObjConf, replicated
 
@@ -60,14 +64,14 @@ class KVRequestHandler(BaseHTTPRequestHandler):
 
 def main():
     if len(sys.argv) < 4:
-        print 'Usage: %s http_port dump_file.bin selfHost:port partner1Host:port partner2Host:port ...'
+        print('Usage: %s http_port dump_file.bin selfHost:port partner1Host:port partner2Host:port ...')
         sys.exit(-1)
 
     httpPort = int(sys.argv[1])
     dumpFile = sys.argv[2]
     selfAddr = sys.argv[3]
     partners = []
-    for i in xrange(4, len(sys.argv)):
+    for i in range(4, len(sys.argv)):
         partners.append(sys.argv[i])
 
     global _g_kvstorage

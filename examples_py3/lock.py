@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+#
+#  WARNING: this is generated file, use gen_py3.sh to update it.
+#
 #!/usr/bin/env python2
 
 import sys
@@ -30,7 +34,7 @@ class LockImpl(SyncObj):
 
     @replicated
     def ping(self, clientID, currentTime):
-        for lockPath in self.__locks.keys():
+        for lockPath in list(self.__locks.keys()):
             lockClientID, lockTime = self.__locks[lockPath]
 
             if currentTime - lockTime > self.__autoUnlockTime:
@@ -93,46 +97,46 @@ class Lock(object):
 
 
 def printHelp():
-    print ''
-    print '        Available commands:'
-    print ''
-    print 'help                 print this help'
-    print 'check lockPath       check if lock with lockPath path is ackquired or released'
-    print 'acquire lockPath     try to ackquire lock with lockPath'
-    print 'release lockPath     try to release lock with lockPath'
-    print ''
-    print ''
+    print('')
+    print('        Available commands:')
+    print('')
+    print('help                 print this help')
+    print('check lockPath       check if lock with lockPath path is ackquired or released')
+    print('acquire lockPath     try to ackquire lock with lockPath')
+    print('release lockPath     try to release lock with lockPath')
+    print('')
+    print('')
 
 
 def main():
     if len(sys.argv) < 3:
-        print 'Usage: %s selfHost:port partner1Host:port partner2Host:port ...' % sys.argv[0]
+        print('Usage: %s selfHost:port partner1Host:port partner2Host:port ...' % sys.argv[0])
         sys.exit(-1)
 
     selfAddr = sys.argv[1]
     partners = []
-    for i in xrange(2, len(sys.argv)):
+    for i in range(2, len(sys.argv)):
         partners.append(sys.argv[i])
 
     lock = Lock(selfAddr, partners, 10.0)
 
     printHelp()
     while True:
-        cmd = raw_input(">> ").split()
+        cmd = input(">> ").split()
         if not cmd:
             continue
         elif cmd[0] == 'help':
             printHelp()
         elif cmd[0] == 'check':
-            print 'acquired' if lock.isAcquired(cmd[1]) else 'released'
+            print('acquired' if lock.isAcquired(cmd[1]) else 'released')
         elif cmd[0] == 'acquire':
             lock.tryAcquireLock(cmd[1])
             time.sleep(1.5)
-            print 'acquired' if lock.isAcquired(cmd[1]) else 'failed'
+            print('acquired' if lock.isAcquired(cmd[1]) else 'failed')
         elif cmd[0] == 'release':
             lock.release(cmd[1])
             time.sleep(1.5)
-            print 'acquired' if lock.isAcquired(cmd[1]) else 'released'
+            print('acquired' if lock.isAcquired(cmd[1]) else 'released')
 
 
 if __name__ == '__main__':
