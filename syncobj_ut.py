@@ -1,6 +1,7 @@
 import os
 import time
 import random
+import threading
 from functools import partial
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON
 
@@ -47,14 +48,20 @@ class TestObj(SyncObj):
 	def dumpKeys(self):
 		print 'keys:', sorted(self.__data.keys())
 
-def doTicks(objects, timeToTick, interval = 0.05):
+def singleTickFunc(o, timeToTick, interval):
 	currTime = time.time()
 	finishTime = currTime + timeToTick
-	realInterval = float(interval) / float(len(objects))
-	while currTime < finishTime:
-		for o in objects:
-			o._onTick(realInterval)
-		currTime = time.time()
+	while time.time() < finishTime:
+		o._onTick(interval)
+
+def doTicks(objects, timeToTick, interval = 0.05):
+	threads = []
+	for o in objects:
+		t = threading.Thread(target=singleTickFunc, args=(o, timeToTick, interval))
+		t.start()
+		threads.append(t)
+	for t in threads:
+		t.join()
 
 _g_nextAddress = 6000 + 60 * (int(time.time()) % 600)
 

@@ -18,7 +18,8 @@ class Node(object):
         self.__ip = globalDnsResolver().resolve(nodeAddr.split(':')[0])
         self.__port = int(nodeAddr.split(':')[1])
         self.__poller = globalPoller()
-        self.__conn = TcpConnection(onConnected=self.__onConnected,
+        self.__conn = TcpConnection(poller=syncObj._poller,
+                                    onConnected=self.__onConnected,
                                     onMessageReceived=self.__onMessageReceived,
                                     onDisconnected=self.__onDisconnected,
                                     timeout=syncObj._getConf().connectionTimeout,

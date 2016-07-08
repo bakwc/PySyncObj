@@ -18,7 +18,7 @@ class CONNECTION_STATE:
 
 class TcpConnection(object):
 
-    def __init__(self, onMessageReceived = None, onConnected = None, onDisconnected = None,
+    def __init__(self, poller, onMessageReceived = None, onConnected = None, onDisconnected = None,
                  socket=None, timeout=10.0, sendBufferSize = 2 ** 13, recvBufferSize = 2 ** 13):
 
         self.sendRandKey = None
@@ -30,11 +30,12 @@ class TcpConnection(object):
         self.__writeBuffer = bytes()
         self.__lastReadTime = time.time()
         self.__timeout = timeout
+        self.__poller = poller
         if socket is not None:
             self.__socket = socket
             self.__fileno = socket.fileno()
             self.__state = CONNECTION_STATE.CONNECTED
-            globalPoller().subscribe(self.__fileno,
+            self.__poller.subscribe(self.__fileno,
                                      self.__processConnection,
                                      POLL_EVENT_TYPE.READ | POLL_EVENT_TYPE.WRITE | POLL_EVENT_TYPE.ERROR)
         else:
@@ -82,7 +83,7 @@ class TcpConnection(object):
                 return False
         self.__fileno = self.__socket.fileno()
         self.__state = CONNECTION_STATE.CONNECTING
-        globalPoller().subscribe(self.__fileno,
+        self.__poller.subscribe(self.__fileno,
                                  self.__processConnection,
                                  POLL_EVENT_TYPE.READ | POLL_EVENT_TYPE.WRITE | POLL_EVENT_TYPE.ERROR)
         return True
@@ -113,7 +114,7 @@ class TcpConnection(object):
             self.__socket.close()
             self.__socket = None
         if self.__fileno is not None:
-            globalPoller().unsubscribe(self.__fileno)
+            self.__poller.unsubscribe(self.__fileno)
             self.__fileno = None
         self.__writeBuffer = bytes()
         self.__readBuffer = bytes()
@@ -123,7 +124,7 @@ class TcpConnection(object):
         return len(self.__writeBuffer)
 
     def __processConnection(self, descr, eventType):
-        poller = globalPoller()
+        poller = self.__poller
         if descr != self.__fileno:
             poller.unsubscribe(descr)
             return

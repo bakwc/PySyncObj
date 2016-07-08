@@ -9,7 +9,7 @@ import weakref
 import collections
 import functools
 from dns_resolver import globalDnsResolver
-from poller import globalPoller
+from poller import createPoller
 from serializer import Serializer, SERIALIZER_STATE
 from tcp_server import TcpServer
 from node import Node
@@ -61,9 +61,10 @@ class SyncObj(object):
         self.__serializer = Serializer(self.__conf.fullDumpFile, self.__conf.logCompactionBatchSize)
         self.__isInitialized = False
         self.__lastInitTryTime = 0
+        self._poller = createPoller()
 
         host, port = selfNodeAddr.split(':')
-        self.__server = TcpServer(host, port, onNewConnection=self.__onNewConnection,
+        self.__server = TcpServer(self._poller, host, port, onNewConnection=self.__onNewConnection,
                                   sendBufferSize=self.__conf.sendBufferSize,
                                   recvBufferSize=self.__conf.recvBufferSize,
                                   connectionTimeout=self.__conf.connectionTimeout)
@@ -257,7 +258,7 @@ class SyncObj(object):
         for node in self.__nodes:
             node.connectIfRequired()
 
-        globalPoller().poll(timeToWait)
+        self._poller.poll(timeToWait)
 
 
     def _getLastCommitIndex(self):
