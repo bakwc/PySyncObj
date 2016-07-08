@@ -53,7 +53,7 @@ class SyncObj(object):
         self.__raftLeader = None
         self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
         self.__raftLog = []  # (command, logID, term)
-        self.__raftLog.append((None, 1, self.__raftCurrentTerm))
+        self.__raftLog.append(('', 1, self.__raftCurrentTerm))
         self.__raftCommitIndex = 1
         self.__raftLastApplied = 1
         self.__raftNextIndex = {}
@@ -124,7 +124,9 @@ class SyncObj(object):
             callback(None, FAIL_REASON.QUEUE_FULL)
 
     def _checkCommandsToApply(self):
-        for i in range(self.__conf.maxCommandsPerTick):
+        startTime = time.time()
+
+        while time.time() - startTime < self.__conf.appendEntriesPeriod:
             if self.__raftLeader is None and self.__conf.commandsWaitLeader:
                 break
             try:
@@ -280,6 +282,7 @@ class SyncObj(object):
         self.__forceLogCompaction = True
 
     def __doApplyCommand(self, command):
+        command = pickle.loads(command)
         args = []
         kwargs = {
             '_doApply': True,
@@ -446,14 +449,24 @@ class SyncObj(object):
             return prevIndex, entries[0][2]
         return None, None
 
-    def __getEntries(self, fromIDx, count=None):
+    def __getEntries(self, fromIDx, count=None, maxSizeBytes = None):
         firstEntryIDx = self.__raftLog[0][1]
         if fromIDx is None or fromIDx < firstEntryIDx:
             return []
         diff = fromIDx - firstEntryIDx
         if count is None:
-            return self.__raftLog[diff:]
-        return self.__raftLog[diff:diff + count]
+            result = self.__raftLog[diff:]
+        else:
+            result = self.__raftLog[diff:diff + count]
+        if maxSizeBytes is None:
+            return result
+        totalSize = 0
+        i = 0
+        for i, entry in enumerate(result):
+            totalSize += len(entry[0])
+            if totalSize >= maxSizeBytes:
+                break
+        return result[:i + 1]
 
     def _isLeader(self):
         return self.__raftState == _RAFT_STATE.LEADER
@@ -515,7 +528,7 @@ class SyncObj(object):
                     prevLogIdx, prevLogTerm = self.__getPrevLogIndexTerm(nextNodeIndex)
                     entries = []
                     if nextNodeIndex <= self.__getCurrentLogIndex():
-                        entries = self.__getEntries(nextNodeIndex, self.__conf.appendEntriesBatchSize)
+                        entries = self.__getEntries(nextNodeIndex, None, self.__conf.appendEntriesBatchSizeBytes)
                         self.__raftNextIndex[nodeAddr] = entries[-1][1] + 1
 
                     message = {
@@ -621,5 +634,6 @@ def replicated(func):
                 cmd = (self._methodToID[func.__name__], args)
             else:
                 cmd = self._methodToID[func.__name__]
-            self._applyCommand(cmd, callback)
+
+            self._applyCommand(pickle.dumps(cmd, -1), callback)
     return newFunc

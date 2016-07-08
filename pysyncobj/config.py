@@ -21,10 +21,7 @@ class SyncObjConf(object):
         self.autoTickPeriod = kwargs.get('autoTickPeriod', 0.05)
 
         # Commands queue is used to store commands before real processing.
-        self.commandsQueueSize = kwargs.get('commandsQueueSize', 1000)
-
-        # Maximum number of commands processed in a single tick.
-        self.maxCommandsPerTick = kwargs.get('maxCommandsPerTick', 100)
+        self.commandsQueueSize = kwargs.get('commandsQueueSize', 10000)
 
         # After randomly selected timeout (in range from minTimeout to maxTimeout)
         # leader considered dead, and leader election starts.
@@ -43,17 +40,17 @@ class SyncObjConf(object):
         # Will try to connect to offline nodes each connectionRetryTime.
         self.connectionRetryTime = kwargs.get('connectionRetryTime', 5.0)
 
-        # Max number of log entries per single append_entries command.
-        self.appendEntriesBatchSize = kwargs.get('appendEntriesBatchSize', 1000)
-
         # Send multiple entries in a single command.
-        # Enabled (default) - improve overal perfomence (requests per second)
+        # Enabled (default) - improve overall performance (requests per second)
         # Disabled - improve single request speed (don't wait till batch ready)
         self.appendEntriesUseBatch = kwargs.get('appendEntriesUseBatch', True)
 
+        # Max number of bytes per single append_entries command.
+        self.appendEntriesBatchSizeBytes = kwargs.get('appendEntriesBatchSizeBytes', 2 ** 16)
+
         # Size of receive and send buffer for sockets.
-        self.sendBufferSize = kwargs.get('sendBufferSize', 2 ** 13)
-        self.recvBufferSize = kwargs.get('recvBufferSize', 2 ** 13)
+        self.sendBufferSize = kwargs.get('sendBufferSize', 2 ** 16)
+        self.recvBufferSize = kwargs.get('recvBufferSize', 2 ** 16)
 
         # Time to cache dns requests (improves performance,
         # no need to resolve address for each connection attempt).
@@ -67,7 +64,7 @@ class SyncObjConf(object):
 
         # Max number of bytes per single append_entries command
         # while sending serialized object.
-        self.logCompactionBatchSize = kwargs.get('logCompactionBatchSize', 2 ** 13)
+        self.logCompactionBatchSize = kwargs.get('logCompactionBatchSize', 2 ** 16)
 
         # If true - commands will be enqueued and executed after leader detected.
         # Otherwise - FAIL_REASON.MISSING_LEADER error will be emitted.

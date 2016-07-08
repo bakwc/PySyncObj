@@ -12,7 +12,7 @@ class TestObj(SyncObj):
 				 compactionTest2 = False,
 				 password = None):
 
-		cfg = SyncObjConf(autoTick=False, commandsQueueSize=10000, appendEntriesUseBatch=False)
+		cfg = SyncObjConf(autoTick=False, appendEntriesUseBatch=False)
 		if compactionTest:
 			cfg.logCompactionMinEntries = compactionTest
 			cfg.logCompactionMinTime = 0.1
@@ -22,10 +22,6 @@ class TestObj(SyncObj):
 			cfg.logCompactionMinEntries = 99999
 			cfg.logCompactionMinTime = 99999
 			cfg.fullDumpFile = dumpFile
-			cfg.sendBufferSize = 2 ** 21
-			cfg.recvBufferSize = 2 ** 21
-			cfg.appendEntriesBatchSize = 10
-			cfg.maxCommandsPerTick = 5
 		if password is not None:
 			cfg.password = password
 
