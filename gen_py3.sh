@@ -16,7 +16,7 @@ sed 's/\\/\\\\/g' syncobj3_ut.py > tmp
 mv tmp syncobj3_ut.py
 echo -e "#\n#  WARNING: this is generated file, use gen_py3.sh to update it.\n#\n$(cat syncobj3_ut.py)" > syncobj3_ut.py
 
-rm -rf examples_py3
+rm -rf examples_py3/*
 2to3 --output-dir=examples_py3 -W -n examples
 for f in examples_py3/*
 do

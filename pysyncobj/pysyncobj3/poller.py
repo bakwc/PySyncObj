@@ -29,6 +29,7 @@ class SelectPoller(Poller):
         self.__descrToCallbacks = {}
 
     def subscribe(self, descr, callback, eventMask):
+        self.unsubscribe(descr)
         if eventMask & POLL_EVENT_TYPE.READ:
             self.__descrsRead.add(descr)
         if eventMask & POLL_EVENT_TYPE.WRITE:
