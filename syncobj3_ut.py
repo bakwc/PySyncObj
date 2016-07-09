@@ -5,6 +5,7 @@ import os
 import time
 import random
 import threading
+import sys
 from functools import partial
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON
 
@@ -362,14 +363,19 @@ def encryptionWrongPassword():
 	assert o3._getLeader() is None
 
 def runTests():
+	useCrypto = True
+	if len(sys.argv) > 1 and sys.argv[1] == 'nocrypto':
+		useCrypto = False
+
 	syncTwoObjects()
 	syncThreeObjectsLeaderFail()
 	manyActionsLogCompaction()
 	checkCallbacksSimple()
 	checkDumpToFile()
 	checkBigStorage()
-	encryptionCorrectPassword()
-	encryptionWrongPassword()
+	if useCrypto:
+		encryptionCorrectPassword()
+		encryptionWrongPassword()
 	print('[SUCCESS]')
 
 if __name__ == '__main__':
