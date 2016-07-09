@@ -46,6 +46,7 @@ class SyncObj(object):
         self.__unknownConnections = {}  # descr => _Connection
         self.__raftState = _RAFT_STATE.FOLLOWER
         self.__raftCurrentTerm = 0
+        self.__votedFor = None
         self.__votesCount = 0
         self.__raftLeader = None
         self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
@@ -119,7 +120,7 @@ class SyncObj(object):
         try:
             self.__commandsQueue.put_nowait((command, callback))
         except Queue.Full:
-            callback(None, FAIL_REASON.QUEUE_FULL)
+            self.__callErrCallback(FAIL_REASON.QUEUE_FULL, callback)
 
     def _checkCommandsToApply(self):
         startTime = time.time()
@@ -171,14 +172,7 @@ class SyncObj(object):
                         'error': FAIL_REASON.NOT_LEADER,
                     })
             else:
-                if requestNode is None:
-                    callback(None, FAIL_REASON.MISSING_LEADER)
-                else:
-                    self.__send(requestNode, {
-                        'type': 'apply_command_response',
-                        'request_id': requestID,
-                        'error': FAIL_REASON.NOT_LEADER,
-                    })
+                self.__callErrCallback(FAIL_REASON.MISSING_LEADER, callback)
 
     def _autoTickThread(self):
         self.__initInTickThread()
@@ -212,6 +206,7 @@ class SyncObj(object):
                 self.__raftLeader = None
                 self.__raftState = _RAFT_STATE.CANDIDATE
                 self.__raftCurrentTerm += 1
+                self.__votedFor = None
                 self.__votesCount = 1
                 for node in self.__nodes:
                     node.send({
@@ -301,6 +296,7 @@ class SyncObj(object):
 
             if message['term'] > self.__raftCurrentTerm:
                 self.__raftCurrentTerm = message['term']
+                self.__votedFor = None
                 self.__raftState = _RAFT_STATE.FOLLOWER
 
             if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
@@ -312,6 +308,10 @@ class SyncObj(object):
                     if lastLogTerm == self.__getCurrentLogTerm() and \
                             lastLogIdx < self.__getCurrentLogIndex():
                         return
+                    if self.__votedFor is not None:
+                        return
+
+                    self.__votedFor = nodeAddr
 
                     self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
                     self.__send(nodeAddr, {
@@ -324,7 +324,9 @@ class SyncObj(object):
             if self.__raftLeader != nodeAddr:
                 self.__onLeaderChanged()
             self.__raftLeader = nodeAddr
-            self.__raftCurrentTerm = message['term']
+            if message['term'] > self.__raftCurrentTerm:
+                self.__raftCurrentTerm = message['term']
+                self.__votedFor = None
             self.__raftState = _RAFT_STATE.FOLLOWER
             newEntries = message.get('entries', [])
             serialized = message.get('serialized', None)
@@ -390,6 +392,19 @@ class SyncObj(object):
                 if reset:
                     self.__raftNextIndex[nodeAddr] = nextNodeIdx
                 self.__raftMatchIndex[nodeAddr] = currentNodeIdx
+
+    def __callErrCallback(self, err, callback):
+        if callback is None:
+            return
+        if isinstance(callback, tuple):
+            requestNode, requestID = callback
+            self.__send(requestNode, {
+                'type': 'apply_command_response',
+                'request_id': requestID,
+                'error': err,
+            })
+            return
+        callback(None, err)
 
     def __sendNextNodeIdx(self, nodeAddr, reset=False):
         self.__send(nodeAddr, {

@@ -24,7 +24,7 @@ class SyncObjConf(object):
         self.autoTickPeriod = kwargs.get('autoTickPeriod', 0.05)
 
         # Commands queue is used to store commands before real processing.
-        self.commandsQueueSize = kwargs.get('commandsQueueSize', 10000)
+        self.commandsQueueSize = kwargs.get('commandsQueueSize', 40000)
 
         # After randomly selected timeout (in range from minTimeout to maxTimeout)
         # leader considered dead, and leader election starts.

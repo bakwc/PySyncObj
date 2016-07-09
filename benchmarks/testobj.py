@@ -1,0 +1,78 @@
+import sys
+import time
+import random
+from collections import defaultdict
+sys.path.append("../")
+from pysyncobj import SyncObj, replicated, SyncObjConf, FAIL_REASON
+
+class TestObj(SyncObj):
+
+    def __init__(self, selfNodeAddr, otherNodeAddrs):
+        super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs)
+        self.__appliedCommands = 0
+
+    @replicated
+    def testMethod(self, value):
+        self.__appliedCommands += 1
+
+    def getNumCommandsApplied(self):
+        return self.__appliedCommands
+
+_g_sent = 0
+_g_success = 0
+_g_error = 0
+_g_errors = defaultdict(int)
+
+def clbck(res, err):
+    global _g_error, _g_success
+    if err == FAIL_REASON.SUCCESS:
+        _g_success += 1
+    else:
+        _g_error += 1
+        _g_errors[err] += 1
+
+def getRandStr(l):
+    f = '%0' + str(l) + 'x'
+    return f % random.randrange(16 ** l)
+
+if __name__ == '__main__':
+    if len(sys.argv) < 5:
+        print 'Usage: %s RPS requestSize selfHost:port partner1Host:port partner2Host:port ...' % sys.argv[0]
+        sys.exit(-1)
+
+    numCommands = int(sys.argv[1])
+    cmdSize = int(sys.argv[2])
+
+    selfAddr = sys.argv[3]
+    partners = []
+    for i in xrange(4, len(sys.argv)):
+        partners.append(sys.argv[i])
+
+    maxCommandsQueueSize = int(0.9 * SyncObjConf().commandsQueueSize / len(partners))
+
+    obj = TestObj(selfAddr, partners)
+
+    while obj._getLeader() is None:
+        time.sleep(0.1)
+
+    startTime = time.time()
+
+    while time.time() - startTime < 20.0:
+        st = time.time()
+        for i in xrange(0, numCommands):
+            obj.testMethod(getRandStr(cmdSize), callback=clbck)
+            _g_sent += 1
+        delta = time.time() - st
+        assert delta <= 1.0
+        time.sleep(1.0 - delta)
+    time.sleep(1.0)
+
+    successRate = float(_g_success) / float(_g_sent)
+    print 'SUCCESS RATE:', successRate
+    print 'LOST RATE:', 1.0 - float(_g_success + _g_error) / float(_g_sent)
+    print 'ERRORS STATS:'
+    for err in _g_errors:
+        print err, float(_g_errors[err]) / float(_g_error)
+    if successRate >= 0.98:
+        sys.exit(0)
+    sys.exit(1)
