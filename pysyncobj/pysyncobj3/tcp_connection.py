@@ -105,7 +105,7 @@ class TcpConnection(object):
         return self.__fileno
 
     def disconnect(self):
-        if self.__onDisconnected is not None:
+        if self.__onDisconnected is not None and self.__state != CONNECTION_STATE.DISCONNECTED:
             self.__onDisconnected()
         self.sendRandKey = None
         self.recvRandKey = None

@@ -18,17 +18,19 @@ class Node(object):
         self.__ip = globalDnsResolver().resolve(nodeAddr.split(':')[0])
         self.__port = int(nodeAddr.split(':')[1])
         self.__poller = globalPoller()
-        self.__conn = TcpConnection(poller=syncObj._poller,
-                                    onConnected=self.__onConnected,
-                                    onMessageReceived=self.__onMessageReceived,
-                                    onDisconnected=self.__onDisconnected,
-                                    timeout=syncObj._getConf().connectionTimeout,
-                                    sendBufferSize=syncObj._getConf().sendBufferSize,
-                                    recvBufferSize=syncObj._getConf().recvBufferSize)
-        self.__encryptor = syncObj._getEncryptor()
-        self.__conn.encryptor = self.__encryptor
-
         self.__shouldConnect = syncObj._getSelfNodeAddr() > nodeAddr
+        self.__encryptor = syncObj._getEncryptor()
+        self.__conn = None
+        if self.__shouldConnect:
+            self.__conn = TcpConnection(poller=syncObj._poller,
+                                        onConnected=self.__onConnected,
+                                        onMessageReceived=self.__onMessageReceived,
+                                        onDisconnected=self.__onDisconnected,
+                                        timeout=syncObj._getConf().connectionTimeout,
+                                        sendBufferSize=syncObj._getConf().sendBufferSize,
+                                        recvBufferSize=syncObj._getConf().recvBufferSize)
+            self.__conn.encryptor = self.__encryptor
+
         self.__lastConnectAttemptTime = 0
         self.__lastPingTime = 0
         self.__status = NODE_STATUS.DISCONNECTED

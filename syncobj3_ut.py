@@ -299,7 +299,7 @@ def checkBigStorage():
 	o1.addKeyValue('test', testRandStr)
 
 	# Wait for replication.
-	doTicks(objs, 40.0, 0.005)
+	doTicks(objs, 40.0)
 
 	assert o1.getValue('test') == testRandStr
 
@@ -307,7 +307,7 @@ def checkBigStorage():
 	o2._forceLogCompaction()
 
 	# Wait for disk dump
-	doTicks(objs, 5.0, 0.05)
+	doTicks(objs, 5.0)
 
 
 	a = [getNextAddr(), getNextAddr()]
