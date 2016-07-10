@@ -87,7 +87,7 @@ def syncTwoObjects():
 	o1 = TestObj(a[0], [a[1]])
 	o2 = TestObj(a[1], [a[0]])
 	objs = [o1, o2]
-	doTicks(objs, 3.5)
+	doTicks(objs, 4.5)
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -95,7 +95,7 @@ def syncTwoObjects():
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 0.5)
+	doTicks(objs, 1.5)
 
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
@@ -111,7 +111,7 @@ def syncThreeObjectsLeaderFail():
 	o3 = TestObj(a[2], [a[0], a[1]])
 	objs = [o1, o2, o3]
 
-	doTicks(objs, 3.5)
+	doTicks(objs, 4.5)
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -120,7 +120,7 @@ def syncThreeObjectsLeaderFail():
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 0.5)
+	doTicks(objs, 1.5)
 
 	assert o3.getCounter() == 350
 
@@ -130,18 +130,18 @@ def syncThreeObjectsLeaderFail():
 
 	assert len(newObjs) == 2
 
-	doTicks(newObjs, 3.5)
+	doTicks(newObjs, 4.5)
 	assert newObjs[0]._getLeader() != prevLeader
 	assert newObjs[0]._getLeader() in a
 	assert newObjs[0]._getLeader() == newObjs[1]._getLeader()
 
 	newObjs[1].addValue(50)
 
-	doTicks(newObjs, 0.5)
+	doTicks(newObjs, 1.5)
 
 	assert newObjs[0].getCounter() == 400
 
-	doTicks(objs, 3.5)
+	doTicks(objs, 4.5)
 	for o in objs:
 		assert o.getCounter() == 400
 
@@ -156,7 +156,7 @@ def manyActionsLogCompaction():
 	o3 = TestObj(a[2], [a[0], a[1]], compactionTest=100)
 	objs = [o1, o2, o3]
 
-	doTicks(objs, 3.5)
+	doTicks(objs, 4.5)
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -177,7 +177,7 @@ def manyActionsLogCompaction():
 	assert o3._getRaftLogSize() <= 100
 
 	newObjs = [o1, o2]
-	doTicks(newObjs, 3.5)
+	doTicks(newObjs, 4.5)
 
 	for i in xrange(0, 500):
 		o1.addValue(1)
@@ -189,7 +189,7 @@ def manyActionsLogCompaction():
 	assert o2.getCounter() == 2000
 	assert o3.getCounter() != 2000
 
-	doTicks(objs, 3.5)
+	doTicks(objs, 4.5)
 
 	assert o3.getCounter() == 2000
 
@@ -213,7 +213,7 @@ def checkCallbacksSimple():
 	o3 = TestObj(a[2], [a[0], a[1]])
 	objs = [o1, o2, o3]
 
-	doTicks(objs, 3.5)
+	doTicks(objs, 4.5)
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -225,7 +225,7 @@ def checkCallbacksSimple():
 	}
 	o1.addValue(3, callback=partial(onAddValue, info=callbackInfo))
 
-	doTicks(objs, 0.5)
+	doTicks(objs, 1.5)
 
 	assert o2.getCounter() == 3
 	assert callbackInfo['callback'] == True
@@ -247,7 +247,7 @@ def checkDumpToFile():
 	o1 = TestObj(a[0], [a[1]], compactionTest=True, dumpFile = 'dump1.bin')
 	o2 = TestObj(a[1], [a[0]], compactionTest=True, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 3.5)
+	doTicks(objs, 4.5)
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -255,7 +255,7 @@ def checkDumpToFile():
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 1.0)
+	doTicks(objs, 1.5)
 
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
@@ -267,7 +267,7 @@ def checkDumpToFile():
 	o1 = TestObj(a[0], [a[1]], compactionTest=1, dumpFile = 'dump1.bin')
 	o2 = TestObj(a[1], [a[0]], compactionTest=1, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 3.5)
+	doTicks(objs, 4.5)
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -292,7 +292,7 @@ def checkBigStorage():
 	o1 = TestObj(a[0], [a[1]], compactionTest2=True, dumpFile = 'dump1.bin')
 	o2 = TestObj(a[1], [a[0]], compactionTest2=True, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 3.5)
+	doTicks(objs, 4.5)
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -338,7 +338,7 @@ def encryptionCorrectPassword():
 	o1 = TestObj(a[0], [a[1]], password='asd')
 	o2 = TestObj(a[1], [a[0]], password='asd')
 	objs = [o1, o2]
-	doTicks(objs, 3.5)
+	doTicks(objs, 4.5)
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -346,7 +346,7 @@ def encryptionCorrectPassword():
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 0.5)
+	doTicks(objs, 1.5)
 
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
@@ -361,7 +361,7 @@ def encryptionWrongPassword():
 	o3 = TestObj(a[2], [a[0], a[1]], password='qwe')
 	objs = [o1, o2, o3]
 
-	doTicks(objs, 3.5)
+	doTicks(objs, 4.5)
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
