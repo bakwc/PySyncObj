@@ -322,7 +322,8 @@ def checkBigStorage():
 	o1 = TestObj(a[0], [a[1]], compactionTest=1, dumpFile = 'dump1.bin')
 	o2 = TestObj(a[1], [a[0]], compactionTest=1, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 3.5)
+	# Wait for disk load, election and replication
+	doTicks(objs, 5.5)
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
