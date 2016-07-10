@@ -209,7 +209,7 @@ class SyncObj(object):
                 self.__raftLeader = None
                 self.__raftState = _RAFT_STATE.CANDIDATE
                 self.__raftCurrentTerm += 1
-                self.__votedFor = None
+                self.__votedFor = self._getSelfNodeAddr()
                 self.__votesCount = 1
                 for node in self.__nodes:
                     node.send({
@@ -264,6 +264,7 @@ class SyncObj(object):
 
     def _printStatus(self):
         LOG_DEBUG('self', self.__selfNodeAddr)
+        LOG_DEBUG('state:', self.__raftState)
         LOG_DEBUG('leader', self.__raftLeader)
         LOG_DEBUG('partner nodes', len(self.__nodes))
         for n in self.__nodes:
@@ -272,7 +273,10 @@ class SyncObj(object):
         LOG_DEBUG('log size bytes:', len(zlib.compress(pickle.dumps(self.__raftLog, -1))))
         LOG_DEBUG('last applied:', self.__raftLastApplied)
         LOG_DEBUG('commit idx:', self.__raftCommitIndex)
+        LOG_DEBUG('raft term:', self.__raftCurrentTerm)
         LOG_DEBUG('next node idx:', self.__raftNextIndex)
+        LOG_DEBUG('match idx:', self.__raftMatchIndex)
+        LOG_DEBUG('')
 
     def _forceLogCompaction(self):
         self.__forceLogCompaction = True
@@ -301,6 +305,7 @@ class SyncObj(object):
                 self.__raftCurrentTerm = message['term']
                 self.__votedFor = None
                 self.__raftState = _RAFT_STATE.FOLLOWER
+                self.__raftLeader = None
 
             if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
                 lastLogTerm = message['last_log_term']
@@ -489,6 +494,9 @@ class SyncObj(object):
 
     def _getLeader(self):
         return self.__raftLeader
+
+    def _getTerm(self):
+        return self.__raftCurrentTerm
 
     def _getRaftLogSize(self):
         return len(self.__raftLog)

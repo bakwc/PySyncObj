@@ -12,7 +12,8 @@ class TestObj(SyncObj):
 				 compactionTest = 0,
 				 dumpFile = None,
 				 compactionTest2 = False,
-				 password = None):
+				 password = None,
+				 randTest = False):
 
 		cfg = SyncObjConf(autoTick=False, appendEntriesUseBatch=False)
 		if compactionTest:
@@ -26,6 +27,12 @@ class TestObj(SyncObj):
 			cfg.fullDumpFile = dumpFile
 		if password is not None:
 			cfg.password = password
+		if randTest:
+			cfg.autoTickPeriod = 0.05
+			cfg.raftMinTimeout = 0.5
+			cfg.raftMaxTimeout = 1.0
+			cfg.logCompactionMinTime = 9999999
+			cfg.logCompactionMinEntries = 9999999
 
 		super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs, cfg)
 		self.__counter = 0
@@ -359,6 +366,84 @@ def encryptionWrongPassword():
 	assert o1._getLeader() == o2._getLeader()
 	assert o3._getLeader() is None
 
+def _checkSameLeader(objs):
+	for obj1 in objs:
+		l1 = obj1._getLeader()
+		if l1 != obj1._getSelfNodeAddr():
+			continue
+		t1 = obj1._getTerm()
+		for obj2 in objs:
+			l2 = obj2._getLeader()
+			if l2 != obj2._getSelfNodeAddr():
+				continue
+			if obj2._getTerm() != t1:
+				continue
+			if l2 != l1:
+				obj1._printStatus()
+				obj2._printStatus()
+				return False
+	return True
+
+def _checkSameLeader2(objs):
+	for obj1 in objs:
+		l1 = obj1._getLeader()
+		if l1 is None:
+			continue
+		t1 = obj1._getTerm()
+		for obj2 in objs:
+			l2 = obj2._getLeader()
+			if l2 is None:
+				continue
+			if obj2._getTerm() != t1:
+				continue
+			if l2 != l1:
+				obj1._printStatus()
+				obj2._printStatus()
+				return False
+	return True
+
+def randomTest1():
+
+	random.seed(12)
+
+	a = [getNextAddr(), getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1], a[2]], randTest=True)
+	o2 = TestObj(a[1], [a[2], a[0]], randTest=True)
+	o3 = TestObj(a[2], [a[0], a[1]], randTest=True)
+	objs = [o1, o2, o3]
+
+	st = time.time()
+	while time.time() - st < 120.0:
+		doTicks(objs, random.random() * 1.5, interval=0.05)
+		assert _checkSameLeader(objs)
+		assert _checkSameLeader2(objs)
+		for i in xrange(0, random.randint(0, 2)):
+			random.choice(objs).addValue(random.randint(0, 10))
+		newObjs = list(objs)
+		newObjs.pop(random.randint(0, len(newObjs) - 1))
+		doTicks(newObjs, random.random() * 1.5, interval=0.05)
+		assert _checkSameLeader(objs)
+		assert _checkSameLeader2(objs)
+		for i in xrange(0, random.randint(0, 2)):
+			random.choice(objs).addValue(random.randint(0, 10))
+
+	if not (o1.getCounter() == o2.getCounter() == o3.getCounter()):
+		print time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter()
+	st = time.time()
+	while not (o1.getCounter() == o2.getCounter() == o3.getCounter()):
+		doTicks(objs, 2.0, interval=0.05)
+		if time.time() - st > 30:
+			break
+
+	if not (o1.getCounter() == o2.getCounter() == o3.getCounter()):
+		print time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter()
+		o1._printStatus()
+		o2._printStatus()
+		o3._printStatus()
+		raise AssertionError('Values not equal')
+
+
 def runTests():
 	useCrypto = True
 	if len(sys.argv) > 1 and sys.argv[1] == 'nocrypto':
@@ -370,6 +455,7 @@ def runTests():
 	checkCallbacksSimple()
 	checkDumpToFile()
 	checkBigStorage()
+	randomTest1()
 	if useCrypto:
 		encryptionCorrectPassword()
 		encryptionWrongPassword()
