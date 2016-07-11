@@ -73,6 +73,6 @@ if __name__ == '__main__':
     print 'ERRORS STATS:'
     for err in _g_errors:
         print err, float(_g_errors[err]) / float(_g_error)
-    if successRate >= 0.98:
+    if successRate >= 0.9:
         sys.exit(0)
     sys.exit(1)
