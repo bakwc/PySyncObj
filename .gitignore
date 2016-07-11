@@ -3,3 +3,4 @@
 MANIFEST
 dist/
 *.bak
+*.bin
