@@ -23,6 +23,11 @@ PySyncObj is a python library that provides ability to sync your data between mu
 - Configurable event loop - it can works in separate thread with it's own event loop - or you can call onTick function inside your own one.
 - Convenient interface - you can easily transform arbitrary class into a replicated one (see example below).
 
+## Content
+1. [Install](#install)
+2. [Usage](#usage)
+3. [Performance](#Performance)
+
 ## Install
 PySyncObj itself:
 ```bash
@@ -65,3 +70,7 @@ class MyCounter(SyncObj):
 		return self.__counter
 ```
 And thats all! Now you can call `incCounter` on `serverA`, and check counter value on `serverB` - they will be synchronized. You can look at examples and syncobj_ut.py for more use-cases.
+
+## Performance
+![15K rps on 3 nodes; 14K rps on 7 nodes;](http://pastexen.com/i/Ge3lnrM1OY.png "RPS vs Cluster Size")
+![22K rps on 10 byte requests; 5K rps on 20Kb requests;](http://pastexen.com/i/0RIsrKxJsV.png "RPS vs Request Size")
