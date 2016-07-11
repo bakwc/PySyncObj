@@ -10,13 +10,13 @@ except(IOError, ImportError, RuntimeError):
 setup(
     name='pysyncobj',
     packages=['pysyncobj', 'pysyncobj.pysyncobj3'],
-    version='0.1.8',
+    version='0.1.9',
     description=description,
     long_description=long_description,
     author='Filipp Ozinov',
     author_email='fippo@mail.ru',
     url='https://github.com/bakwc/PySyncObj',
-    download_url='https://github.com/bakwc/PySyncObj/tarball/0.1.8',
+    download_url='https://github.com/bakwc/PySyncObj/tarball/0.1.9',
     keywords=['network', 'replication', 'raft', 'synchronization'],
     classifiers=[
         'Topic :: System :: Networking',

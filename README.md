@@ -5,7 +5,7 @@
 [travis-image]: https://travis-ci.org/bakwc/PySyncObj.svg?branch=master
 [travis]: https://travis-ci.org/bakwc/PySyncObj
 
-[release-image]: https://img.shields.io/badge/release-0.1.8-blue.svg?style=flat
+[release-image]: https://img.shields.io/badge/release-0.1.9-blue.svg?style=flat
 [releases]: https://github.com/bakwc/PySyncObj/releases
 
 [license-image]: https://img.shields.io/badge/license-MIT-blue.svg?style=flat
