@@ -16,6 +16,9 @@ class TestObj(SyncObj):
 				 randTest = False):
 
 		cfg = SyncObjConf(autoTick=False, appendEntriesUseBatch=False)
+		cfg.appendEntriesPeriod = 0.1
+		cfg.raftMinTimeout = 0.5
+		cfg.raftMaxTimeout = 1.0
 		if compactionTest:
 			cfg.logCompactionMinEntries = compactionTest
 			cfg.logCompactionMinTime = 0.1
@@ -29,8 +32,9 @@ class TestObj(SyncObj):
 			cfg.password = password
 		if randTest:
 			cfg.autoTickPeriod = 0.05
-			cfg.raftMinTimeout = 0.5
-			cfg.raftMaxTimeout = 1.0
+			cfg.appendEntriesPeriod = 0.02
+			cfg.raftMinTimeout = 0.1
+			cfg.raftMaxTimeout = 0.2
 			cfg.logCompactionMinTime = 9999999
 			cfg.logCompactionMinEntries = 9999999
 
@@ -416,14 +420,14 @@ def randomTest1():
 
 	st = time.time()
 	while time.time() - st < 120.0:
-		doTicks(objs, random.random() * 1.5, interval=0.05)
+		doTicks(objs, random.random() * 0.3, interval=0.05)
 		assert _checkSameLeader(objs)
 		assert _checkSameLeader2(objs)
 		for i in xrange(0, random.randint(0, 2)):
 			random.choice(objs).addValue(random.randint(0, 10))
 		newObjs = list(objs)
 		newObjs.pop(random.randint(0, len(newObjs) - 1))
-		doTicks(newObjs, random.random() * 1.5, interval=0.05)
+		doTicks(newObjs, random.random() * 0.3, interval=0.05)
 		assert _checkSameLeader(objs)
 		assert _checkSameLeader2(objs)
 		for i in xrange(0, random.randint(0, 2)):
@@ -446,21 +450,22 @@ def randomTest1():
 
 
 def runTests():
-	useCrypto = True
-	if len(sys.argv) > 1 and sys.argv[1] == 'nocrypto':
-		useCrypto = False
-
-	syncTwoObjects()
-	syncThreeObjectsLeaderFail()
-	manyActionsLogCompaction()
-	checkCallbacksSimple()
-	checkDumpToFile()
-	checkBigStorage()
+	# useCrypto = True
+	# if len(sys.argv) > 1 and sys.argv[1] == 'nocrypto':
+	# 	useCrypto = False
+    #
+	# syncTwoObjects()
+	# syncThreeObjectsLeaderFail()
+	# manyActionsLogCompaction()
+	# checkCallbacksSimple()
+	# checkDumpToFile()
+	# checkBigStorage()
 	randomTest1()
-	if useCrypto:
-		encryptionCorrectPassword()
-		encryptionWrongPassword()
+	# if useCrypto:
+	# 	encryptionCorrectPassword()
+	# 	encryptionWrongPassword()
 	print '[SUCCESS]'
 
 if __name__ == '__main__':
 	runTests()
+

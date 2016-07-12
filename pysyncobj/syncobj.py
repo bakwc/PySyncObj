@@ -279,6 +279,9 @@ class SyncObj(object):
         self.__forceLogCompaction = True
 
     def __doApplyCommand(self, command):
+        # Skip no-op command
+        if command == '':
+            return
         command = cPickle.loads(command)
         args = []
         kwargs = {
@@ -520,6 +523,9 @@ class SyncObj(object):
             nodeAddr = node.getAddress()
             self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
             self.__raftMatchIndex[nodeAddr] = 0
+
+        # No-op command after leader election.
+        self._applyCommand('', None)
 
         self.__sendAppendEntries()
 
