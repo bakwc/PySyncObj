@@ -77,3 +77,6 @@ class SyncObjConf(object):
 
         # Will try to bind port every bindRetryTime seconds until success.
         self.bindRetryTime = kwargs.get('bindRetryTime', 1.0)
+
+        # This callback will be called as soon as SyncObj sync all data from leader.
+        self.onReady = kwargs.get('onReady', None)

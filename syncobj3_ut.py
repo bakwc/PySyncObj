@@ -94,15 +94,24 @@ def syncTwoObjects():
 	o1 = TestObj(a[0], [a[1]])
 	o2 = TestObj(a[1], [a[0]])
 	objs = [o1, o2]
+
+	assert not o1._isReady()
+	assert not o2._isReady()
+
 	doTicks(objs, 4.5)
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
+	assert o1._isReady()
+	assert o2._isReady()
 
 	o1.addValue(150)
 	o2.addValue(200)
 
 	doTicks(objs, 1.5)
+
+	assert o1._isReady()
+	assert o2._isReady()
 
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
@@ -118,7 +127,15 @@ def syncThreeObjectsLeaderFail():
 	o3 = TestObj(a[2], [a[0], a[1]])
 	objs = [o1, o2, o3]
 
+	assert not o1._isReady()
+	assert not o2._isReady()
+	assert not o3._isReady()
+
 	doTicks(objs, 4.5)
+
+	assert o1._isReady()
+	assert o2._isReady()
+	assert o3._isReady()
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -163,7 +180,15 @@ def manyActionsLogCompaction():
 	o3 = TestObj(a[2], [a[0], a[1]], compactionTest=100)
 	objs = [o1, o2, o3]
 
+	assert not o1._isReady()
+	assert not o2._isReady()
+	assert not o3._isReady()
+
 	doTicks(objs, 4.5)
+
+	assert o1._isReady()
+	assert o2._isReady()
+	assert o3._isReady()
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -220,7 +245,15 @@ def checkCallbacksSimple():
 	o3 = TestObj(a[2], [a[0], a[1]])
 	objs = [o1, o2, o3]
 
+	assert not o1._isReady()
+	assert not o2._isReady()
+	assert not o3._isReady()
+
 	doTicks(objs, 4.5)
+
+	assert o1._isReady()
+	assert o2._isReady()
+	assert o3._isReady()
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -275,6 +308,8 @@ def checkDumpToFile():
 	o2 = TestObj(a[1], [a[0]], compactionTest=1, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	doTicks(objs, 4.5)
+	assert o1._isReady()
+	assert o2._isReady()
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()

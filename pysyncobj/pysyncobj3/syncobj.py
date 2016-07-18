@@ -61,6 +61,8 @@ class SyncObj(object):
         self.__raftMatchIndex = {}
         self.__lastSerializedTime = time.time()
         self.__forceLogCompaction = False
+        self.__leaderCommitIndex = None
+        self.__onReadyCalled = False
         globalDnsResolver().setTimeouts(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
         self.__serializer = Serializer(self.__conf.fullDumpFile, self.__conf.logCompactionBatchSize)
         self.__isInitialized = False
@@ -231,6 +233,7 @@ class SyncObj(object):
                     self.__raftCommitIndex = nextCommitIndex
                 else:
                     break
+            self.__leaderCommitIndex = self.__raftCommitIndex
 
             if time.time() > self.__newAppendEntriesTime:
                 self.__sendAppendEntries()
@@ -249,6 +252,11 @@ class SyncObj(object):
                         callback(None, FAIL_REASON.DISCARDED)
 
                 self.__raftLastApplied += 1
+
+        if not self.__onReadyCalled and self.__raftLastApplied == self.__leaderCommitIndex:
+            if self.__conf.onReady:
+                self.__conf.onReady()
+            self.__onReadyCalled = True
 
         self._checkCommandsToApply()
         self.__tryLogCompaction()
@@ -341,7 +349,7 @@ class SyncObj(object):
             self.__raftState = _RAFT_STATE.FOLLOWER
             newEntries = message.get('entries', [])
             serialized = message.get('serialized', None)
-            leaderCommitIndex = message['commit_index']
+            self.__leaderCommitIndex = leaderCommitIndex = message['commit_index']
 
             # Regular append entries
             if 'prevLogIdx' in message:
@@ -497,6 +505,9 @@ class SyncObj(object):
 
     def _getLeader(self):
         return self.__raftLeader
+
+    def _isReady(self):
+        return self.__onReadyCalled
 
     def _getTerm(self):
         return self.__raftCurrentTerm
