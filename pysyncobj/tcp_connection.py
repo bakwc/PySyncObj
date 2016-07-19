@@ -206,6 +206,7 @@ class TcpConnection(object):
             self.disconnect()
             return False
         if not incoming:
+            self.disconnect()
             return False
         self.__readBuffer += incoming
         return True
