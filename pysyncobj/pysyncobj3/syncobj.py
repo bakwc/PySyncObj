@@ -530,7 +530,6 @@ class SyncObj(object):
         self.__raftLog = self.__raftLog[diff:]
 
     def __onBecomeLeader(self):
-        print('Now leader')
         self.__raftLeader = self.__selfNodeAddr
         self.__raftState = _RAFT_STATE.LEADER
 
