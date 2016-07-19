@@ -486,6 +486,28 @@ def randomTest1():
 		o3._printStatus()
 		raise AssertionError('Values not equal')
 
+# Ensure that raftLog after serialization is the same as in serialized data
+def logCompactionRegressionTest1():
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]])
+	o2 = TestObj(a[1], [a[0]])
+	objs = [o1, o2]
+
+	doTicks(objs, 4.5)
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	o1._forceLogCompaction()
+	doTicks(objs, 0.5)
+	assert o1._SyncObj__forceLogCompaction == False
+	logAfterCompaction = o1._SyncObj__raftLog
+	o1._SyncObj__loadDumpFile()
+	logAfterDeserialize = o1._SyncObj__raftLog
+	assert logAfterCompaction == logAfterDeserialize
 
 def runTests():
 	useCrypto = True
@@ -495,6 +517,7 @@ def runTests():
 	syncTwoObjects()
 	syncThreeObjectsLeaderFail()
 	manyActionsLogCompaction()
+	logCompactionRegressionTest1()
 	checkCallbacksSimple()
 	checkDumpToFile()
 	checkBigStorage()

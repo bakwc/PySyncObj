@@ -15,7 +15,7 @@ from .dns_resolver import globalDnsResolver
 from .poller import createPoller
 from .serializer import Serializer, SERIALIZER_STATE
 from .tcp_server import TcpServer
-from .node import Node
+from .node import Node, NODE_STATUS
 from .config import SyncObjConf, FAIL_REASON
 from .debug_utils import LOG_CURRENT_EXCEPTION, LOG_DEBUG, LOG_WARNING
 from .encryptor import HAS_CRYPTO, getEncryptor
@@ -206,7 +206,7 @@ class SyncObj(object):
             self.__needLoadDumpFile = False
 
         if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
-            if self.__raftElectionDeadline < time.time():
+            if self.__raftElectionDeadline < time.time() and self.__connectedToAnyone():
                 self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
                 self.__raftLeader = None
                 self.__raftState = _RAFT_STATE.CANDIDATE
@@ -530,6 +530,7 @@ class SyncObj(object):
         self.__raftLog = self.__raftLog[diff:]
 
     def __onBecomeLeader(self):
+        print('Now leader')
         self.__raftLeader = self.__selfNodeAddr
         self.__raftState = _RAFT_STATE.LEADER
 
@@ -614,6 +615,12 @@ class SyncObj(object):
                 node.send(message)
                 break
 
+    def __connectedToAnyone(self):
+        for node in self.__nodes:
+            if node.getStatus() == NODE_STATUS.CONNECTED:
+                return True
+        return False
+
     def _getSelfNodeAddr(self):
         return self.__selfNodeAddr
 
@@ -638,18 +645,18 @@ class SyncObj(object):
             return
 
         if len(self.__raftLog) <= self.__conf.logCompactionMinEntries and \
-                currTime - self.__lastSerializedTime <= self.__conf.logCompactionMinTime and\
+                                currTime - self.__lastSerializedTime <= self.__conf.logCompactionMinTime and \
                 not self.__forceLogCompaction:
             return
 
         self.__forceLogCompaction = False
 
         lastAppliedEntries = self.__getEntries(self.__raftLastApplied - 1, 2)
-        if not lastAppliedEntries:
+        if len(lastAppliedEntries) < 2:
             return
 
         data = dict([(k, self.__dict__[k]) for k in list(self.__dict__.keys()) if k not in self.__properies])
-        self.__serializer.serialize((data, lastAppliedEntries[1], lastAppliedEntries[0]), lastAppliedEntries[1][1])
+        self.__serializer.serialize((data, lastAppliedEntries[1], lastAppliedEntries[0]), lastAppliedEntries[0][1])
 
     def __loadDumpFile(self):
         try:
