@@ -26,7 +26,7 @@ PySyncObj is a python library that provides ability to sync your data between mu
 ## Content
 1. [Install](#install)
 2. [Usage](#usage)
-3. [Performance](#Performance)
+3. [Performance](#performance)
 
 ## Install
 PySyncObj itself:
