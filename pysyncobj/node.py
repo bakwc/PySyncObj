@@ -3,7 +3,6 @@ import time
 import os
 from tcp_connection import TcpConnection
 from dns_resolver import globalDnsResolver
-from poller import globalPoller
 
 class NODE_STATUS:
     DISCONNECTED = 0
@@ -17,7 +16,6 @@ class Node(object):
         self.__nodeAddr = nodeAddr
         self.__ip = globalDnsResolver().resolve(nodeAddr.split(':')[0])
         self.__port = int(nodeAddr.split(':')[1])
-        self.__poller = globalPoller()
         self.__shouldConnect = syncObj._getSelfNodeAddr() > nodeAddr
         self.__encryptor = syncObj._getEncryptor()
         self.__conn = None
@@ -37,7 +35,6 @@ class Node(object):
 
     def __del__(self):
         self.__conn = None
-        self.__poller = None
 
     def __onConnected(self):
         self.__status = NODE_STATUS.CONNECTED

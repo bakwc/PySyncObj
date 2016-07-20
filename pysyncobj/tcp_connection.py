@@ -4,7 +4,7 @@ import zlib
 import cPickle
 import struct
 
-from poller import globalPoller, POLL_EVENT_TYPE
+from poller import POLL_EVENT_TYPE
 
 
 class CONNECTION_STATE:

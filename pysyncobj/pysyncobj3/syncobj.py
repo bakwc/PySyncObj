@@ -357,22 +357,29 @@ class SyncObj(object):
                 prevLogTerm = message['prevLogTerm']
                 prevEntries = self.__getEntries(prevLogIdx)
                 if not prevEntries:
-                    self.__sendNextNodeIdx(nodeAddr, reset=True)
+                    if prevLogIdx is None or self.__getCurrentLogIndex() is None:
+                        nextNodeIdx = None
+                    else:
+                        nextNodeIdx = min(prevLogIdx, self.__getCurrentLogIndex())
+                    self.__sendNextNodeIdx(nodeAddr, nextNodeIdx = nextNodeIdx, success = False, reset=True)
                     return
                 if prevEntries[0][2] != prevLogTerm:
-                    self.__deleteEntriesFrom(prevLogIdx)
-                    self.__sendNextNodeIdx(nodeAddr, reset=True)
+                    self.__sendNextNodeIdx(nodeAddr, nextNodeIdx = prevLogIdx, success = False, reset=True)
                     return
                 if len(prevEntries) > 1:
                     self.__deleteEntriesFrom(prevLogIdx + 1)
                 self.__raftLog += newEntries
+                nextNodeIdx = prevLogIdx + 1
+                if newEntries:
+                    nextNodeIdx = newEntries[-1][1]
+
+                self.__sendNextNodeIdx(nodeAddr, nextNodeIdx=nextNodeIdx, success=True)
 
             # Install snapshot
             elif serialized is not None:
                 if self.__serializer.setTransmissionData(serialized):
                     self.__loadDumpFile()
-
-            self.__sendNextNodeIdx(nodeAddr)
+                    self.__sendNextNodeIdx(nodeAddr, success=True)
 
             self.__raftCommitIndex = min(leaderCommitIndex, self.__getCurrentLogIndex())
 
@@ -406,11 +413,13 @@ class SyncObj(object):
             if message['type'] == 'next_node_idx':
                 reset = message['reset']
                 nextNodeIdx = message['next_node_idx']
+                success = message['success']
 
                 currentNodeIdx = nextNodeIdx - 1
                 if reset:
                     self.__raftNextIndex[nodeAddr] = nextNodeIdx
-                self.__raftMatchIndex[nodeAddr] = currentNodeIdx
+                if success:
+                    self.__raftMatchIndex[nodeAddr] = currentNodeIdx
 
     def __callErrCallback(self, err, callback):
         if callback is None:
@@ -425,11 +434,14 @@ class SyncObj(object):
             return
         callback(None, err)
 
-    def __sendNextNodeIdx(self, nodeAddr, reset=False):
+    def __sendNextNodeIdx(self, nodeAddr, reset=False, nextNodeIdx = None, success = False):
+        if nextNodeIdx is None:
+            nextNodeIdx = self.__getCurrentLogIndex() + 1
         self.__send(nodeAddr, {
             'type': 'next_node_idx',
-            'next_node_idx': self.__getCurrentLogIndex() + 1,
+            'next_node_idx': nextNodeIdx,
             'reset': reset,
+            'success': success,
         })
 
     def __generateRaftTimeout(self):

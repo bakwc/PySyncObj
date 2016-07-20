@@ -480,10 +480,11 @@ def randomTest1():
 			break
 
 	if not (o1.getCounter() == o2.getCounter() == o3.getCounter()):
-		print(time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter())
 		o1._printStatus()
 		o2._printStatus()
 		o3._printStatus()
+		print('Logs same:', o1._SyncObj__raftLog == o2._SyncObj__raftLog == o3._SyncObj__raftLog)
+		print(time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter())
 		raise AssertionError('Values not equal')
 
 # Ensure that raftLog after serialization is the same as in serialized data
