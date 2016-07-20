@@ -508,21 +508,21 @@ def logCompactionRegressionTest1():
 	assert logAfterCompaction == logAfterDeserialize
 
 def runTests():
-	# useCrypto = True
-	# if len(sys.argv) > 1 and sys.argv[1] == 'nocrypto':
-	# 	useCrypto = False
-    #
-	# syncTwoObjects()
-	# syncThreeObjectsLeaderFail()
-	# manyActionsLogCompaction()
-	# logCompactionRegressionTest1()
-	# checkCallbacksSimple()
-	# checkDumpToFile()
-	# checkBigStorage()
+	useCrypto = True
+	if len(sys.argv) > 1 and sys.argv[1] == 'nocrypto':
+		useCrypto = False
+
+	syncTwoObjects()
+	syncThreeObjectsLeaderFail()
+	manyActionsLogCompaction()
+	logCompactionRegressionTest1()
+	checkCallbacksSimple()
+	checkDumpToFile()
+	checkBigStorage()
 	randomTest1()
-	# if useCrypto:
-	# 	encryptionCorrectPassword()
-	# 	encryptionWrongPassword()
+	if useCrypto:
+		encryptionCorrectPassword()
+		encryptionWrongPassword()
 	print '[SUCCESS]'
 
 if __name__ == '__main__':
