@@ -281,6 +281,7 @@ class SyncObj(object):
         LOG_DEBUG('raft term:', self.__raftCurrentTerm)
         LOG_DEBUG('next node idx:', self.__raftNextIndex)
         LOG_DEBUG('match idx:', self.__raftMatchIndex)
+        LOG_DEBUG('leader commit idx:', self.__leaderCommitIndex)
         LOG_DEBUG('')
 
     def _forceLogCompaction(self):
