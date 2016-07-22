@@ -46,14 +46,14 @@ class KVRequestHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "text/plain")
             self.end_headers()
-            self.wfile.write(value)
+            self.wfile.write(bytes(value, "utf-8"))
         except:
             pass
 
     def do_POST(self):
         try:
             key = self.path
-            value = self.rfile.read(int(self.headers.getheader('content-length')))
+            value = self.headers.get('content-length')
             _g_kvstorage.set(key, value)
             self.send_response(201)
             self.send_header("Content-type", "text/plain")
