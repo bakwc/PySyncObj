@@ -6,31 +6,42 @@ import sys
 from functools import partial
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON
 
+class TEST_TYPE:
+	DEFAULT = 0
+	COMPACTION_1 = 1
+	COMPACTION_2 = 2
+	RAND_1 = 3
+
 class TestObj(SyncObj):
 
 	def __init__(self, selfNodeAddr, otherNodeAddrs,
-				 compactionTest = 0,
+				 testType = TEST_TYPE.DEFAULT,
+				 compactionMinEntries = 0,
 				 dumpFile = None,
-				 compactionTest2 = False,
-				 password = None,
-				 randTest = False):
+				 password = None):
 
 		cfg = SyncObjConf(autoTick=False, appendEntriesUseBatch=False)
 		cfg.appendEntriesPeriod = 0.1
 		cfg.raftMinTimeout = 0.5
 		cfg.raftMaxTimeout = 1.0
-		if compactionTest:
-			cfg.logCompactionMinEntries = compactionTest
+
+		if dumpFile is not None:
+			cfg.fullDumpFile = dumpFile
+
+		if password is not None:
+			cfg.password = password
+
+		if testType == TEST_TYPE.COMPACTION_1:
+			cfg.logCompactionMinEntries = compactionMinEntries
 			cfg.logCompactionMinTime = 0.1
 			cfg.appendEntriesUseBatch = True
-			cfg.fullDumpFile = dumpFile
-		if compactionTest2:
+
+		if testType == TEST_TYPE.COMPACTION_2:
 			cfg.logCompactionMinEntries = 99999
 			cfg.logCompactionMinTime = 99999
 			cfg.fullDumpFile = dumpFile
-		if password is not None:
-			cfg.password = password
-		if randTest:
+
+		if testType == TEST_TYPE.RAND_1:
 			cfg.autoTickPeriod = 0.05
 			cfg.appendEntriesPeriod = 0.02
 			cfg.raftMinTimeout = 0.1
@@ -172,9 +183,9 @@ def manyActionsLogCompaction():
 
 	a = [getNextAddr(), getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1], a[2]], compactionTest=100)
-	o2 = TestObj(a[1], [a[2], a[0]], compactionTest=100)
-	o3 = TestObj(a[2], [a[0], a[1]], compactionTest=100)
+	o1 = TestObj(a[0], [a[1], a[2]], TEST_TYPE.COMPACTION_1, compactionMinEntries=100)
+	o2 = TestObj(a[1], [a[2], a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=100)
+	o3 = TestObj(a[2], [a[0], a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=100)
 	objs = [o1, o2, o3]
 
 	assert not o1._isReady()
@@ -281,8 +292,8 @@ def checkDumpToFile():
 
 	a = [getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1]], compactionTest=True, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], compactionTest=True, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	doTicks(objs, 4.5)
 
@@ -301,8 +312,8 @@ def checkDumpToFile():
 	del o2
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], compactionTest=1, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], compactionTest=1, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	doTicks(objs, 4.5)
 	assert o1._isReady()
@@ -328,8 +339,8 @@ def checkBigStorage():
 
 	a = [getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1]], compactionTest2=True, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], compactionTest2=True, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	doTicks(objs, 4.5)
 
@@ -355,8 +366,8 @@ def checkBigStorage():
 
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], compactionTest=1, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], compactionTest=1, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	# Wait for disk load, election and replication
 	doTicks(objs, 5.5)
@@ -448,9 +459,9 @@ def randomTest1():
 
 	a = [getNextAddr(), getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1], a[2]], randTest=True)
-	o2 = TestObj(a[1], [a[2], a[0]], randTest=True)
-	o3 = TestObj(a[2], [a[0], a[1]], randTest=True)
+	o1 = TestObj(a[0], [a[1], a[2]], TEST_TYPE.RAND_1)
+	o2 = TestObj(a[1], [a[2], a[0]], TEST_TYPE.RAND_1)
+	o3 = TestObj(a[2], [a[0], a[1]], TEST_TYPE.RAND_1)
 	objs = [o1, o2, o3]
 
 	st = time.time()
@@ -507,6 +518,52 @@ def logCompactionRegressionTest1():
 	logAfterDeserialize = o1._SyncObj__raftLog
 	assert logAfterCompaction == logAfterDeserialize
 
+def logCompactionRegressionTest2():
+	removeFiles(['dump1.bin', 'dump2.bin', 'dump3.bin'])
+
+	random.seed(12)
+
+	a = [getNextAddr(), getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1], a[2]], dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[2], a[0]], dumpFile = 'dump2.bin')
+	o3 = TestObj(a[2], [a[0], a[1]], dumpFile = 'dump3.bin')
+	objs = [o1, o2]
+
+	doTicks(objs, 3.5)
+	objs = [o1, o2, o3]
+	o1.addValue(2)
+	o1.addValue(3)
+	doTicks(objs, 0.5)
+	o3._forceLogCompaction()
+	doTicks(objs, 0.5)
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader() == o3._getLeader()
+
+	o3._destroy()
+	del o3
+
+	objs = [o1, o2]
+
+	o1.addValue(2)
+	o1.addValue(3)
+
+	doTicks(objs, 0.5)
+	o1._forceLogCompaction()
+	o2._forceLogCompaction()
+	doTicks(objs, 0.5)
+
+	o3 = TestObj(a[2], [a[0], a[1]], dumpFile='dump3.bin')
+	objs = [o1, o2, o3]
+	doTicks(objs, 3.5)
+
+	assert o1._isReady()
+	assert o2._isReady()
+	assert o3._isReady()
+
+	removeFiles(['dump1.bin', 'dump2.bin', 'dump3.bin'])
+
 def runTests():
 	useCrypto = True
 	if len(sys.argv) > 1 and sys.argv[1] == 'nocrypto':
@@ -516,6 +573,7 @@ def runTests():
 	syncThreeObjectsLeaderFail()
 	manyActionsLogCompaction()
 	logCompactionRegressionTest1()
+	logCompactionRegressionTest2()
 	checkCallbacksSimple()
 	checkDumpToFile()
 	checkBigStorage()
@@ -527,4 +585,3 @@ def runTests():
 
 if __name__ == '__main__':
 	runTests()
-
