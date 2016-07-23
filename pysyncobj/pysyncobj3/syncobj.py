@@ -614,7 +614,7 @@ class SyncObj(object):
                     if transmissionData is not None:
                         isLast = transmissionData[2]
                         if isLast:
-                            self.__raftNextIndex[nodeAddr] = self.__raftLog[0][1]
+                            self.__raftNextIndex[nodeAddr] = self.__raftLog[1][1] + 1
                             sendingSerialized = False
                         else:
                             sendingSerialized = True
