@@ -108,6 +108,12 @@ class SyncObj(object):
         else:
             self.__initInTickThread()
 
+    def _destroy(self):
+        for node in self.__nodes:
+            node._destroy()
+        self.__server.unbind()
+        self.__destroying = True
+
     def __initInTickThread(self):
         try:
             self.__lastInitTryTime = time.time()
@@ -580,7 +586,7 @@ class SyncObj(object):
             nextNodeIndex = self.__raftNextIndex[nodeAddr]
 
             while nextNodeIndex <= self.__getCurrentLogIndex() or sendSingle or sendingSerialized:
-                if nextNodeIndex >= self.__raftLog[0][1]:
+                if nextNodeIndex > self.__raftLog[0][1]:
                     prevLogIdx, prevLogTerm = self.__getPrevLogIndexTerm(nextNodeIndex)
                     entries = []
                     if nextNodeIndex <= self.__getCurrentLogIndex():

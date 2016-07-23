@@ -36,8 +36,11 @@ class Node(object):
         self.__lastPingTime = 0
         self.__status = NODE_STATUS.DISCONNECTED
 
-    def __del__(self):
-        self.__conn = None
+    def _destroy(self):
+        self.__shouldConnect = False
+        self.__syncObj = None
+        self.__conn.disconnect()
+        self.__onDisconnected()
 
     def __onConnected(self):
         self.__status = NODE_STATUS.CONNECTED

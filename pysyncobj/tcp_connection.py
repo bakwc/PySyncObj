@@ -46,10 +46,6 @@ class TcpConnection(object):
         self.__sendBufferSize = sendBufferSize
         self.__recvBufferSize = recvBufferSize
 
-
-    def __del__(self):
-        self.disconnect()
-
     def getState(self):
         if time.time() - self.__lastReadTime > self.__timeout:
             self.disconnect()
