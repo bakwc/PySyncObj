@@ -393,7 +393,11 @@ class SyncObj(object):
                     self.__sendNextNodeIdx(nodeAddr, nextNodeIdx = prevLogIdx, success = False, reset=True)
                     return
                 if len(prevEntries) > 1:
-                    #todo: implement cluster configuration rollback
+                    for entry in reversed(prevEntries[1:]):
+                        clusterChangeRequest = self.__parseChangeClusterRequest(entry[0])
+                        if clusterChangeRequest is not None:
+                            self.__doChangeCluster(clusterChangeRequest, reverse=True)
+
                     self.__deleteEntriesFrom(prevLogIdx + 1)
                 self.__raftLog += newEntries
                 for entry in newEntries:
@@ -692,9 +696,19 @@ class SyncObj(object):
 
         return self.__doChangeCluster(request)
 
-    def __doChangeCluster(self, request):
-        if request[0] == 'add':
-            newNode = request[1]
+    def __doChangeCluster(self, request, reverse = False):
+        requestType = request[0]
+        requestNode = request[1]
+
+        if requestType == 'add':
+            adding = not reverse
+        elif requestType == 'rem':
+            adding = reverse
+        else:
+            return False
+
+        if adding:
+            newNode = requestNode
             # Node already exists in cluster
             if newNode == self.__selfNodeAddr or newNode in self.__otherNodesAddrs:
                 return False
@@ -703,8 +717,8 @@ class SyncObj(object):
             self.__raftNextIndex[newNode] = 0
             self.__raftMatchIndex[newNode] = 0
             return True
-        if request[0] == 'rem':
-            oldNode = request[1]
+        else:
+            oldNode = requestNode
             if oldNode == self.__selfNodeAddr:
                 return False
             if oldNode not in self.__otherNodesAddrs:
@@ -715,10 +729,8 @@ class SyncObj(object):
                     self.__nodes.pop(i)
                     self.__otherNodesAddrs.pop(i)
                     del self.__raftNextIndex[oldNode]
-                    del self.__raftNextIndex[oldNode]
                     return True
             return False
-        return False
 
     def __parseChangeClusterRequest(self, command):
         if command == '':
@@ -754,7 +766,8 @@ class SyncObj(object):
             return
 
         data = dict([(k, self.__dict__[k]) for k in self.__dict__.keys() if k not in self.__properies])
-        self.__serializer.serialize((data, lastAppliedEntries[1], lastAppliedEntries[0]), lastAppliedEntries[0][1])
+        cluster = self.__otherNodesAddrs + [self.__selfNodeAddr]
+        self.__serializer.serialize((data, lastAppliedEntries[1], lastAppliedEntries[0], cluster), lastAppliedEntries[0][1])
 
     def __loadDumpFile(self):
         try:
@@ -763,10 +776,27 @@ class SyncObj(object):
                 self.__dict__[k] = v
             self.__raftLog = [data[2], data[1]]
             self.__raftLastApplied = data[1][1]
+            self.__otherNodesAddrs = [node for node in data[3] if node != self.__selfNodeAddr]
+            self.__updateClusterConfiguration()
         except:
             LOG_WARNING('Failed to load full dump')
             LOG_CURRENT_EXCEPTION()
 
+    def __updateClusterConfiguration(self):
+        currentNodes = set()
+        for i in xrange(len(self.__nodes) -1, -1, -1):
+            nodeAddr = self.__nodes[i].getAddress()
+            if nodeAddr not in self.__otherNodesAddrs:
+                self.__nodes[i]._destroy()
+                self.__nodes.pop(i)
+            else:
+                currentNodes.add(nodeAddr)
+
+        for nodeAddr in self.__otherNodesAddrs:
+            if nodeAddr not in currentNodes:
+                self.__nodes.append(Node(self, nodeAddr))
+                self.__raftNextIndex[nodeAddr] = 0
+                self.__raftMatchIndex[nodeAddr] = 0
 
 def replicated(func):
     def newFunc(self, *args, **kwargs):

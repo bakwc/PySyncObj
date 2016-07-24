@@ -40,7 +40,8 @@ class Node(object):
     def _destroy(self):
         self.__shouldConnect = False
         self.__syncObj = None
-        self.__conn.disconnect()
+        if self.__conn is not None:
+            self.__conn.disconnect()
         self.__onDisconnected()
         self.__terminating = True
 
