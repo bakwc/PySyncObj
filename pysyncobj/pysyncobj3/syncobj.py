@@ -26,6 +26,11 @@ class _RAFT_STATE:
     CANDIDATE = 1
     LEADER = 2
 
+class _COMMAND_TYPE:
+    REGULAR = 0
+    NO_OP = 1
+    MEMBERSHIP = 2
+
 
 # https://github.com/bakwc/PySyncObj
 
@@ -54,7 +59,7 @@ class SyncObj(object):
         self.__raftLeader = None
         self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
         self.__raftLog = []  # (command, logID, term)
-        self.__raftLog.append(('', 1, self.__raftCurrentTerm))
+        self.__raftLog.append((chr(_COMMAND_TYPE.NO_OP), 1, self.__raftCurrentTerm))
         self.__raftCommitIndex = 1
         self.__raftLastApplied = 1
         self.__raftNextIndex = {}
@@ -125,7 +130,7 @@ class SyncObj(object):
             self.__nodes = []
             for nodeAddr in self.__otherNodesAddrs:
                 self.__nodes.append(Node(self, nodeAddr))
-                self.__raftNextIndex[nodeAddr] = 0
+                self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
                 self.__raftMatchIndex[nodeAddr] = 0
             self.__needLoadDumpFile = True
             self.__isInitialized = True
@@ -135,16 +140,19 @@ class SyncObj(object):
     def _addNodeToCluster(self, nodeName, callback = None):
         if not self.__conf.dynamicMembershipChange:
             raise Exception('dynamicMembershipChange is disabled')
-        self._applyCommand(pickle.dumps(['add', nodeName]), callback)
+        self._applyCommand(pickle.dumps(['add', nodeName]), callback, _COMMAND_TYPE.MEMBERSHIP)
 
     def _removeNodeFromCluster(self, nodeName, callback = None):
         if not self.__conf.dynamicMembershipChange:
             raise Exception('dynamicMembershipChange is disabled')
-        self._applyCommand(pickle.dumps(['rem', nodeName]), callback)
+        self._applyCommand(pickle.dumps(['rem', nodeName]), callback, _COMMAND_TYPE.MEMBERSHIP)
 
-    def _applyCommand(self, command, callback):
+    def _applyCommand(self, command, callback, commandType = None):
         try:
-            self.__commandsQueue.put_nowait((command, callback))
+            if commandType is None:
+                self.__commandsQueue.put_nowait((command, callback))
+            else:
+                self.__commandsQueue.put_nowait((chr(commandType) + command, callback))
         except queue.Full:
             self.__callErrCallback(FAIL_REASON.QUEUE_FULL, callback)
 
@@ -323,13 +331,11 @@ class SyncObj(object):
         self.__forceLogCompaction = True
 
     def __doApplyCommand(self, command):
-        # Skip no-op command
-        if command == '':
+        commandType = ord(command[0])
+        # Skip no-op and membership change commands
+        if commandType != _COMMAND_TYPE.REGULAR:
             return
-        command = pickle.loads(command)
-        # Skip change-cluster command
-        if isinstance(command, list):
-            return
+        command = pickle.loads(command[1:])
         args = []
         kwargs = {
             '_doApply': True,
@@ -393,11 +399,7 @@ class SyncObj(object):
                 prevLogTerm = message['prevLogTerm']
                 prevEntries = self.__getEntries(prevLogIdx)
                 if not prevEntries:
-                    if prevLogIdx is None or self.__getCurrentLogIndex() is None:
-                        nextNodeIdx = None
-                    else:
-                        nextNodeIdx = min(prevLogIdx, self.__getCurrentLogIndex())
-                    self.__sendNextNodeIdx(nodeAddr, nextNodeIdx = nextNodeIdx, success = False, reset=True)
+                    self.__sendNextNodeIdx(nodeAddr, success=False, reset=True)
                     return
                 if prevEntries[0][2] != prevLogTerm:
                     self.__sendNextNodeIdx(nodeAddr, nextNodeIdx = prevLogIdx, success = False, reset=True)
@@ -603,7 +605,7 @@ class SyncObj(object):
 
         # No-op command after leader election.
         idx, term = self.__getCurrentLogIndex() + 1, self.__raftCurrentTerm
-        self.__raftLog.append(('', idx, term))
+        self.__raftLog.append((chr(_COMMAND_TYPE.NO_OP), idx, term))
         self.__noopIDx = idx
         if not self.__conf.appendEntriesUseBatch:
             self.__sendAppendEntries()
@@ -729,7 +731,7 @@ class SyncObj(object):
                 return False
             self.__otherNodesAddrs.append(newNode)
             self.__nodes.append(Node(self, newNode))
-            self.__raftNextIndex[newNode] = 0
+            self.__raftNextIndex[newNode] = self.__getCurrentLogIndex() + 1
             self.__raftMatchIndex[newNode] = 0
             return True
         else:
@@ -748,12 +750,10 @@ class SyncObj(object):
             return False
 
     def __parseChangeClusterRequest(self, command):
-        if command == '':
+        commandType = ord(command[0])
+        if commandType != _COMMAND_TYPE.MEMBERSHIP:
             return None
-        request = pickle.loads(command)
-        if not isinstance(request, list):
-            return None
-        return request
+        return pickle.loads(command[1:])
 
     def __tryLogCompaction(self):
         currTime = time.time()
@@ -811,7 +811,7 @@ class SyncObj(object):
         for nodeAddr in self.__otherNodesAddrs:
             if nodeAddr not in currentNodes:
                 self.__nodes.append(Node(self, nodeAddr))
-                self.__raftNextIndex[nodeAddr] = 0
+                self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
                 self.__raftMatchIndex[nodeAddr] = 0
 
 def replicated(func):
@@ -827,5 +827,5 @@ def replicated(func):
             else:
                 cmd = self._methodToID[func.__name__]
 
-            self._applyCommand(pickle.dumps(cmd, -1), callback)
+            self._applyCommand(pickle.dumps(cmd, -1), callback, _COMMAND_TYPE.REGULAR)
     return newFunc

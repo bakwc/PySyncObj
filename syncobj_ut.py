@@ -5,7 +5,7 @@ import threading
 import cPickle
 import sys
 from functools import partial
-from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON
+from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE
 
 class TEST_TYPE:
 	DEFAULT = 0
@@ -594,6 +594,9 @@ def doChangeClusterUT1():
 	__checkParnerNodeExists(o1, 'localhost:1239', False)
 	__checkParnerNodeExists(o1, 'localhost:1235', True)
 
+	noop = chr(_COMMAND_TYPE.NO_OP)
+	member = chr(_COMMAND_TYPE.MEMBERSHIP)
+
 	# Check regular configuration change - adding
 	o1._onMessageReceived('localhost:12345', {
 		'type': 'append_entries',
@@ -601,7 +604,7 @@ def doChangeClusterUT1():
 		'prevLogIdx': 1,
 		'prevLogTerm': 0,
 		'commit_index': 2,
-		'entries': [('', 2, 1), ('', 3, 1), (cPickle.dumps(['add', 'localhost:1238']), 4, 1)]
+		'entries': [(noop, 2, 1), (noop, 3, 1), (member + cPickle.dumps(['add', 'localhost:1238']), 4, 1)]
 	})
 	__checkParnerNodeExists(o1, 'localhost:1238', True)
 	__checkParnerNodeExists(o1, 'localhost:1239', False)
@@ -613,7 +616,7 @@ def doChangeClusterUT1():
 		'prevLogIdx': 2,
 		'prevLogTerm': 1,
 		'commit_index': 3,
-		'entries': [('', 3, 2), (cPickle.dumps(['add', 'localhost:1239']), 4, 2)]
+		'entries': [(noop, 3, 2), (member + cPickle.dumps(['add', 'localhost:1239']), 4, 2)]
 	})
 	__checkParnerNodeExists(o1, 'localhost:1238', False)
 	__checkParnerNodeExists(o1, 'localhost:1239', True)
@@ -626,7 +629,7 @@ def doChangeClusterUT1():
 		'prevLogIdx': 4,
 		'prevLogTerm': 2,
 		'commit_index': 4,
-		'entries': [(cPickle.dumps(['rem', 'localhost:1235']), 5, 2)]
+		'entries': [(member + cPickle.dumps(['rem', 'localhost:1235']), 5, 2)]
 	})
 
 	__checkParnerNodeExists(o1, 'localhost:1238', False)
@@ -649,6 +652,28 @@ def doChangeClusterUT1():
 	__checkParnerNodeExists(o2, 'localhost:1239', True)
 	__checkParnerNodeExists(o2, 'localhost:1235', False)
 
+def doChangeClusterUT2():
+	a = [getNextAddr(), getNextAddr(), getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1], a[2]], dynamicMembershipChange=True)
+	o2 = TestObj(a[1], [a[2], a[0]], dynamicMembershipChange=True)
+	o3 = TestObj(a[2], [a[0], a[1]], dynamicMembershipChange=True)
+
+	doTicks([o1, o2, o3], 3.5)
+	assert o1._isReady() == o2._isReady() == o3._isReady() == True
+	o3.addValue(50)
+	o2._addNodeToCluster(a[3])
+	doTicks([o1, o2, o3], 1.5)
+	__checkParnerNodeExists(o1, a[3], True)
+	__checkParnerNodeExists(o2, a[3], True)
+	__checkParnerNodeExists(o3, a[3], True)
+	o4 = TestObj(a[3], [a[0], a[1], a[2]], dynamicMembershipChange=True)
+	doTicks([o1, o2, o3, o4], 3.5)
+	o1.addValue(450)
+	doTicks([o1, o2, o3, o4], 1.5)
+	assert o4._isReady()
+	assert o4.getCounter() == 500
+
 
 def runTests():
 	useCrypto = True
@@ -662,6 +687,7 @@ def runTests():
 	logCompactionRegressionTest2()
 	checkCallbacksSimple()
 	doChangeClusterUT1()
+	doChangeClusterUT2()
 	checkDumpToFile()
 	checkBigStorage()
 	randomTest1()
