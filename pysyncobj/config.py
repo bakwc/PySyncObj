@@ -80,3 +80,6 @@ class SyncObjConf(object):
 
         # This callback will be called as soon as SyncObj sync all data from leader.
         self.onReady = kwargs.get('onReady', None)
+
+        # If enabled - cluster configuration could be changed dynamically.
+        self.dynamicMembershipChange = kwargs.get('dynamicMembershipChange', False)

@@ -5,9 +5,14 @@ import os
 import time
 import random
 import threading
+import pickle
 import sys
 from functools import partial
-from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON
+import functools
+import struct
+from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE
+
+_bchr = functools.partial(struct.pack, 'B')
 
 class TEST_TYPE:
 	DEFAULT = 0
@@ -21,12 +26,14 @@ class TestObj(SyncObj):
 				 testType = TEST_TYPE.DEFAULT,
 				 compactionMinEntries = 0,
 				 dumpFile = None,
-				 password = None):
+				 password = None,
+				 dynamicMembershipChange = False):
 
 		cfg = SyncObjConf(autoTick=False, appendEntriesUseBatch=False)
 		cfg.appendEntriesPeriod = 0.1
 		cfg.raftMinTimeout = 0.5
 		cfg.raftMaxTimeout = 1.0
+		cfg.dynamicMembershipChange = dynamicMembershipChange
 
 		if dumpFile is not None:
 			cfg.fullDumpFile = dumpFile
@@ -567,6 +574,114 @@ def logCompactionRegressionTest2():
 
 	removeFiles(['dump1.bin', 'dump2.bin', 'dump3.bin'])
 
+def __checkParnerNodeExists(obj, nodeName, shouldExist = True):
+	nodesSet1 = set()
+	nodesSet2 = set(obj._SyncObj__otherNodesAddrs)
+	for node in obj._SyncObj__nodes:
+		nodesSet1.add(node.getAddress())
+
+	if nodesSet1 != nodesSet2:
+		print('otherNodes:', nodesSet2)
+		print('nodes:', nodesSet1)
+
+	assert nodesSet1 == nodesSet2
+	if shouldExist:
+		assert nodeName in nodesSet1
+	else:
+		assert nodeName not in nodesSet1
+
+def doChangeClusterUT1():
+	removeFiles(['dump1.bin'])
+
+	baseAddr = getNextAddr()
+	oterAddr = getNextAddr()
+
+	o1 = TestObj(baseAddr, ['localhost:1235', oterAddr], dumpFile='dump1.bin', dynamicMembershipChange=True)
+	__checkParnerNodeExists(o1, 'localhost:1238', False)
+	__checkParnerNodeExists(o1, 'localhost:1239', False)
+	__checkParnerNodeExists(o1, 'localhost:1235', True)
+
+	noop = _bchr(_COMMAND_TYPE.NO_OP)
+	member = _bchr(_COMMAND_TYPE.MEMBERSHIP)
+
+	# Check regular configuration change - adding
+	o1._onMessageReceived('localhost:12345', {
+		'type': 'append_entries',
+		'term': 1,
+		'prevLogIdx': 1,
+		'prevLogTerm': 0,
+		'commit_index': 2,
+		'entries': [(noop, 2, 1), (noop, 3, 1), (member + pickle.dumps(['add', 'localhost:1238']), 4, 1)]
+	})
+	__checkParnerNodeExists(o1, 'localhost:1238', True)
+	__checkParnerNodeExists(o1, 'localhost:1239', False)
+
+	# Check rollback adding
+	o1._onMessageReceived('localhost:1236', {
+		'type': 'append_entries',
+		'term': 2,
+		'prevLogIdx': 2,
+		'prevLogTerm': 1,
+		'commit_index': 3,
+		'entries': [(noop, 3, 2), (member + pickle.dumps(['add', 'localhost:1239']), 4, 2)]
+	})
+	__checkParnerNodeExists(o1, 'localhost:1238', False)
+	__checkParnerNodeExists(o1, 'localhost:1239', True)
+	__checkParnerNodeExists(o1, oterAddr, True)
+
+	# Check regular configuration change - removing
+	o1._onMessageReceived('localhost:1236', {
+		'type': 'append_entries',
+		'term': 2,
+		'prevLogIdx': 4,
+		'prevLogTerm': 2,
+		'commit_index': 4,
+		'entries': [(member + pickle.dumps(['rem', 'localhost:1235']), 5, 2)]
+	})
+
+	__checkParnerNodeExists(o1, 'localhost:1238', False)
+	__checkParnerNodeExists(o1, 'localhost:1239', True)
+	__checkParnerNodeExists(o1, 'localhost:1235', False)
+
+
+	# Check log compaction
+	o1._forceLogCompaction()
+	doTicks([o1], 0.5)
+	o1._destroy()
+	del o1
+
+	o2 = TestObj(oterAddr, [baseAddr, 'localhost:1236'], dumpFile='dump1.bin', dynamicMembershipChange=True)
+	doTicks([o2], 0.5)
+
+	__checkParnerNodeExists(o2, oterAddr, False)
+	__checkParnerNodeExists(o2, baseAddr, True)
+	__checkParnerNodeExists(o2, 'localhost:1238', False)
+	__checkParnerNodeExists(o2, 'localhost:1239', True)
+	__checkParnerNodeExists(o2, 'localhost:1235', False)
+
+def doChangeClusterUT2():
+	a = [getNextAddr(), getNextAddr(), getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1], a[2]], dynamicMembershipChange=True)
+	o2 = TestObj(a[1], [a[2], a[0]], dynamicMembershipChange=True)
+	o3 = TestObj(a[2], [a[0], a[1]], dynamicMembershipChange=True)
+
+	doTicks([o1, o2, o3], 3.5)
+	assert o1._isReady() == o2._isReady() == o3._isReady() == True
+	o3.addValue(50)
+	o2._addNodeToCluster(a[3])
+	doTicks([o1, o2, o3], 1.5)
+	__checkParnerNodeExists(o1, a[3], True)
+	__checkParnerNodeExists(o2, a[3], True)
+	__checkParnerNodeExists(o3, a[3], True)
+	o4 = TestObj(a[3], [a[0], a[1], a[2]], dynamicMembershipChange=True)
+	doTicks([o1, o2, o3, o4], 3.5)
+	o1.addValue(450)
+	doTicks([o1, o2, o3, o4], 1.5)
+	assert o4._isReady()
+	assert o4.getCounter() == 500
+
+
 def runTests():
 	useCrypto = True
 	if len(sys.argv) > 1 and sys.argv[1] == 'nocrypto':
@@ -578,6 +693,8 @@ def runTests():
 	logCompactionRegressionTest1()
 	logCompactionRegressionTest2()
 	checkCallbacksSimple()
+	doChangeClusterUT1()
+	doChangeClusterUT2()
 	checkDumpToFile()
 	checkBigStorage()
 	randomTest1()

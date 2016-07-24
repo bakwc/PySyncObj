@@ -32,12 +32,15 @@ class Node(object):
         self.__lastConnectAttemptTime = 0
         self.__lastPingTime = 0
         self.__status = NODE_STATUS.DISCONNECTED
+        self.__terminating = False
 
     def _destroy(self):
         self.__shouldConnect = False
         self.__syncObj = None
-        self.__conn.disconnect()
+        if self.__conn is not None:
+            self.__conn.disconnect()
         self.__onDisconnected()
+        self.__terminating = True
 
     def __onConnected(self):
         self.__status = NODE_STATUS.CONNECTED
@@ -59,6 +62,8 @@ class Node(object):
         self.__syncObj()._onMessageReceived(self.__nodeAddr, message)
 
     def onPartnerConnected(self, conn):
+        if self.__terminating:
+            return
         self.__conn = conn
         conn.setOnMessageReceivedCallback(self.__onMessageReceived)
         conn.setOnDisconnectedCallback(self.__onDisconnected)

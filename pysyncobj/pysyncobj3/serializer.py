@@ -107,6 +107,7 @@ class Serializer(object):
                         'transmitted': 0,
                     }
             except:
+                LOG_CURRENT_EXCEPTION()
                 LOG_WARNING('Failed to open file for transmission')
                 self.__transmissions.pop(transmissionID, None)
                 return None

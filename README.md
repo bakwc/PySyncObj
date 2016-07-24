@@ -17,6 +17,7 @@
 PySyncObj is a python library that provides ability to sync your data between multiple servers.
 - It use [raft protocol](http://raft.github.io/) for leader election and log replication.
 - It supports log compaction. It use fork for copy-on-write while serializing data on disk.
+- It supports dynamic membership changes (cluster reconfiguration).
 - It supports in-memory and on-disk serialization. You can use in-memory mode for small data and on-disk for big one.
 - It has encryption - you can set password and use it in external network.
 - It supports python2 and python3. No dependencies required (only optional one, eg. cryptography).
