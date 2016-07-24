@@ -19,12 +19,14 @@ class TestObj(SyncObj):
 				 testType = TEST_TYPE.DEFAULT,
 				 compactionMinEntries = 0,
 				 dumpFile = None,
-				 password = None):
+				 password = None,
+				 dynamicMembershipChange = False):
 
 		cfg = SyncObjConf(autoTick=False, appendEntriesUseBatch=False)
 		cfg.appendEntriesPeriod = 0.1
 		cfg.raftMinTimeout = 0.5
 		cfg.raftMaxTimeout = 1.0
+		cfg.dynamicMembershipChange = dynamicMembershipChange
 
 		if dumpFile is not None:
 			cfg.fullDumpFile = dumpFile
@@ -587,7 +589,7 @@ def doChangeClusterUT1():
 	baseAddr = getNextAddr()
 	oterAddr = getNextAddr()
 
-	o1 = TestObj(baseAddr, ['localhost:1235', oterAddr], dumpFile='dump1.bin')
+	o1 = TestObj(baseAddr, ['localhost:1235', oterAddr], dumpFile='dump1.bin', dynamicMembershipChange=True)
 	__checkParnerNodeExists(o1, 'localhost:1238', False)
 	__checkParnerNodeExists(o1, 'localhost:1239', False)
 	__checkParnerNodeExists(o1, 'localhost:1235', True)
@@ -638,7 +640,7 @@ def doChangeClusterUT1():
 	o1._destroy()
 	del o1
 
-	o2 = TestObj(oterAddr, [baseAddr, 'localhost:1236'], dumpFile='dump1.bin')
+	o2 = TestObj(oterAddr, [baseAddr, 'localhost:1236'], dumpFile='dump1.bin', dynamicMembershipChange=True)
 	doTicks([o2], 0.5)
 
 	__checkParnerNodeExists(o2, oterAddr, False)

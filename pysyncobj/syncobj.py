@@ -130,9 +130,13 @@ class SyncObj(object):
             LOG_CURRENT_EXCEPTION()
 
     def _addNodeToCluster(self, nodeName, callback = None):
+        if not self.__conf.dynamicMembershipChange:
+            raise Exception('dynamicMembershipChange is disabled')
         self._applyCommand(cPickle.dumps(['add', nodeName]), callback)
 
     def _removeNodeFromCluster(self, nodeName, callback = None):
+        if not self.__conf.dynamicMembershipChange:
+            raise Exception('dynamicMembershipChange is disabled')
         self._applyCommand(cPickle.dumps(['rem', nodeName]), callback)
 
     def _applyCommand(self, command, callback):
@@ -159,7 +163,10 @@ class SyncObj(object):
             if self.__raftState == _RAFT_STATE.LEADER:
                 idx, term = self.__getCurrentLogIndex() + 1, self.__raftCurrentTerm
 
-                changeClusterRequest = self.__parseChangeClusterRequest(command)
+                if self.__conf.dynamicMembershipChange:
+                    changeClusterRequest = self.__parseChangeClusterRequest(command)
+                else:
+                    changeClusterRequest = None
 
                 if changeClusterRequest is None or self.__changeCluster(changeClusterRequest):
 
@@ -393,17 +400,22 @@ class SyncObj(object):
                     self.__sendNextNodeIdx(nodeAddr, nextNodeIdx = prevLogIdx, success = False, reset=True)
                     return
                 if len(prevEntries) > 1:
-                    for entry in reversed(prevEntries[1:]):
-                        clusterChangeRequest = self.__parseChangeClusterRequest(entry[0])
-                        if clusterChangeRequest is not None:
-                            self.__doChangeCluster(clusterChangeRequest, reverse=True)
+                    # rollback cluster changes
+                    if self.__conf.dynamicMembershipChange:
+                        for entry in reversed(prevEntries[1:]):
+                            clusterChangeRequest = self.__parseChangeClusterRequest(entry[0])
+                            if clusterChangeRequest is not None:
+                                self.__doChangeCluster(clusterChangeRequest, reverse=True)
 
                     self.__deleteEntriesFrom(prevLogIdx + 1)
                 self.__raftLog += newEntries
-                for entry in newEntries:
-                    clusterChangeRequest = self.__parseChangeClusterRequest(entry[0])
-                    if clusterChangeRequest is not None:
-                        self.__doChangeCluster(clusterChangeRequest)
+
+                # apply cluster changes
+                if self.__conf.dynamicMembershipChange:
+                    for entry in newEntries:
+                        clusterChangeRequest = self.__parseChangeClusterRequest(entry[0])
+                        if clusterChangeRequest is not None:
+                            self.__doChangeCluster(clusterChangeRequest)
 
                 nextNodeIdx = prevLogIdx + 1
                 if newEntries:
@@ -776,8 +788,9 @@ class SyncObj(object):
                 self.__dict__[k] = v
             self.__raftLog = [data[2], data[1]]
             self.__raftLastApplied = data[1][1]
-            self.__otherNodesAddrs = [node for node in data[3] if node != self.__selfNodeAddr]
-            self.__updateClusterConfiguration()
+            if self.__conf.dynamicMembershipChange:
+                self.__otherNodesAddrs = [node for node in data[3] if node != self.__selfNodeAddr]
+                self.__updateClusterConfiguration()
         except:
             LOG_WARNING('Failed to load full dump')
             LOG_CURRENT_EXCEPTION()
