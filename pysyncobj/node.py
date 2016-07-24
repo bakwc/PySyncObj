@@ -39,12 +39,6 @@ class Node(object):
         self.__syncObj = None
         self.__conn.disconnect()
         self.__onDisconnected()
-
-    def remove(self):
-        self.__conn.disconnect()
-        self.__onConnected()
-        self.__status = NODE_STATUS.DISCONNECTED
-        self.__shouldConnect = False
         self.__terminating = True
 
     def __onConnected(self):

@@ -711,7 +711,7 @@ class SyncObj(object):
                 return False
             for i in xrange(len(self.__nodes)):
                 if self.__nodes[i].getAddress() == oldNode:
-                    self.__nodes[i].remove()
+                    self.__nodes[i]._destroy()
                     self.__nodes.pop(i)
                     self.__otherNodesAddrs.pop(i)
                     del self.__raftNextIndex[oldNode]

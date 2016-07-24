@@ -112,6 +112,12 @@ class SyncObj(object):
         else:
             self.__initInTickThread()
 
+    def _destroy(self):
+        for node in self.__nodes:
+            node._destroy()
+        self.__server.unbind()
+        self.__destroying = True
+
     def __initInTickThread(self):
         try:
             self.__lastInitTryTime = time.time()
@@ -610,7 +616,7 @@ class SyncObj(object):
             nextNodeIndex = self.__raftNextIndex[nodeAddr]
 
             while nextNodeIndex <= self.__getCurrentLogIndex() or sendSingle or sendingSerialized:
-                if nextNodeIndex >= self.__raftLog[0][1]:
+                if nextNodeIndex > self.__raftLog[0][1]:
                     prevLogIdx, prevLogTerm = self.__getPrevLogIndexTerm(nextNodeIndex)
                     entries = []
                     if nextNodeIndex <= self.__getCurrentLogIndex():
@@ -638,7 +644,7 @@ class SyncObj(object):
                     if transmissionData is not None:
                         isLast = transmissionData[2]
                         if isLast:
-                            self.__raftNextIndex[nodeAddr] = self.__raftLog[0][1]
+                            self.__raftNextIndex[nodeAddr] = self.__raftLog[1][1] + 1
                             sendingSerialized = False
                         else:
                             sendingSerialized = True
@@ -708,7 +714,7 @@ class SyncObj(object):
                 return False
             for i in range(len(self.__nodes)):
                 if self.__nodes[i].getAddress() == oldNode:
-                    self.__nodes[i].remove()
+                    self.__nodes[i]._destroy()
                     self.__nodes.pop(i)
                     self.__otherNodesAddrs.pop(i)
                     del self.__raftNextIndex[oldNode]
