@@ -8,7 +8,11 @@ import threading
 import pickle
 import sys
 from functools import partial
+import functools
+import struct
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE
+
+_bchr = functools.partial(struct.pack, 'B')
 
 class TEST_TYPE:
 	DEFAULT = 0
@@ -597,8 +601,8 @@ def doChangeClusterUT1():
 	__checkParnerNodeExists(o1, 'localhost:1239', False)
 	__checkParnerNodeExists(o1, 'localhost:1235', True)
 
-	noop = chr(_COMMAND_TYPE.NO_OP)
-	member = chr(_COMMAND_TYPE.MEMBERSHIP)
+	noop = _bchr(_COMMAND_TYPE.NO_OP)
+	member = _bchr(_COMMAND_TYPE.MEMBERSHIP)
 
 	# Check regular configuration change - adding
 	o1._onMessageReceived('localhost:12345', {

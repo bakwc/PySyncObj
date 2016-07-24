@@ -8,6 +8,7 @@ import Queue
 import weakref
 import collections
 import functools
+import struct
 from dns_resolver import globalDnsResolver
 from poller import createPoller
 from serializer import Serializer, SERIALIZER_STATE
@@ -28,6 +29,7 @@ class _COMMAND_TYPE:
     NO_OP = 1
     MEMBERSHIP = 2
 
+_bchr = functools.partial(struct.pack, 'B')
 
 # https://github.com/bakwc/PySyncObj
 
@@ -56,7 +58,7 @@ class SyncObj(object):
         self.__raftLeader = None
         self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
         self.__raftLog = []  # (command, logID, term)
-        self.__raftLog.append((chr(_COMMAND_TYPE.NO_OP), 1, self.__raftCurrentTerm))
+        self.__raftLog.append((_bchr(_COMMAND_TYPE.NO_OP), 1, self.__raftCurrentTerm))
         self.__raftCommitIndex = 1
         self.__raftLastApplied = 1
         self.__raftNextIndex = {}
@@ -149,7 +151,7 @@ class SyncObj(object):
             if commandType is None:
                 self.__commandsQueue.put_nowait((command, callback))
             else:
-                self.__commandsQueue.put_nowait((chr(commandType) + command, callback))
+                self.__commandsQueue.put_nowait((_bchr(commandType) + command, callback))
         except Queue.Full:
             self.__callErrCallback(FAIL_REASON.QUEUE_FULL, callback)
 
@@ -328,7 +330,7 @@ class SyncObj(object):
         self.__forceLogCompaction = True
 
     def __doApplyCommand(self, command):
-        commandType = ord(command[0])
+        commandType = ord(command[:1])
         # Skip no-op and membership change commands
         if commandType != _COMMAND_TYPE.REGULAR:
             return
@@ -602,7 +604,7 @@ class SyncObj(object):
 
         # No-op command after leader election.
         idx, term = self.__getCurrentLogIndex() + 1, self.__raftCurrentTerm
-        self.__raftLog.append((chr(_COMMAND_TYPE.NO_OP), idx, term))
+        self.__raftLog.append((_bchr(_COMMAND_TYPE.NO_OP), idx, term))
         self.__noopIDx = idx
         if not self.__conf.appendEntriesUseBatch:
             self.__sendAppendEntries()
@@ -747,7 +749,7 @@ class SyncObj(object):
             return False
 
     def __parseChangeClusterRequest(self, command):
-        commandType = ord(command[0])
+        commandType = ord(command[:1])
         if commandType != _COMMAND_TYPE.MEMBERSHIP:
             return None
         return cPickle.loads(command[1:])
