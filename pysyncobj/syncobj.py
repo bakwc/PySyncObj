@@ -828,3 +828,20 @@ def replicated(func):
 
             self._applyCommand(cPickle.dumps(cmd, -1), callback, _COMMAND_TYPE.REGULAR)
     return newFunc
+
+def replicated_sync(func, timeout = None):
+    def newFunc(self, *args, **kwargs):
+        class local:
+            result = None
+            error = None
+            event = threading.Event()
+        def rep_cb(res, err):
+            local.result = res
+            local.error = err
+            local.event.set()
+        if kwargs.get('_doApply', False):
+            replicated(func)(self, *args, **kwargs)
+        else:
+            replicated(func)(self, callback = rep_cb, *args, **kwargs)
+            local.event.wait()
+    return newFunc
