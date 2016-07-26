@@ -33,6 +33,11 @@ _bchr = functools.partial(struct.pack, 'B')
 
 # https://github.com/bakwc/PySyncObj
 
+class SyncObjException(Exception):
+    def __init__(self, errorCode, *args, **kwargs):
+        Exception.__init__(self, *args, **kwargs)
+        self.errorCode = errorCode
+
 class SyncObj(object):
     def __init__(self, selfNodeAddr, otherNodesAddrs, conf=None):
 
@@ -827,4 +832,26 @@ def replicated(func):
                 cmd = self._methodToID[func.__name__]
 
             self._applyCommand(cPickle.dumps(cmd, -1), callback, _COMMAND_TYPE.REGULAR)
+    return newFunc
+
+def replicated_sync(func, timeout = None):
+    def newFunc(self, *args, **kwargs):
+        class local:
+            result = None
+            error = None
+            event = threading.Event()
+        def rep_cb(res, err):
+            local.result = res
+            local.error = err
+            local.event.set()
+        if kwargs.get('_doApply', False):
+            replicated(func)(self, *args, **kwargs)
+        else:
+            replicated(func)(self, callback = rep_cb, *args, **kwargs)
+            res = local.event.wait(timeout = timeout)
+            if not res:
+                raise SyncObjException('Timeout')
+            if not local.error == 0:
+                raise SyncObjException(local.error)
+            return local.result
     return newFunc

@@ -4,3 +4,4 @@ MANIFEST
 dist/
 *.bak
 *.bin
+build/
