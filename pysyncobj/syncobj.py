@@ -33,6 +33,11 @@ _bchr = functools.partial(struct.pack, 'B')
 
 # https://github.com/bakwc/PySyncObj
 
+class SyncObjException(Exception):
+    def __init__(self, errorCode, *args, **kwargs):
+        Exception.__init__(self, *args, **kwargs)
+        self.errorCode = errorCode
+
 class SyncObj(object):
     def __init__(self, selfNodeAddr, otherNodesAddrs, conf=None):
 
@@ -843,5 +848,10 @@ def replicated_sync(func, timeout = None):
             replicated(func)(self, *args, **kwargs)
         else:
             replicated(func)(self, callback = rep_cb, *args, **kwargs)
-            local.event.wait()
+            res = local.event.wait(timeout = timeout)
+            if not res:
+                raise SyncObjException('Timeout')
+            if not local.error == 0:
+                raise SyncObjException(local.error)
+            return local.result
     return newFunc
