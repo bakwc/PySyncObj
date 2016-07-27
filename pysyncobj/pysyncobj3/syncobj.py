@@ -848,9 +848,10 @@ def replicated_sync(func, timeout = None):
             local.error = err
             local.event.set()
         if kwargs.get('_doApply', False):
-            replicated(func)(self, *args, **kwargs)
+            return replicated(func)(self, *args, **kwargs)
         else:
-            replicated(func)(self, callback = rep_cb, *args, **kwargs)
+            kwargs["callback"] = rep_cb
+            replicated(func)(self, *args, **kwargs)
             res = local.event.wait(timeout = timeout)
             if not res:
                 raise SyncObjException('Timeout')
