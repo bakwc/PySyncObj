@@ -57,6 +57,7 @@ class TestObj(SyncObj):
 			cfg.raftMaxTimeout = 0.2
 			cfg.logCompactionMinTime = 9999999
 			cfg.logCompactionMinEntries = 9999999
+			cfg.journalFile = journalFile
 
 		if testType == TEST_TYPE.JOURNAL_1:
 			cfg.logCompactionMinTime = 999999
@@ -470,13 +471,15 @@ def _checkSameLeader2(objs):
 
 def randomTest1():
 
+	removeFiles(['journal1.bin', 'journal2.bin', 'journal3.bin'])
+
 	random.seed(12)
 
 	a = [getNextAddr(), getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1], a[2]], TEST_TYPE.RAND_1)
-	o2 = TestObj(a[1], [a[2], a[0]], TEST_TYPE.RAND_1)
-	o3 = TestObj(a[2], [a[0], a[1]], TEST_TYPE.RAND_1)
+	o1 = TestObj(a[0], [a[1], a[2]], TEST_TYPE.RAND_1, journalFile='journal1.bin')
+	o2 = TestObj(a[1], [a[2], a[0]], TEST_TYPE.RAND_1, journalFile='journal2.bin')
+	o3 = TestObj(a[2], [a[0], a[1]], TEST_TYPE.RAND_1, journalFile='journal3.bin')
 	objs = [o1, o2, o3]
 
 	st = time.time()
@@ -509,6 +512,37 @@ def randomTest1():
 		print 'Logs same:', o1._SyncObj__raftLog == o2._SyncObj__raftLog == o3._SyncObj__raftLog
 		print time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter()
 		raise AssertionError('Values not equal')
+
+	counter = o1.getCounter()
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+	del o1
+	del o2
+	del o3
+	time.sleep(0.1)
+
+	o1 = TestObj(a[0], [a[1], a[2]], TEST_TYPE.RAND_1, journalFile='journal1.bin')
+	o2 = TestObj(a[1], [a[2], a[0]], TEST_TYPE.RAND_1, journalFile='journal2.bin')
+	o3 = TestObj(a[2], [a[0], a[1]], TEST_TYPE.RAND_1, journalFile='journal3.bin')
+	objs = [o1, o2, o3]
+
+	st = time.time()
+	while not (o1.getCounter() == o2.getCounter() == o3.getCounter() == counter):
+		doTicks(objs, 2.0, interval=0.05)
+		if time.time() - st > 30:
+			break
+
+	if not (o1.getCounter() == o2.getCounter() == o3.getCounter() == counter):
+		o1._printStatus()
+		o2._printStatus()
+		o3._printStatus()
+		print 'Logs same:', o1._SyncObj__raftLog == o2._SyncObj__raftLog == o3._SyncObj__raftLog
+		print time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter(), counter
+		raise AssertionError('Values not equal')
+
+	removeFiles(['journal1.bin', 'journal2.bin', 'journal3.bin'])
+
 
 # Ensure that raftLog after serialization is the same as in serialized data
 def logCompactionRegressionTest1():
