@@ -16,6 +16,7 @@ class TEST_TYPE:
 	COMPACTION_1 = 1
 	COMPACTION_2 = 2
 	RAND_1 = 3
+	JOURNAL_1 = 4
 
 class TestObj(SyncObj):
 
@@ -23,6 +24,7 @@ class TestObj(SyncObj):
 				 testType = TEST_TYPE.DEFAULT,
 				 compactionMinEntries = 0,
 				 dumpFile = None,
+				 journalFile = None,
 				 password = None,
 				 dynamicMembershipChange = False):
 
@@ -55,6 +57,12 @@ class TestObj(SyncObj):
 			cfg.raftMaxTimeout = 0.2
 			cfg.logCompactionMinTime = 9999999
 			cfg.logCompactionMinEntries = 9999999
+
+		if testType == TEST_TYPE.JOURNAL_1:
+			cfg.logCompactionMinTime = 999999
+			cfg.logCompactionMinEntries = 999999
+			cfg.fullDumpFile = dumpFile
+			cfg.journalFile = journalFile
 
 		super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs, cfg)
 		self.__counter = 0
@@ -678,6 +686,90 @@ def doChangeClusterUT2():
 	assert o4._isReady()
 	assert o4.getCounter() == 500
 
+def jouralTest1():
+	removeFiles(['dump1.bin', 'dump2.bin', 'journal1.bin', 'journal2.bin'])
+
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump1.bin', journalFile='journal1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump2.bin', journalFile='journal2.bin')
+	objs = [o1, o2]
+	doTicks(objs, 4.5)
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	o1.addValue(150)
+	o2.addValue(200)
+
+	doTicks(objs, 1.5)
+
+	assert o1.getCounter() == 350
+	assert o2.getCounter() == 350
+
+	o1._destroy()
+	o2._destroy()
+	del o1
+	del o2
+
+	a = [getNextAddr(), getNextAddr()]
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump1.bin', journalFile='journal1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump2.bin', journalFile='journal2.bin')
+	objs = [o1, o2]
+	doTicks(objs, 4.5)
+	assert o1._isReady()
+	assert o2._isReady()
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	assert o1.getCounter() == 350
+	assert o2.getCounter() == 350
+
+	o1.addValue(100)
+	o2.addValue(150)
+
+	doTicks(objs, 1.5)
+
+	assert o1.getCounter() == 600
+	assert o2.getCounter() == 600
+
+	o1._forceLogCompaction()
+	o2._forceLogCompaction()
+
+	doTicks(objs, 0.5)
+
+	o1.addValue(150)
+	o2.addValue(150)
+
+	doTicks(objs, 1.5)
+
+	assert o1.getCounter() == 900
+	assert o2.getCounter() == 900
+
+	o1._destroy()
+	o2._destroy()
+	del o1
+	del o2
+
+	a = [getNextAddr(), getNextAddr()]
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile='dump1.bin', journalFile='journal1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile='dump2.bin', journalFile='journal2.bin')
+	objs = [o1, o2]
+	doTicks(objs, 4.5)
+	assert o1._isReady()
+	assert o2._isReady()
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	assert o1.getCounter() == 900
+	assert o2.getCounter() == 900
+
+	removeFiles(['dump1.bin', 'dump2.bin', 'journal1.bin', 'journal2.bin'])
+
 
 def runTests():
 	useCrypto = True
@@ -693,6 +785,7 @@ def runTests():
 	doChangeClusterUT1()
 	doChangeClusterUT2()
 	checkDumpToFile()
+	jouralTest1()
 	checkBigStorage()
 	randomTest1()
 	if useCrypto:

@@ -87,15 +87,15 @@ class ResizableFile(object):
         self.__mm.close()
         self.__f.close()
         with open(self.__fileName, 'ab') as f:
-            f.write('\0' * bytesToAdd)
+            f.write(b'\0' * bytesToAdd)
         self.__f = open(self.__fileName, 'r+b')
         self.__mm = mmap.mmap(self.__f.fileno(), 0)
 
 
 
 JOURNAL_FORMAT_VERSION = 1
-APP_NAME = 'PYSYNCOBJ'
-APP_VERSION = '0.2.0'
+APP_NAME = b'PYSYNCOBJ'
+APP_VERSION = b'0.2.0'
 
 NAME_SIZE = 24
 VERSION_SIZE = 8
@@ -127,8 +127,8 @@ class FileJournal(Journal):
         self.__currentOffset = currentOffset
 
     def __getDefaultHeader(self):
-        appName = APP_NAME + '\0' * (NAME_SIZE - len(APP_NAME))
-        appVersion = APP_VERSION + '\0' * (VERSION_SIZE - len(APP_VERSION))
+        appName = APP_NAME + b'\0' * (NAME_SIZE - len(APP_NAME))
+        appVersion = APP_VERSION + b'\0' * (VERSION_SIZE - len(APP_VERSION))
         header = appName + appVersion + struct.pack('<II', JOURNAL_FORMAT_VERSION, FIRST_RECORD_OFFSET)
         return header
 
