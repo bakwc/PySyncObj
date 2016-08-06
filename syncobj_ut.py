@@ -299,8 +299,8 @@ def checkDumpToFile():
 
 	a = [getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	doTicks(objs, 4.5)
 
@@ -319,8 +319,8 @@ def checkDumpToFile():
 	del o2
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	doTicks(objs, 4.5)
 	assert o1._isReady()
@@ -373,8 +373,8 @@ def checkBigStorage():
 
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	# Wait for disk load, election and replication
 	doTicks(objs, 5.5)
@@ -521,7 +521,7 @@ def logCompactionRegressionTest1():
 	doTicks(objs, 0.5)
 	assert o1._SyncObj__forceLogCompaction == False
 	logAfterCompaction = o1._SyncObj__raftLog
-	o1._SyncObj__loadDumpFile()
+	o1._SyncObj__loadDumpFile(True)
 	logAfterDeserialize = o1._SyncObj__raftLog
 	assert logAfterCompaction == logAfterDeserialize
 

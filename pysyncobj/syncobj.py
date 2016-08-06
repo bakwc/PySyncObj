@@ -14,6 +14,7 @@ from poller import createPoller
 from serializer import Serializer, SERIALIZER_STATE
 from tcp_server import TcpServer
 from node import Node, NODE_STATUS
+from journal import createJournal
 from config import SyncObjConf, FAIL_REASON
 from debug_utils import LOG_CURRENT_EXCEPTION, LOG_DEBUG, LOG_WARNING
 from encryptor import HAS_CRYPTO, getEncryptor
@@ -41,6 +42,8 @@ class SyncObj(object):
         else:
             self.__conf = conf
 
+        self.__conf.validate()
+
         if self.__conf.password is not None:
             if not HAS_CRYPTO:
                 raise ImportError("Please install 'cryptography' module")
@@ -57,13 +60,15 @@ class SyncObj(object):
         self.__votesCount = 0
         self.__raftLeader = None
         self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
-        self.__raftLog = []  # (command, logID, term)
-        self.__raftLog.append((_bchr(_COMMAND_TYPE.NO_OP), 1, self.__raftCurrentTerm))
+        self.__raftLog = createJournal(self.__conf.journalFile)
+        if len(self.__raftLog) == 0:
+            self.__raftLog.add(_bchr(_COMMAND_TYPE.NO_OP), 1, self.__raftCurrentTerm)
         self.__raftCommitIndex = 1
         self.__raftLastApplied = 1
         self.__raftNextIndex = {}
         self.__raftMatchIndex = {}
         self.__lastSerializedTime = time.time()
+        self.__lastSerializedEntry = None
         self.__forceLogCompaction = False
         self.__leaderCommitIndex = None
         self.__onReadyCalled = False
@@ -180,7 +185,7 @@ class SyncObj(object):
 
                 if changeClusterRequest is None or self.__changeCluster(changeClusterRequest):
 
-                    self.__raftLog.append((command, idx, term))
+                    self.__raftLog.add(command, idx, term)
 
                     if requestNode is None:
                         if callback is not None:
@@ -240,7 +245,7 @@ class SyncObj(object):
 
         if self.__needLoadDumpFile:
             if self.__conf.fullDumpFile is not None and os.path.isfile(self.__conf.fullDumpFile):
-                self.__loadDumpFile()
+                self.__loadDumpFile(clearJournal=False)
             self.__needLoadDumpFile = False
 
         if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
@@ -316,7 +321,6 @@ class SyncObj(object):
         for n in self.__nodes:
             LOG_DEBUG(n.getAddress(), n.getStatus())
         LOG_DEBUG('log len:', len(self.__raftLog))
-        LOG_DEBUG('log size bytes:', len(zlib.compress(cPickle.dumps(self.__raftLog, -1))))
         LOG_DEBUG('last applied:', self.__raftLastApplied)
         LOG_DEBUG('commit idx:', self.__raftCommitIndex)
         LOG_DEBUG('raft term:', self.__raftCurrentTerm)
@@ -412,7 +416,8 @@ class SyncObj(object):
                                 self.__doChangeCluster(clusterChangeRequest, reverse=True)
 
                     self.__deleteEntriesFrom(prevLogIdx + 1)
-                self.__raftLog += newEntries
+                for entry in newEntries:
+                    self.__raftLog.add(*entry)
 
                 # apply cluster changes
                 if self.__conf.dynamicMembershipChange:
@@ -430,7 +435,7 @@ class SyncObj(object):
             # Install snapshot
             elif serialized is not None:
                 if self.__serializer.setTransmissionData(serialized):
-                    self.__loadDumpFile()
+                    self.__loadDumpFile(clearJournal=True)
                     self.__sendNextNodeIdx(nodeAddr, success=True)
 
             self.__raftCommitIndex = min(leaderCommitIndex, self.__getCurrentLogIndex())
@@ -584,14 +589,14 @@ class SyncObj(object):
         diff = fromIDx - firstEntryIDx
         if diff < 0:
             return
-        self.__raftLog = self.__raftLog[:diff]
+        self.__raftLog.deleteEntriesFrom(diff)
 
     def __deleteEntriesTo(self, toIDx):
         firstEntryIDx = self.__raftLog[0][1]
         diff = toIDx - firstEntryIDx
         if diff < 0:
             return
-        self.__raftLog = self.__raftLog[diff:]
+        self.__raftLog.deleteEntriesTo(diff)
 
     def __onBecomeLeader(self):
         self.__raftLeader = self.__selfNodeAddr
@@ -604,7 +609,7 @@ class SyncObj(object):
 
         # No-op command after leader election.
         idx, term = self.__getCurrentLogIndex() + 1, self.__raftCurrentTerm
-        self.__raftLog.append((_bchr(_COMMAND_TYPE.NO_OP), idx, term))
+        self.__raftLog.add(_bchr(_COMMAND_TYPE.NO_OP), idx, term)
         self.__noopIDx = idx
         if not self.__conf.appendEntriesUseBatch:
             self.__sendAppendEntries()
@@ -761,6 +766,7 @@ class SyncObj(object):
         if serializeState == SERIALIZER_STATE.SUCCESS:
             self.__lastSerializedTime = currTime
             self.__deleteEntriesTo(serializeID)
+            self.__lastSerializedEntry = serializeID
 
         if serializeState == SERIALIZER_STATE.FAILED:
             LOG_WARNING("Failed to store full dump")
@@ -776,20 +782,29 @@ class SyncObj(object):
         self.__forceLogCompaction = False
 
         lastAppliedEntries = self.__getEntries(self.__raftLastApplied - 1, 2)
-        if len(lastAppliedEntries) < 2:
+        if len(lastAppliedEntries) < 2 or lastAppliedEntries[0][1] == self.__lastSerializedEntry:
             return
 
         data = dict([(k, self.__dict__[k]) for k in self.__dict__.keys() if k not in self.__properies])
         cluster = self.__otherNodesAddrs + [self.__selfNodeAddr]
         self.__serializer.serialize((data, lastAppliedEntries[1], lastAppliedEntries[0], cluster), lastAppliedEntries[0][1])
 
-    def __loadDumpFile(self):
+    def __loadDumpFile(self, clearJournal):
         try:
             data = self.__serializer.deserialize()
             for k, v in data[0].iteritems():
                 self.__dict__[k] = v
-            self.__raftLog = [data[2], data[1]]
+
+            if clearJournal or \
+                    len(self.__raftLog) < 2 or \
+                    self.__raftLog[0] != data[2] or \
+                    self.__raftLog[1] != data[1]:
+                self.__raftLog.clear()
+                self.__raftLog.add(*data[2])
+                self.__raftLog.add(*data[1])
+
             self.__raftLastApplied = data[1][1]
+
             if self.__conf.dynamicMembershipChange:
                 self.__otherNodesAddrs = [node for node in data[3] if node != self.__selfNodeAddr]
                 self.__updateClusterConfiguration()
