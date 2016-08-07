@@ -1,4 +1,5 @@
 from distutils.core import setup
+from pysyncobj.version import VERSION
 
 description='A library for replicating your python class between multiple servers, based on raft protocol'
 try:
@@ -10,7 +11,7 @@ except(IOError, ImportError, RuntimeError):
 setup(
     name='pysyncobj',
     packages=['pysyncobj', 'pysyncobj.pysyncobj3'],
-    version='0.2.0',
+    version=VERSION,
     description=description,
     long_description=long_description,
     author='Filipp Ozinov',

@@ -18,6 +18,8 @@ from journal import createJournal
 from config import SyncObjConf, FAIL_REASON
 from debug_utils import LOG_CURRENT_EXCEPTION, LOG_DEBUG, LOG_WARNING
 from encryptor import HAS_CRYPTO, getEncryptor
+from version import VERSION
+from revision import REVISION
 
 
 class _RAFT_STATE:
@@ -320,6 +322,7 @@ class SyncObj(object):
         return self.__raftCommitIndex
 
     def _printStatus(self):
+        LOG_DEBUG('version', VERSION, REVISION)
         LOG_DEBUG('self', self.__selfNodeAddr)
         LOG_DEBUG('state:', self.__raftState)
         LOG_DEBUG('leader', self.__raftLeader)

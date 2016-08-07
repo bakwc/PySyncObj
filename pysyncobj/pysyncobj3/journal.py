@@ -4,7 +4,7 @@
 import os
 import mmap
 import struct
-
+from .version import VERSION
 
 class Journal(object):
 
@@ -102,7 +102,7 @@ class ResizableFile(object):
 
 JOURNAL_FORMAT_VERSION = 1
 APP_NAME = b'PYSYNCOBJ'
-APP_VERSION = b'0.2.0'
+APP_VERSION = str.encode(VERSION)
 
 NAME_SIZE = 24
 VERSION_SIZE = 8

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+echo "REVISION = '$(git rev-parse HEAD)'" > pysyncobj/revision.py
+
 rm -rf pysyncobj/pysyncobj3/
 2to3 --output-dir=pysyncobj3 -W -n pysyncobj
 mv pysyncobj3/ pysyncobj/pysyncobj3/
