@@ -867,28 +867,28 @@ def journalTest1():
 def journalTest2():
 	removeFiles(['journal.bin'])
 	journal = createJournal('journal.bin')
-	journal.add('cmd1', 1, 0)
-	journal.add('cmd2', 2, 0)
-	journal.add('cmd3', 3, 0)
+	journal.add(b'cmd1', 1, 0)
+	journal.add(b'cmd2', 2, 0)
+	journal.add(b'cmd3', 3, 0)
 	journal._destroy()
 
 	journal = createJournal('journal.bin')
 	assert len(journal) == 3
-	assert journal[0] == ('cmd1', 1, 0)
-	assert journal[-1] == ('cmd3', 3, 0)
+	assert journal[0] == (b'cmd1', 1, 0)
+	assert journal[-1] == (b'cmd3', 3, 0)
 	journal.deleteEntriesFrom(2)
 	journal._destroy()
 
 	journal = createJournal('journal.bin')
 	assert len(journal) == 2
-	assert journal[0] == ('cmd1', 1, 0)
-	assert journal[-1] == ('cmd2', 2, 0)
+	assert journal[0] == (b'cmd1', 1, 0)
+	assert journal[-1] == (b'cmd2', 2, 0)
 	journal.deleteEntriesTo(1)
 	journal._destroy()
 
 	journal = createJournal('journal.bin')
 	assert len(journal) == 1
-	assert journal[0] == ('cmd2', 2, 0)
+	assert journal[0] == (b'cmd2', 2, 0)
 	journal._destroy()
 	removeFiles(['journal.bin'])
 
