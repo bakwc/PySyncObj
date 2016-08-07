@@ -96,6 +96,9 @@ class ResizableFile(object):
         self.__mm.close()
         self.__f.close()
 
+    def flush(self):
+        self.__mm.flush()
+
 
 
 JOURNAL_FORMAT_VERSION = 1
@@ -182,6 +185,12 @@ class FileJournal(Journal):
         self.clear()
         for entry in journal:
             self.add(*entry)
+
+    def _destroy(self):
+        self.__journalFile._destroy()
+
+    def flush(self):
+        self.__journalFile.flush()
 
 def createJournal(journalFile = None):
     if journalFile is None:

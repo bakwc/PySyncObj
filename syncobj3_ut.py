@@ -10,7 +10,7 @@ import sys
 from functools import partial
 import functools
 import struct
-from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE
+from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, createJournal
 
 _bchr = functools.partial(struct.pack, 'B')
 
@@ -777,7 +777,7 @@ def doChangeClusterUT2():
 	o3._destroy()
 	o4._destroy()
 
-def jouralTest1():
+def journalTest1():
 	removeFiles(['dump1.bin', 'dump2.bin', 'journal1.bin', 'journal2.bin'])
 
 	random.seed(42)
@@ -864,6 +864,34 @@ def jouralTest1():
 
 	removeFiles(['dump1.bin', 'dump2.bin', 'journal1.bin', 'journal2.bin'])
 
+def journalTest2():
+	removeFiles(['journal.bin'])
+	journal = createJournal('journal.bin')
+	journal.add('cmd1', 1, 0)
+	journal.add('cmd2', 2, 0)
+	journal.add('cmd3', 3, 0)
+	journal._destroy()
+
+	journal = createJournal('journal.bin')
+	assert len(journal) == 3
+	assert journal[0] == ('cmd1', 1, 0)
+	assert journal[-1] == ('cmd3', 3, 0)
+	journal.deleteEntriesFrom(2)
+	journal._destroy()
+
+	journal = createJournal('journal.bin')
+	assert len(journal) == 2
+	assert journal[0] == ('cmd1', 1, 0)
+	assert journal[-1] == ('cmd2', 2, 0)
+	journal.deleteEntriesTo(1)
+	journal._destroy()
+
+	journal = createJournal('journal.bin')
+	assert len(journal) == 1
+	assert journal[0] == ('cmd2', 2, 0)
+	journal._destroy()
+	removeFiles(['journal.bin'])
+
 
 def runTests():
 	useCrypto = True
@@ -879,7 +907,8 @@ def runTests():
 	doChangeClusterUT1()
 	doChangeClusterUT2()
 	checkDumpToFile()
-	jouralTest1()
+	journalTest1()
+	journalTest2()
 	checkBigStorage()
 	randomTest1()
 	if useCrypto:
