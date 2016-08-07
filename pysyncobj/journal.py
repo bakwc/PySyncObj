@@ -92,6 +92,7 @@ class ResizableFile(object):
         self.__mm = mmap.mmap(self.__f.fileno(), 0)
 
     def _destroy(self):
+        self.__mm.flush()
         self.__mm.close()
         self.__f.close()
 
