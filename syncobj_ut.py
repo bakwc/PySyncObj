@@ -16,6 +16,7 @@ class TEST_TYPE:
 	COMPACTION_1 = 1
 	COMPACTION_2 = 2
 	RAND_1 = 3
+	JOURNAL_1 = 4
 
 class TestObj(SyncObj):
 
@@ -23,6 +24,7 @@ class TestObj(SyncObj):
 				 testType = TEST_TYPE.DEFAULT,
 				 compactionMinEntries = 0,
 				 dumpFile = None,
+				 journalFile = None,
 				 password = None,
 				 dynamicMembershipChange = False):
 
@@ -55,6 +57,13 @@ class TestObj(SyncObj):
 			cfg.raftMaxTimeout = 0.2
 			cfg.logCompactionMinTime = 9999999
 			cfg.logCompactionMinEntries = 9999999
+			cfg.journalFile = journalFile
+
+		if testType == TEST_TYPE.JOURNAL_1:
+			cfg.logCompactionMinTime = 999999
+			cfg.logCompactionMinEntries = 999999
+			cfg.fullDumpFile = dumpFile
+			cfg.journalFile = journalFile
 
 		super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs, cfg)
 		self.__counter = 0
@@ -131,6 +140,9 @@ def syncTwoObjects():
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
 
+	o1._destroy()
+	o2._destroy()
+
 def syncThreeObjectsLeaderFail():
 
 	random.seed(12)
@@ -183,6 +195,10 @@ def syncThreeObjectsLeaderFail():
 	doTicks(objs, 4.5)
 	for o in objs:
 		assert o.getCounter() == 400
+
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
 
 def manyActionsLogCompaction():
 
@@ -244,6 +260,11 @@ def manyActionsLogCompaction():
 	assert o2._getRaftLogSize() <= 100
 	assert o3._getRaftLogSize() <= 100
 
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+
+
 def onAddValue(res, err, info):
 	assert res == 3
 	assert err == FAIL_REASON.SUCCESS
@@ -285,6 +306,11 @@ def checkCallbacksSimple():
 	assert o2.getCounter() == 3
 	assert callbackInfo['callback'] == True
 
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+
+
 def removeFiles(files):
 	for f in (files):
 		try:
@@ -299,8 +325,8 @@ def checkDumpToFile():
 
 	a = [getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	doTicks(objs, 4.5)
 
@@ -315,12 +341,15 @@ def checkDumpToFile():
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
 
+	o1._destroy()
+	o2._destroy()
+
 	del o1
 	del o2
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	doTicks(objs, 4.5)
 	assert o1._isReady()
@@ -331,6 +360,9 @@ def checkDumpToFile():
 
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
+
+	o1._destroy()
+	o2._destroy()
 
 	removeFiles(['dump1.bin', 'dump2.bin'])
 
@@ -371,10 +403,13 @@ def checkBigStorage():
 	# Wait for disk dump
 	doTicks(objs, 5.0)
 
+	o1._destroy()
+	o2._destroy()
+
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=1, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	# Wait for disk load, election and replication
 	doTicks(objs, 5.5)
@@ -385,7 +420,11 @@ def checkBigStorage():
 	assert o1.getValue('test') == testRandStr
 	assert o2.getValue('test') == testRandStr
 
+	o1._destroy()
+	o2._destroy()
+
 	removeFiles(['dump1.bin', 'dump2.bin'])
+
 
 def encryptionCorrectPassword():
 	random.seed(42)
@@ -405,8 +444,12 @@ def encryptionCorrectPassword():
 
 	doTicks(objs, 1.5)
 
+	o1._destroy()
+	o2._destroy()
+
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
+
 
 def encryptionWrongPassword():
 	random.seed(12)
@@ -423,6 +466,11 @@ def encryptionWrongPassword():
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
 	assert o3._getLeader() is None
+
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+
 
 def _checkSameLeader(objs):
 	for obj1 in objs:
@@ -462,13 +510,15 @@ def _checkSameLeader2(objs):
 
 def randomTest1():
 
+	removeFiles(['journal1.bin', 'journal2.bin', 'journal3.bin'])
+
 	random.seed(12)
 
 	a = [getNextAddr(), getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1], a[2]], TEST_TYPE.RAND_1)
-	o2 = TestObj(a[1], [a[2], a[0]], TEST_TYPE.RAND_1)
-	o3 = TestObj(a[2], [a[0], a[1]], TEST_TYPE.RAND_1)
+	o1 = TestObj(a[0], [a[1], a[2]], TEST_TYPE.RAND_1, journalFile='journal1.bin')
+	o2 = TestObj(a[1], [a[2], a[0]], TEST_TYPE.RAND_1, journalFile='journal2.bin')
+	o3 = TestObj(a[2], [a[0], a[1]], TEST_TYPE.RAND_1, journalFile='journal3.bin')
 	objs = [o1, o2, o3]
 
 	st = time.time()
@@ -502,6 +552,37 @@ def randomTest1():
 		print time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter()
 		raise AssertionError('Values not equal')
 
+	counter = o1.getCounter()
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+	del o1
+	del o2
+	del o3
+	time.sleep(0.1)
+
+	o1 = TestObj(a[0], [a[1], a[2]], TEST_TYPE.RAND_1, journalFile='journal1.bin')
+	o2 = TestObj(a[1], [a[2], a[0]], TEST_TYPE.RAND_1, journalFile='journal2.bin')
+	o3 = TestObj(a[2], [a[0], a[1]], TEST_TYPE.RAND_1, journalFile='journal3.bin')
+	objs = [o1, o2, o3]
+
+	st = time.time()
+	while not (o1.getCounter() == o2.getCounter() == o3.getCounter() == counter):
+		doTicks(objs, 2.0, interval=0.05)
+		if time.time() - st > 30:
+			break
+
+	if not (o1.getCounter() == o2.getCounter() == o3.getCounter() == counter):
+		o1._printStatus()
+		o2._printStatus()
+		o3._printStatus()
+		print 'Logs same:', o1._SyncObj__raftLog == o2._SyncObj__raftLog == o3._SyncObj__raftLog
+		print time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter(), counter
+		raise AssertionError('Values not equal')
+
+	removeFiles(['journal1.bin', 'journal2.bin', 'journal3.bin'])
+
+
 # Ensure that raftLog after serialization is the same as in serialized data
 def logCompactionRegressionTest1():
 	random.seed(42)
@@ -521,9 +602,12 @@ def logCompactionRegressionTest1():
 	doTicks(objs, 0.5)
 	assert o1._SyncObj__forceLogCompaction == False
 	logAfterCompaction = o1._SyncObj__raftLog
-	o1._SyncObj__loadDumpFile()
+	o1._SyncObj__loadDumpFile(True)
 	logAfterDeserialize = o1._SyncObj__raftLog
 	assert logAfterCompaction == logAfterDeserialize
+	o1._destroy()
+	o2._destroy()
+
 
 def logCompactionRegressionTest2():
 	removeFiles(['dump1.bin', 'dump2.bin', 'dump3.bin'])
@@ -569,7 +653,12 @@ def logCompactionRegressionTest2():
 	assert o2._isReady()
 	assert o3._isReady()
 
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+
 	removeFiles(['dump1.bin', 'dump2.bin', 'dump3.bin'])
+
 
 def __checkParnerNodeExists(obj, nodeName, shouldExist = True):
 	nodesSet1 = set()
@@ -655,6 +744,8 @@ def doChangeClusterUT1():
 	__checkParnerNodeExists(o2, 'localhost:1238', False)
 	__checkParnerNodeExists(o2, 'localhost:1239', True)
 	__checkParnerNodeExists(o2, 'localhost:1235', False)
+	o2._destroy()
+
 
 def doChangeClusterUT2():
 	a = [getNextAddr(), getNextAddr(), getNextAddr(), getNextAddr()]
@@ -678,6 +769,98 @@ def doChangeClusterUT2():
 	assert o4._isReady()
 	assert o4.getCounter() == 500
 
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+	o4._destroy()
+
+def jouralTest1():
+	removeFiles(['dump1.bin', 'dump2.bin', 'journal1.bin', 'journal2.bin'])
+
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump1.bin', journalFile='journal1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump2.bin', journalFile='journal2.bin')
+	objs = [o1, o2]
+	doTicks(objs, 4.5)
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	o1.addValue(150)
+	o2.addValue(200)
+
+	doTicks(objs, 1.5)
+
+	assert o1.getCounter() == 350
+	assert o2.getCounter() == 350
+
+	o1._destroy()
+	o2._destroy()
+	del o1
+	del o2
+
+	a = [getNextAddr(), getNextAddr()]
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump1.bin', journalFile='journal1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump2.bin', journalFile='journal2.bin')
+	objs = [o1, o2]
+	doTicks(objs, 4.5)
+	assert o1._isReady()
+	assert o2._isReady()
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	assert o1.getCounter() == 350
+	assert o2.getCounter() == 350
+
+	o1.addValue(100)
+	o2.addValue(150)
+
+	doTicks(objs, 1.5)
+
+	assert o1.getCounter() == 600
+	assert o2.getCounter() == 600
+
+	o1._forceLogCompaction()
+	o2._forceLogCompaction()
+
+	doTicks(objs, 0.5)
+
+	o1.addValue(150)
+	o2.addValue(150)
+
+	doTicks(objs, 1.5)
+
+	assert o1.getCounter() == 900
+	assert o2.getCounter() == 900
+
+	o1._destroy()
+	o2._destroy()
+	del o1
+	del o2
+
+	a = [getNextAddr(), getNextAddr()]
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile='dump1.bin', journalFile='journal1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile='dump2.bin', journalFile='journal2.bin')
+	objs = [o1, o2]
+	doTicks(objs, 4.5)
+	assert o1._isReady()
+	assert o2._isReady()
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	assert o1.getCounter() == 900
+	assert o2.getCounter() == 900
+
+	o1._destroy()
+	o2._destroy()
+
+	removeFiles(['dump1.bin', 'dump2.bin', 'journal1.bin', 'journal2.bin'])
+
 
 def runTests():
 	useCrypto = True
@@ -693,6 +876,7 @@ def runTests():
 	doChangeClusterUT1()
 	doChangeClusterUT2()
 	checkDumpToFile()
+	jouralTest1()
 	checkBigStorage()
 	randomTest1()
 	if useCrypto:

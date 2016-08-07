@@ -33,7 +33,7 @@ class SyncObjConf(object):
 
         # Interval of sending append_entries (ping) command.
         # Should be less then raftMinTimeout.
-        self.appendEntriesPeriod = kwargs.get('appendEntriesPeriod', 0.3)
+        self.appendEntriesPeriod = kwargs.get('appendEntriesPeriod', 0.1)
 
         # When no data received for connectionTimeout - connection considered dead.
         # Should be more then raftMaxTimeout.
@@ -63,7 +63,7 @@ class SyncObjConf(object):
         # Log will be compacted after it reach minEntries size or
         # minTime after previous compaction.
         self.logCompactionMinEntries = kwargs.get('logCompactionMinEntries', 5000)
-        self.logCompactionMinTime = kwargs.get('logCompactionMinTime', 60)
+        self.logCompactionMinTime = kwargs.get('logCompactionMinTime', 300)
 
         # Max number of bytes per single append_entries command
         # while sending serialized object.
@@ -78,6 +78,9 @@ class SyncObjConf(object):
         # None - to disable store.
         self.fullDumpFile = kwargs.get('fullDumpFile', None)
 
+        # File to store operations journal. Save each record as soon as received.
+        self.journalFile = kwargs.get('journalFile', None)
+
         # Will try to bind port every bindRetryTime seconds until success.
         self.bindRetryTime = kwargs.get('bindRetryTime', 1.0)
 
@@ -86,3 +89,21 @@ class SyncObjConf(object):
 
         # If enabled - cluster configuration could be changed dynamically.
         self.dynamicMembershipChange = kwargs.get('dynamicMembershipChange', False)
+
+    def validate(self):
+        assert self.autoTickPeriod > 0
+        assert self.commandsQueueSize >= 0
+        assert self.raftMinTimeout > self.appendEntriesPeriod * 3
+        assert self.raftMaxTimeout > self.raftMinTimeout
+        assert self.appendEntriesPeriod > 0
+        assert self.connectionTimeout >= self.raftMaxTimeout
+        assert self.connectionRetryTime >= 0
+        assert self.appendEntriesBatchSizeBytes > 0
+        assert self.sendBufferSize > 0
+        assert self.recvBufferSize > 0
+        assert self.dnsCacheTime>= 0
+        assert self.dnsFailCacheTime >= 0
+        assert self.logCompactionMinEntries >= 2
+        assert self.logCompactionMinTime > 0
+        assert self.logCompactionBatchSize > 0
+        assert self.bindRetryTime > 0
