@@ -140,6 +140,9 @@ def syncTwoObjects():
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
 
+	o1._destroy()
+	o2._destroy()
+
 def syncThreeObjectsLeaderFail():
 
 	random.seed(12)
@@ -192,6 +195,10 @@ def syncThreeObjectsLeaderFail():
 	doTicks(objs, 4.5)
 	for o in objs:
 		assert o.getCounter() == 400
+
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
 
 def manyActionsLogCompaction():
 
@@ -253,6 +260,11 @@ def manyActionsLogCompaction():
 	assert o2._getRaftLogSize() <= 100
 	assert o3._getRaftLogSize() <= 100
 
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+
+
 def onAddValue(res, err, info):
 	assert res == 3
 	assert err == FAIL_REASON.SUCCESS
@@ -294,6 +306,11 @@ def checkCallbacksSimple():
 	assert o2.getCounter() == 3
 	assert callbackInfo['callback'] == True
 
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+
+
 def removeFiles(files):
 	for f in (files):
 		try:
@@ -324,6 +341,9 @@ def checkDumpToFile():
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
 
+	o1._destroy()
+	o2._destroy()
+
 	del o1
 	del o2
 
@@ -340,6 +360,9 @@ def checkDumpToFile():
 
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
+
+	o1._destroy()
+	o2._destroy()
 
 	removeFiles(['dump1.bin', 'dump2.bin'])
 
@@ -380,6 +403,9 @@ def checkBigStorage():
 	# Wait for disk dump
 	doTicks(objs, 5.0)
 
+	o1._destroy()
+	o2._destroy()
+
 
 	a = [getNextAddr(), getNextAddr()]
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin')
@@ -394,7 +420,11 @@ def checkBigStorage():
 	assert o1.getValue('test') == testRandStr
 	assert o2.getValue('test') == testRandStr
 
+	o1._destroy()
+	o2._destroy()
+
 	removeFiles(['dump1.bin', 'dump2.bin'])
+
 
 def encryptionCorrectPassword():
 	random.seed(42)
@@ -414,8 +444,12 @@ def encryptionCorrectPassword():
 
 	doTicks(objs, 1.5)
 
+	o1._destroy()
+	o2._destroy()
+
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
+
 
 def encryptionWrongPassword():
 	random.seed(12)
@@ -432,6 +466,11 @@ def encryptionWrongPassword():
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
 	assert o3._getLeader() is None
+
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+
 
 def _checkSameLeader(objs):
 	for obj1 in objs:
@@ -566,6 +605,9 @@ def logCompactionRegressionTest1():
 	o1._SyncObj__loadDumpFile(True)
 	logAfterDeserialize = o1._SyncObj__raftLog
 	assert logAfterCompaction == logAfterDeserialize
+	o1._destroy()
+	o2._destroy()
+
 
 def logCompactionRegressionTest2():
 	removeFiles(['dump1.bin', 'dump2.bin', 'dump3.bin'])
@@ -611,7 +653,12 @@ def logCompactionRegressionTest2():
 	assert o2._isReady()
 	assert o3._isReady()
 
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+
 	removeFiles(['dump1.bin', 'dump2.bin', 'dump3.bin'])
+
 
 def __checkParnerNodeExists(obj, nodeName, shouldExist = True):
 	nodesSet1 = set()
@@ -697,6 +744,8 @@ def doChangeClusterUT1():
 	__checkParnerNodeExists(o2, 'localhost:1238', False)
 	__checkParnerNodeExists(o2, 'localhost:1239', True)
 	__checkParnerNodeExists(o2, 'localhost:1235', False)
+	o2._destroy()
+
 
 def doChangeClusterUT2():
 	a = [getNextAddr(), getNextAddr(), getNextAddr(), getNextAddr()]
@@ -719,6 +768,11 @@ def doChangeClusterUT2():
 	doTicks([o1, o2, o3, o4], 1.5)
 	assert o4._isReady()
 	assert o4.getCounter() == 500
+
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+	o4._destroy()
 
 def jouralTest1():
 	removeFiles(['dump1.bin', 'dump2.bin', 'journal1.bin', 'journal2.bin'])
@@ -801,6 +855,9 @@ def jouralTest1():
 
 	assert o1.getCounter() == 900
 	assert o2.getCounter() == 900
+
+	o1._destroy()
+	o2._destroy()
 
 	removeFiles(['dump1.bin', 'dump2.bin', 'journal1.bin', 'journal2.bin'])
 

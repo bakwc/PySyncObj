@@ -26,6 +26,9 @@ class Journal(object):
     def __len__(self):
         pass
 
+    def _destroy(self):
+        pass
+
 
 class MemoryJournal(Journal):
 
@@ -90,6 +93,10 @@ class ResizableFile(object):
             f.write(b'\0' * bytesToAdd)
         self.__f = open(self.__fileName, 'r+b')
         self.__mm = mmap.mmap(self.__f.fileno(), 0)
+
+    def _destroy(self):
+        self.__mm.close()
+        self.__f.close()
 
 
 

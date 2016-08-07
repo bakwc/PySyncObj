@@ -128,6 +128,7 @@ class SyncObj(object):
         for node in self.__nodes:
             node._destroy()
         self.__server.unbind()
+        self.__raftLog._destroy()
         self.__destroying = True
 
     def __initInTickThread(self):
