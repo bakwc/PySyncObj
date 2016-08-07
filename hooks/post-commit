@@ -3,6 +3,5 @@
 if [ -a .commit ]
     then
     rm .commit
-    ./generate.sh
     git commit -a --amend -C HEAD --no-verify
 fi
