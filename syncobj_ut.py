@@ -572,7 +572,7 @@ def randomTest1():
 		if time.time() - st > 30:
 			break
 
-	if not (o1.getCounter() == o2.getCounter() == o3.getCounter() == counter):
+	if not (o1.getCounter() == o2.getCounter() == o3.getCounter() >= counter):
 		o1._printStatus()
 		o2._printStatus()
 		o3._printStatus()
