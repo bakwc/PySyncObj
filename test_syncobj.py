@@ -229,7 +229,7 @@ def test_manyActionsLogCompaction():
 		o1.addValue(1)
 		o2.addValue(1)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 4.5)
 
 	assert o1.getCounter() == 1000
 	assert o2.getCounter() == 1000
