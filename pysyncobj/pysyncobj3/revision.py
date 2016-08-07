@@ -1,4 +1,4 @@
 #
 #  WARNING: this is generated file, use gen_py3.sh to update it.
 #
-REVISION = 'c5a0621148ceb9204249ebc0788e52616cd01692'
+REVISION = '96f2c2f4cb8769aaf4a9f8ce27d141f3b93742b5'
