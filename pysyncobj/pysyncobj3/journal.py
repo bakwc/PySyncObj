@@ -1,5 +1,5 @@
 #
-#  WARNING: this is generated file, use gen_py3.sh to update it.
+#  WARNING: this is generated file, use generate.sh to update it.
 #
 import os
 import mmap

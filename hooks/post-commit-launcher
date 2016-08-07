@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+chmod +x hooks/post-commit
+./hooks/post-commit
