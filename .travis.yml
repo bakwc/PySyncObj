@@ -9,6 +9,7 @@ install:
   - if [[ $TRAVIS_PYTHON_VERSION == 3.4 ]]; then pip install cryptography; fi
   - if [[ $TRAVIS_PYTHON_VERSION == 3.5 ]]; then pip install cryptography; fi
   - if [[ $TRAVIS_PYTHON_VERSION == 2.7 ]]; then pip install cryptography; fi
+  - pip install coverage pytest
 script:
   - if [[ $TRAVIS_PYTHON_VERSION == 3.4 ]]; then ./generate.sh; fi
   - if [[ $TRAVIS_PYTHON_VERSION == 3.5 ]]; then ./generate.sh; fi
