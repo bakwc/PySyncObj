@@ -90,6 +90,12 @@ class SyncObjConf(object):
         # If enabled - cluster configuration could be changed dynamically.
         self.dynamicMembershipChange = kwargs.get('dynamicMembershipChange', False)
 
+        # Sockets poller:
+        #  'auto' - auto select best available on current platform
+        #  'select' - use select poller
+        #  'poll' - use poll poller
+        self.pollerType = kwargs.get('pollerType', 'auto')
+
     def validate(self):
         assert self.autoTickPeriod > 0
         assert self.commandsQueueSize >= 0

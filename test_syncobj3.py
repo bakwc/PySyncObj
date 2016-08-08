@@ -17,6 +17,7 @@ class TEST_TYPE:
 	COMPACTION_2 = 2
 	RAND_1 = 3
 	JOURNAL_1 = 4
+	AUTO_TICK_1 = 5
 
 class TestObj(SyncObj):
 
@@ -64,6 +65,10 @@ class TestObj(SyncObj):
 			cfg.logCompactionMinEntries = 999999
 			cfg.fullDumpFile = dumpFile
 			cfg.journalFile = journalFile
+
+		if testType == TEST_TYPE.AUTO_TICK_1:
+			cfg.autoTick = True
+			cfg.pollerType = 'select'
 
 		super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs, cfg)
 		self.__counter = 0
@@ -896,3 +901,38 @@ def test_journalTest2():
 	assert journal[0] == (b'cmd2', 2, 0)
 	journal._destroy()
 	removeFiles(['journal.bin'])
+
+def test_autoTick1():
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.AUTO_TICK_1)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.AUTO_TICK_1)
+
+	assert not o1._isReady()
+	assert not o2._isReady()
+
+	time.sleep(4.5)
+	assert o1._isReady()
+	assert o2._isReady()
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+	assert o1._isReady()
+	assert o2._isReady()
+
+	o1.addValue(150)
+	o2.addValue(200)
+
+	time.sleep(1.5)
+
+	assert o1._isReady()
+	assert o2._isReady()
+
+	assert o1.getCounter() == 350
+	assert o2.getCounter() == 350
+
+	o1._destroy()
+	o2._destroy()
+	time.sleep(0.5)

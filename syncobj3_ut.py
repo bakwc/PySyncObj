@@ -34,6 +34,9 @@
 #
 #  WARNING: this is generated file, use generate.sh to update it.
 #
+#
+#  WARNING: this is generated file, use generate.sh to update it.
+#
 import os
 import time
 import random

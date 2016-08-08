@@ -100,16 +100,14 @@ class PollPoller(Poller):
             self.__descrToCallbacks[descr](descr, eventMask)
 
 
-def createPoller():
-    if hasattr(select, 'poll'):
+def createPoller(pollerType):
+    if pollerType == 'auto':
+        if hasattr(select, 'poll'):
+            return PollPoller()
+        return SelectPoller()
+    elif pollerType == 'poll':
         return PollPoller()
-    return SelectPoller()
-
-
-_g_poller = None
-
-def globalPoller():
-    global _g_poller
-    if _g_poller is None:
-        _g_poller = createPoller()
-    return _g_poller
+    elif pollerType == 'select':
+        return SelectPoller()
+    else:
+        raise Exception('unknown poller type')

@@ -81,6 +81,7 @@ class SyncObj(object):
         self.__onReadyCalled = False
         self.__changeClusterIDx = None
         self.__noopIDx = None
+        self.__destroying = False
 
 
         self.__startTime = time.time()
@@ -88,7 +89,7 @@ class SyncObj(object):
         self.__serializer = Serializer(self.__conf.fullDumpFile, self.__conf.logCompactionBatchSize)
         self.__isInitialized = False
         self.__lastInitTryTime = 0
-        self._poller = createPoller()
+        self._poller = createPoller(self.__conf.pollerType)
 
         host, port = selfNodeAddr.split(':')
         self.__server = TcpServer(self._poller, host, port, onNewConnection=self.__onNewConnection,
@@ -129,11 +130,16 @@ class SyncObj(object):
             self.__initInTickThread()
 
     def _destroy(self):
+        if self.__conf.autoTick:
+            self.__destroying = True
+        else:
+            self._doDestroy()
+
+    def _doDestroy(self):
         for node in self.__nodes:
             node._destroy()
         self.__server.unbind()
         self.__raftLog._destroy()
-        self.__destroying = True
 
     def __initInTickThread(self):
         try:
@@ -237,6 +243,9 @@ class SyncObj(object):
         try:
             while True:
                 if not self.__mainThread.is_alive():
+                    break
+                if self.__destroying:
+                    self._doDestroy()
                     break
                 self._onTick(self.__conf.autoTickPeriod)
         except ReferenceError:
