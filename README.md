@@ -1,9 +1,12 @@
 # PySyncObj
 
-[ ![Build Status] [travis-image] ] [travis] [ ![Release] [release-image] ] [releases] [ ![License] [license-image] ] [license] [ ![gitter] [gitter-image] ] [gitter]
+[ ![Build Status] [travis-image] ] [travis] [ ![Coverage Status] [coverage-image] ] [coverage] [ ![Release] [release-image] ] [releases] [ ![License] [license-image] ] [license] [ ![gitter] [gitter-image] ] [gitter]
 
 [travis-image]: https://travis-ci.org/bakwc/PySyncObj.svg?branch=master
 [travis]: https://travis-ci.org/bakwc/PySyncObj
+
+[coverage-image]: https://coveralls.io/repos/github/bakwc/PySyncObj/badge.svg?branch=master
+[coverage]: https://coveralls.io/github/bakwc/PySyncObj?branch=master
 
 [release-image]: https://img.shields.io/badge/release-0.2.1-blue.svg?style=flat
 [releases]: https://github.com/bakwc/PySyncObj/releases
