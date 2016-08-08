@@ -124,6 +124,8 @@ def test_syncTwoObjects():
 
 	doTicks(objs, 4.5)
 
+	o1._printStatus()
+
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
 	assert o1._isReady()
