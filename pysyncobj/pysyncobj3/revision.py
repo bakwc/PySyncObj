@@ -1,4 +1,4 @@
 #
 #  WARNING: this is generated file, use generate.sh to update it.
 #
-REVISION = '255b273d50035dca6748683859be2ca1fc6d1f48'
+REVISION = '6c25d07bedc877cbd8c1c53b60d3c9c291390ce6'
