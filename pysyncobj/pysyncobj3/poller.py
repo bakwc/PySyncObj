@@ -12,13 +12,13 @@ class POLL_EVENT_TYPE:
 
 class Poller(object):
     def subscribe(self, descr, callback, eventMask):
-        pass
+        raise NotImplementedError
 
     def unsubscribe(self, descr):
-        pass
+        raise NotImplementedError
 
     def poll(self, timeout):
-        pass
+        raise NotImplementedError
 
 
 class SelectPoller(Poller):
