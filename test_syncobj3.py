@@ -7,7 +7,8 @@ import sys
 from functools import partial
 import functools
 import struct
-from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, createJournal, HAS_CRYPTO
+from pysyncobj import SyncObj, SyncObjConf, replicated, \\
+	FAIL_REASON, _COMMAND_TYPE, createJournal, HAS_CRYPTO, replicated_sync
 
 _bchr = functools.partial(struct.pack, 'B')
 
@@ -82,6 +83,11 @@ class TestObj(SyncObj):
 	@replicated
 	def addKeyValue(self, key, value):
 		self.__data[key] = value
+
+	@replicated_sync
+	def addValueSync(self, value):
+		self.__counter += value
+		return self.__counter
 
 	def getCounter(self):
 		return self.__counter
@@ -932,6 +938,9 @@ def test_autoTick1():
 
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
+
+	assert o2.addValueSync(10) == 360
+	assert o1.addValueSync(20) == 380
 
 	o1._destroy()
 	o2._destroy()
