@@ -9,25 +9,25 @@ from .version import VERSION
 class Journal(object):
 
     def add(self, command, idx, term):
-        pass
+        raise NotImplementedError
 
     def clear(self):
-        pass
+        raise NotImplementedError
 
     def deleteEntriesFrom(self, entryFrom):
-        pass
+        raise NotImplementedError
 
     def deleteEntriesTo(self, entryTo):
-        pass
+        raise NotImplementedError
 
     def __getitem__(self, item):
-        pass
+        raise NotImplementedError
 
     def __len__(self):
-        pass
+        raise NotImplementedError
 
     def _destroy(self):
-        pass
+        raise NotImplementedError
 
 
 class MemoryJournal(Journal):
@@ -53,6 +53,9 @@ class MemoryJournal(Journal):
 
     def __len__(self):
         return len(self.__journal)
+
+    def _destroy(self):
+        pass
 
 
 class ResizableFile(object):

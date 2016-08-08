@@ -46,11 +46,6 @@ class TcpConnection(object):
         self.__sendBufferSize = sendBufferSize
         self.__recvBufferSize = recvBufferSize
 
-    def getState(self):
-        if time.time() - self.__lastReadTime > self.__timeout:
-            self.disconnect()
-        return self.__state
-
     def setOnMessageReceivedCallback(self, onMessageReceived):
         self.__onMessageReceived = onMessageReceived
 
@@ -90,9 +85,6 @@ class TcpConnection(object):
         data = struct.pack('i', len(data)) + data
         self.__writeBuffer += data
         self.__trySendBuffer()
-
-    def socket(self):
-        return self.__socket
 
     def fileno(self):
         return self.__fileno

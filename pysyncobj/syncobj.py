@@ -326,10 +326,6 @@ class SyncObj(object):
 
         self._poller.poll(timeToWait)
 
-
-    def _getLastCommitIndex(self):
-        return self.__raftCommitIndex
-
     def _printStatus(self):
         LOG_DEBUG('version', VERSION, REVISION)
         LOG_DEBUG('self', self.__selfNodeAddr)
