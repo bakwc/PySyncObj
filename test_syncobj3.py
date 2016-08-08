@@ -7,8 +7,7 @@ import sys
 from functools import partial
 import functools
 import struct
-from pysyncobj import SyncObj, SyncObjConf, replicated, \\
-	FAIL_REASON, _COMMAND_TYPE, createJournal, HAS_CRYPTO, replicated_sync
+from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, createJournal, HAS_CRYPTO, replicated_sync
 
 _bchr = functools.partial(struct.pack, 'B')
 
