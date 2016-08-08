@@ -1,27 +1,3 @@
-#
-#  WARNING: this is generated file, use generate.sh to update it.
-#
-#
-#  WARNING: this is generated file, use generate.sh to update it.
-#
-#
-#  WARNING: this is generated file, use generate.sh to update it.
-#
-#
-#  WARNING: this is generated file, use generate.sh to update it.
-#
-#
-#  WARNING: this is generated file, use generate.sh to update it.
-#
-#
-#  WARNING: this is generated file, use generate.sh to update it.
-#
-#
-#  WARNING: this is generated file, use generate.sh to update it.
-#
-#
-#  WARNING: this is generated file, use generate.sh to update it.
-#
 import os
 import time
 import random
@@ -31,7 +7,7 @@ import sys
 from functools import partial
 import functools
 import struct
-from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, createJournal
+from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, createJournal, HAS_CRYPTO
 
 _bchr = functools.partial(struct.pack, 'B')
 
@@ -133,7 +109,7 @@ def getNextAddr():
 	_g_nextAddress += 1
 	return 'localhost:%d' % _g_nextAddress
 
-def syncTwoObjects():
+def test_syncTwoObjects():
 
 	random.seed(42)
 
@@ -167,7 +143,7 @@ def syncTwoObjects():
 	o1._destroy()
 	o2._destroy()
 
-def syncThreeObjectsLeaderFail():
+def test_syncThreeObjectsLeaderFail():
 
 	random.seed(12)
 
@@ -224,7 +200,7 @@ def syncThreeObjectsLeaderFail():
 	o2._destroy()
 	o3._destroy()
 
-def manyActionsLogCompaction():
+def test_manyActionsLogCompaction():
 
 	random.seed(42)
 
@@ -253,7 +229,7 @@ def manyActionsLogCompaction():
 		o1.addValue(1)
 		o2.addValue(1)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 6.5)
 
 	assert o1.getCounter() == 1000
 	assert o2.getCounter() == 1000
@@ -270,13 +246,13 @@ def manyActionsLogCompaction():
 		o1.addValue(1)
 		o2.addValue(1)
 
-	doTicks(newObjs, 4.0)
+	doTicks(newObjs, 6.5)
 
 	assert o1.getCounter() == 2000
 	assert o2.getCounter() == 2000
 	assert o3.getCounter() != 2000
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 6.5)
 
 	assert o3.getCounter() == 2000
 
@@ -294,7 +270,7 @@ def onAddValue(res, err, info):
 	assert err == FAIL_REASON.SUCCESS
 	info['callback'] = True
 
-def checkCallbacksSimple():
+def test_checkCallbacksSimple():
 
 	random.seed(42)
 
@@ -342,7 +318,7 @@ def removeFiles(files):
 		except:
 			pass
 
-def checkDumpToFile():
+def test_checkDumpToFile():
 	removeFiles(['dump1.bin', 'dump2.bin'])
 
 	random.seed(42)
@@ -395,7 +371,7 @@ def getRandStr():
 	return '%0100000x' % random.randrange(16 ** 100000)
 
 
-def checkBigStorage():
+def test_checkBigStorage():
 	removeFiles(['dump1.bin', 'dump2.bin'])
 
 	random.seed(42)
@@ -450,7 +426,10 @@ def checkBigStorage():
 	removeFiles(['dump1.bin', 'dump2.bin'])
 
 
-def encryptionCorrectPassword():
+def test_encryptionCorrectPassword():
+	if not HAS_CRYPTO:
+		return
+
 	random.seed(42)
 
 	a = [getNextAddr(), getNextAddr()]
@@ -475,7 +454,10 @@ def encryptionCorrectPassword():
 	assert o2.getCounter() == 350
 
 
-def encryptionWrongPassword():
+def test_encryptionWrongPassword():
+	if not HAS_CRYPTO:
+		return
+
 	random.seed(12)
 
 	a = [getNextAddr(), getNextAddr(), getNextAddr()]
@@ -532,7 +514,7 @@ def _checkSameLeader2(objs):
 				return False
 	return True
 
-def randomTest1():
+def test_randomTest1():
 
 	removeFiles(['journal1.bin', 'journal2.bin', 'journal3.bin'])
 
@@ -608,7 +590,7 @@ def randomTest1():
 
 
 # Ensure that raftLog after serialization is the same as in serialized data
-def logCompactionRegressionTest1():
+def test_logCompactionRegressionTest1():
 	random.seed(42)
 
 	a = [getNextAddr(), getNextAddr()]
@@ -633,7 +615,7 @@ def logCompactionRegressionTest1():
 	o2._destroy()
 
 
-def logCompactionRegressionTest2():
+def test_logCompactionRegressionTest2():
 	removeFiles(['dump1.bin', 'dump2.bin', 'dump3.bin'])
 
 	random.seed(12)
@@ -700,7 +682,7 @@ def __checkParnerNodeExists(obj, nodeName, shouldExist = True):
 	else:
 		assert nodeName not in nodesSet1
 
-def doChangeClusterUT1():
+def test_doChangeClusterUT1():
 	removeFiles(['dump1.bin'])
 
 	baseAddr = getNextAddr()
@@ -771,7 +753,7 @@ def doChangeClusterUT1():
 	o2._destroy()
 
 
-def doChangeClusterUT2():
+def test_doChangeClusterUT2():
 	a = [getNextAddr(), getNextAddr(), getNextAddr(), getNextAddr()]
 
 	o1 = TestObj(a[0], [a[1], a[2]], dynamicMembershipChange=True)
@@ -798,7 +780,7 @@ def doChangeClusterUT2():
 	o3._destroy()
 	o4._destroy()
 
-def journalTest1():
+def test_journalTest1():
 	removeFiles(['dump1.bin', 'dump2.bin', 'journal1.bin', 'journal2.bin'])
 
 	random.seed(42)
@@ -885,7 +867,7 @@ def journalTest1():
 
 	removeFiles(['dump1.bin', 'dump2.bin', 'journal1.bin', 'journal2.bin'])
 
-def journalTest2():
+def test_journalTest2():
 	removeFiles(['journal.bin'])
 	journal = createJournal('journal.bin')
 	journal.add(b'cmd1', 1, 0)
@@ -912,30 +894,3 @@ def journalTest2():
 	assert journal[0] == (b'cmd2', 2, 0)
 	journal._destroy()
 	removeFiles(['journal.bin'])
-
-
-def runTests():
-	useCrypto = True
-	if len(sys.argv) > 1 and sys.argv[1] == 'nocrypto':
-		useCrypto = False
-
-	syncTwoObjects()
-	syncThreeObjectsLeaderFail()
-	manyActionsLogCompaction()
-	logCompactionRegressionTest1()
-	logCompactionRegressionTest2()
-	checkCallbacksSimple()
-	doChangeClusterUT1()
-	doChangeClusterUT2()
-	checkDumpToFile()
-	journalTest1()
-	journalTest2()
-	checkBigStorage()
-	randomTest1()
-	if useCrypto:
-		encryptionCorrectPassword()
-		encryptionWrongPassword()
-	print('[SUCCESS]')
-
-if __name__ == '__main__':
-	runTests()

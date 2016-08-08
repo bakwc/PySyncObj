@@ -9,12 +9,13 @@ install:
   - if [[ $TRAVIS_PYTHON_VERSION == 3.4 ]]; then pip install cryptography; fi
   - if [[ $TRAVIS_PYTHON_VERSION == 3.5 ]]; then pip install cryptography; fi
   - if [[ $TRAVIS_PYTHON_VERSION == 2.7 ]]; then pip install cryptography; fi
+  - pip install coverage pytest
 script:
   - if [[ $TRAVIS_PYTHON_VERSION == 3.4 ]]; then ./generate.sh; fi
   - if [[ $TRAVIS_PYTHON_VERSION == 3.5 ]]; then ./generate.sh; fi
   - if [[ $TRAVIS_PYTHON_VERSION == 'pypy3' ]]; then ./generate.sh; fi
-  - if [[ $TRAVIS_PYTHON_VERSION == 2.7 ]]; then python2.7 syncobj_ut.py; fi
-  - if [[ $TRAVIS_PYTHON_VERSION == 3.4 ]]; then python3.4 syncobj3_ut.py; fi
-  - if [[ $TRAVIS_PYTHON_VERSION == 3.5 ]]; then python3.5 syncobj3_ut.py; fi
-  - if [[ $TRAVIS_PYTHON_VERSION == 'pypy' ]]; then pypy syncobj_ut.py nocrypto; fi
-  - if [[ $TRAVIS_PYTHON_VERSION == 'pypy3' ]]; then pypy3 syncobj3_ut.py nocrypto; fi
+  - if [[ $TRAVIS_PYTHON_VERSION == 2.7 ]]; then coverage run --source pysyncobj -m py.test -v -l test_syncobj.py; fi
+  - if [[ $TRAVIS_PYTHON_VERSION == 3.4 ]]; then py.test -v -l test_syncobj3.py; fi
+  - if [[ $TRAVIS_PYTHON_VERSION == 3.5 ]]; then py.test -v -l test_syncobj3.py; fi
+  - if [[ $TRAVIS_PYTHON_VERSION == 'pypy' ]]; then py.test -v -l test_syncobj.py; fi
+  - if [[ $TRAVIS_PYTHON_VERSION == 'pypy3' ]]; then py.test -v -l test_syncobj3.py; fi
