@@ -9,23 +9,23 @@ python:
   - "pypy"
   - "pypy3"
 install:
-    - |
-        if [[ $TRAVIS_OS_NAME == "osx" ]]
-        then
-          brew update || brew update # try again if it fails
-          brew upgrade
-          brew reinstall pyenv
-          eval "$(pyenv init -)"
+  - |
+    if [[ $TRAVIS_OS_NAME == "osx" ]]
+    then
+      brew update || brew update # try again if it fails
+      brew upgrade
+      brew reinstall pyenv
+      eval "$(pyenv init -)"
 
-          if [[ $TRAVIS_PYTHON_VERSION == 2.7 ]];
-          then
-            env PYTHON_CONFIGURE_OPTS="--enable-framework" pyenv install --skip-existing 2.7.9
-            pyenv global 2.7.9
-            pyenv shell 2.7.9
-          fi
+      if [[ $TRAVIS_PYTHON_VERSION == 2.7 ]];
+      then
+        env PYTHON_CONFIGURE_OPTS="--enable-framework" pyenv install --skip-existing 2.7.9
+        pyenv global 2.7.9
+        pyenv shell 2.7.9
+      fi
 
-          pip install -U pip setuptools wheel virtualenv
-        fi
+      pip install -U pip setuptools wheel virtualenv
+    fi
   - if [[ $TRAVIS_PYTHON_VERSION == 3.4 && $TRAVIS_OS_NAME == "linux" ]]; then pip install cryptography; fi
   - if [[ $TRAVIS_PYTHON_VERSION == 3.5 && $TRAVIS_OS_NAME == "linux" ]]; then pip install cryptography; fi
   - if [[ $TRAVIS_PYTHON_VERSION == 2.7 ]]; then pip install cryptography; fi
