@@ -65,7 +65,7 @@ class TcpServer(object):
                                      recvBufferSize=self.__recvBufferSize)
                 self.__onNewConnectionCallback(conn)
             except socket.error as e:
-                if e.errno != socket.errno.EAGAIN:
+                if e.errno not in (socket.errno.EAGAIN, socket.errno.EWOULDBLOCK):
                     self.unbind()
                     return
 

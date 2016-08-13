@@ -70,7 +70,7 @@ class TcpConnection(object):
         try:
             self.__socket.connect((host, port))
         except socket.error as e:
-            if e.errno != socket.errno.EINPROGRESS:
+            if e.errno not in (socket.errno.EINPROGRESS, socket.errno.EWOULDBLOCK):
                 return False
         self.__fileno = self.__socket.fileno()
         self.__state = CONNECTION_STATE.CONNECTING
@@ -177,7 +177,7 @@ class TcpConnection(object):
             self.__writeBuffer = self.__writeBuffer[res:]
             return True
         except socket.error as e:
-            if e.errno != socket.errno.EAGAIN:
+            if e.errno not in (socket.errno.EAGAIN, socket.errno.EWOULDBLOCK):
                 self.disconnect()
             return False
 
@@ -190,7 +190,7 @@ class TcpConnection(object):
         try:
             incoming = self.__socket.recv(self.__recvBufferSize)
         except socket.error as e:
-            if e.errno != socket.errno.EAGAIN:
+            if e.errno not in (socket.errno.EAGAIN, socket.errno.EWOULDBLOCK):
                 self.disconnect()
             return False
         if self.__socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):
