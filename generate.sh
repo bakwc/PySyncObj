@@ -17,7 +17,7 @@ do
 done
 sed 's/\\/\\\\/g' test_syncobj3.py > tmp
 mv tmp test_syncobj3.py
-echo -e "#\n#  WARNING: this is generated file, use generate.sh to update it.\n#\n$(cat syncobj3_ut.py)" > syncobj3_ut.py
+echo -e "#\n#  WARNING: this is generated file, use generate.sh to update it.\n#\n$(cat test_syncobj3.py)" > test_syncobj3.py
 
 #rm -rf examples_py3/*
 #2to3 --output-dir=examples_py3 -W -n examples
