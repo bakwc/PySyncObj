@@ -6,6 +6,7 @@ import zlib
 import pickle
 import gzip
 from .debug_utils import LOG_WARNING, LOG_CURRENT_EXCEPTION
+from .atomic_replace import atomicReplace
 
 
 class SERIALIZER_STATE:
@@ -13,7 +14,6 @@ class SERIALIZER_STATE:
     SERIALIZING = 1
     SUCCESS = 2
     FAILED = 3
-
 
 class Serializer(object):
     def __init__(self, fileName, transmissionBatchSize, tryUseFork):
@@ -30,9 +30,9 @@ class Serializer(object):
         # In-memory case
         if self.__fileName is None or not self.__useFork:
             if self.__pid in (-1, -2):
+                serializeState = SERIALIZER_STATE.SUCCESS if self.__pid == -1 else SERIALIZER_STATE.FAILED
                 self.__pid = 0
                 self.__transmissions = {}
-                serializeState = SERIALIZER_STATE.SUCCESS if self.__pid == -1 else SERIALIZER_STATE.FAILED
                 return serializeState, self.__currentID
             return SERIALIZER_STATE.NOT_SERIALIZING, None
 
@@ -78,12 +78,12 @@ class Serializer(object):
             with open(tmpFile, 'wb') as f:
                 with gzip.GzipFile(fileobj=f) as g:
                     pickle.dump(data, g, -1)
-            os.rename(tmpFile, self.__fileName)
+            atomicReplace(tmpFile, self.__fileName)
             if self.__useFork:
                 os._exit(0)
             else:
                 self.__pid = -1
-        except:
+        except Exception as e:
             if self.__useFork:
                 os._exit(-1)
             else:
@@ -181,7 +181,7 @@ class Serializer(object):
             self.__incomingTransmissionFile.close()
             self.__incomingTransmissionFile = None
             try:
-                os.rename(tmpFile, self.__fileName)
+                atomicReplace(tmpFile, self.__fileName)
             except:
                 LOG_WARNING('Failed to rename temporary incoming transition file')
                 LOG_CURRENT_EXCEPTION()
