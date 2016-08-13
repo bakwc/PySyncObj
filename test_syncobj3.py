@@ -6,7 +6,6 @@ import time
 import random
 import threading
 import pickle
-import sys
 from functools import partial
 import functools
 import struct
@@ -30,7 +29,8 @@ class TestObj(SyncObj):
 				 dumpFile = None,
 				 journalFile = None,
 				 password = None,
-				 dynamicMembershipChange = False):
+				 dynamicMembershipChange = False,
+				 useFork = True):
 
 		cfg = SyncObjConf(autoTick=False, appendEntriesUseBatch=False)
 		cfg.appendEntriesPeriod = 0.1
@@ -48,6 +48,7 @@ class TestObj(SyncObj):
 			cfg.logCompactionMinEntries = compactionMinEntries
 			cfg.logCompactionMinTime = 0.1
 			cfg.appendEntriesUseBatch = True
+			cfg.useFork = useFork
 
 		if testType == TEST_TYPE.COMPACTION_2:
 			cfg.logCompactionMinEntries = 99999
@@ -333,15 +334,15 @@ def removeFiles(files):
 		except:
 			pass
 
-def test_checkDumpToFile():
+def checkDumpToFile(useFork):
 	removeFiles(['dump1.bin', 'dump2.bin'])
 
 	random.seed(42)
 
 	a = [getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin', useFork = useFork)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump2.bin', useFork = useFork)
 	objs = [o1, o2]
 	doTicks(objs, 4.5)
 
@@ -363,8 +364,8 @@ def test_checkDumpToFile():
 	del o2
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin', useFork = useFork)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump2.bin', useFork = useFork)
 	objs = [o1, o2]
 	doTicks(objs, 4.5)
 	assert o1._isReady()
@@ -380,6 +381,11 @@ def test_checkDumpToFile():
 	o2._destroy()
 
 	removeFiles(['dump1.bin', 'dump2.bin'])
+
+def test_checkDumpToFile():
+	if hasattr(os, 'fork'):
+		checkDumpToFile(True)
+	checkDumpToFile(False)
 
 
 def getRandStr():

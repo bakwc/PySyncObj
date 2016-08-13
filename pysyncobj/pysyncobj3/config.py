@@ -96,6 +96,9 @@ class SyncObjConf(object):
         #  'poll' - use poll poller
         self.pollerType = kwargs.get('pollerType', 'auto')
 
+        # Use fork if available when serializing on disk.
+        self.useFork = kwargs.get('useFork', True)
+
     def validate(self):
         assert self.autoTickPeriod > 0
         assert self.commandsQueueSize >= 0

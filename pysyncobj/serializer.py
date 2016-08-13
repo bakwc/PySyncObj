@@ -13,7 +13,8 @@ class SERIALIZER_STATE:
 
 
 class Serializer(object):
-    def __init__(self, fileName, transmissionBatchSize):
+    def __init__(self, fileName, transmissionBatchSize, tryUseFork):
+        self.__useFork = tryUseFork and hasattr(os, 'fork')
         self.__fileName = fileName
         self.__transmissionBatchSize = transmissionBatchSize
         self.__pid = 0
@@ -24,11 +25,12 @@ class Serializer(object):
 
     def checkSerializing(self):
         # In-memory case
-        if self.__fileName is None:
-            if self.__pid == -1:
+        if self.__fileName is None or not self.__useFork:
+            if self.__pid in (-1, -2):
                 self.__pid = 0
                 self.__transmissions = {}
-                return SERIALIZER_STATE.SUCCESS, self.__currentID
+                serializeState = SERIALIZER_STATE.SUCCESS if self.__pid == -1 else SERIALIZER_STATE.FAILED
+                return serializeState, self.__currentID
             return SERIALIZER_STATE.NOT_SERIALIZING, None
 
         # File case
@@ -62,10 +64,11 @@ class Serializer(object):
             return
 
         # File case
-        pid = os.fork()
-        if pid != 0:
-            self.__pid = pid
-            return
+        if self.__useFork:
+            pid = os.fork()
+            if pid != 0:
+                self.__pid = pid
+                return
 
         try:
             tmpFile = self.__fileName + '.tmp'
@@ -73,9 +76,15 @@ class Serializer(object):
                 with gzip.GzipFile(fileobj=f) as g:
                     cPickle.dump(data, g, -1)
             os.rename(tmpFile, self.__fileName)
-            os._exit(0)
+            if self.__useFork:
+                os._exit(0)
+            else:
+                self.__pid = -1
         except:
-            os._exit(-1)
+            if self.__useFork:
+                os._exit(-1)
+            else:
+                self.__pid = -2
 
     def deserialize(self):
         if self.__fileName is None:
