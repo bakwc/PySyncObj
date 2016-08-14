@@ -23,7 +23,7 @@ PySyncObj is a python library that provides ability to sync your data between mu
 - It supports [dynamic membership changes ](https://github.com/bakwc/PySyncObj/wiki/Dynamic-membership-change) (cluster reconfiguration).
 - It supports in-memory and on-disk serialization. You can use in-memory mode for small data and on-disk for big one.
 - It has encryption - you can set password and use it in external network.
-- It supports python2 and python3. No dependencies required (only optional one, eg. cryptography).
+- It supports python2 and python3 on linux, macos and windows. No dependencies required (only optional one, eg. cryptography).
 - Configurable event loop - it can works in separate thread with it's own event loop - or you can call onTick function inside your own one.
 - Convenient interface - you can easily transform arbitrary class into a replicated one (see example below).
 
