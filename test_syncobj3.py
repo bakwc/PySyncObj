@@ -44,11 +44,12 @@ class TestObj(SyncObj):
 		if password is not None:
 			cfg.password = password
 
+		cfg.useFork = useFork
+
 		if testType == TEST_TYPE.COMPACTION_1:
 			cfg.logCompactionMinEntries = compactionMinEntries
 			cfg.logCompactionMinTime = 0.1
 			cfg.appendEntriesUseBatch = True
-			cfg.useFork = useFork
 
 		if testType == TEST_TYPE.COMPACTION_2:
 			cfg.logCompactionMinEntries = 99999
@@ -341,8 +342,8 @@ def checkDumpToFile(useFork):
 
 	a = [getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin', useFork = useFork)
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump2.bin', useFork = useFork)
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin', useFork = useFork)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin', useFork = useFork)
 	objs = [o1, o2]
 	doTicks(objs, 4.5)
 
@@ -357,6 +358,11 @@ def checkDumpToFile(useFork):
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
 
+	o1._forceLogCompaction()
+	o2._forceLogCompaction()
+
+	doTicks(objs, 1.5)
+
 	o1._destroy()
 	o2._destroy()
 
@@ -364,8 +370,8 @@ def checkDumpToFile(useFork):
 	del o2
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin', useFork = useFork)
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump2.bin', useFork = useFork)
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin', useFork = useFork)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin', useFork = useFork)
 	objs = [o1, o2]
 	doTicks(objs, 4.5)
 	assert o1._isReady()
