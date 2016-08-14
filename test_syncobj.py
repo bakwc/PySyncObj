@@ -419,18 +419,18 @@ def test_checkBigStorage():
 	o2._forceLogCompaction()
 
 	# Wait for disk dump
-	doTicks(objs, 5.0)
+	doTicks(objs, 8.0)
 
 	o1._destroy()
 	o2._destroy()
 
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_1, compactionMinEntries=2, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	# Wait for disk load, election and replication
-	doTicks(objs, 5.5)
+	doTicks(objs, 8.0)
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
