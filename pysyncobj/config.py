@@ -104,7 +104,7 @@ class SyncObjConf(object):
         # Custom serialize function, it will be called when logCompaction (fullDump) happens.
         # If specified - there should be a custom deserializer too.
         # Arguments: serializer(fileName, data)
-        #  data - some internall stuff that is *required* to be serialized with your object data.
+        #  data - some internal stuff that is *required* to be serialized with your object data.
         self.serializer = kwargs.get('serializer', None)
 
         # Check custom serialization state, for async serializer.
@@ -113,6 +113,7 @@ class SyncObjConf(object):
 
         # Custom deserialize function, it will be called when restore from fullDump.
         # If specified - there should be a custom serializer too.
+        # Should return data - internal stuff that was passed to serialize.
         self.deserializer = kwargs.get('deserializer', None)
 
     def validate(self):
@@ -132,4 +133,6 @@ class SyncObjConf(object):
         assert self.logCompactionMinTime > 0
         assert self.logCompactionBatchSize > 0
         assert self.bindRetryTime > 0
-        assert (self.deserializer is None) == (self.serializer is None) == (self.fullDumpFile is None)
+        assert (self.deserializer is None) == (self.serializer is None)
+        if self.serializer is not None:
+            assert self.fullDumpFile is not None
