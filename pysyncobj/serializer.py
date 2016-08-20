@@ -4,17 +4,13 @@ import cPickle
 import gzip
 from debug_utils import LOG_WARNING, LOG_CURRENT_EXCEPTION
 from atomic_replace import atomicReplace
+from config import SERIALIZER_STATE
 
-
-class SERIALIZER_STATE:
-    NOT_SERIALIZING = 0
-    SERIALIZING = 1
-    SUCCESS = 2
-    FAILED = 3
 
 class Serializer(object):
-    def __init__(self, fileName, transmissionBatchSize, tryUseFork):
-        self.__useFork = tryUseFork and hasattr(os, 'fork')
+    def __init__(self, fileName, transmissionBatchSize, tryUseFork,
+                 serializer, deserializer, serializeChecker):
+        self.__useFork = tryUseFork and hasattr(os, 'fork') and serializer is None
         self.__fileName = fileName
         self.__transmissionBatchSize = transmissionBatchSize
         self.__pid = 0
@@ -22,8 +18,14 @@ class Serializer(object):
         self.__transmissions = {}
         self.__incomingTransmissionFile = None
         self.__inMemorySerializedData = None
+        self.__serializer = serializer
+        self.__deserializer = deserializer
+        self.__serializeChecker = serializeChecker
 
     def checkSerializing(self):
+        if self.__serializeChecker is not None:
+            return self.__serializeChecker(), self.__currentID
+
         # In-memory case
         if self.__fileName is None or not self.__useFork:
             if self.__pid in (-1, -2):
@@ -72,9 +74,13 @@ class Serializer(object):
 
         try:
             tmpFile = self.__fileName + '.tmp'
-            with open(tmpFile, 'wb') as f:
-                with gzip.GzipFile(fileobj=f) as g:
-                    cPickle.dump(data, g, -1)
+            if self.__serializer is not None:
+                self.__serializer(tmpFile, data[1:])
+            else:
+                with open(tmpFile, 'wb') as f:
+                    with gzip.GzipFile(fileobj=f) as g:
+                        cPickle.dump(data, g, -1)
+
             atomicReplace(tmpFile, self.__fileName)
             if self.__useFork:
                 os._exit(0)
@@ -90,9 +96,12 @@ class Serializer(object):
         if self.__fileName is None:
             return cPickle.loads(zlib.decompress(self.__inMemorySerializedData))
 
-        with open(self.__fileName, 'rb') as f:
-            with gzip.GzipFile(fileobj=f) as g:
-                return cPickle.load(g)
+        if self.__deserializer is not None:
+            return (None,) + self.__deserializer(self.__fileName)
+        else:
+            with open(self.__fileName, 'rb') as f:
+                with gzip.GzipFile(fileobj=f) as g:
+                    return cPickle.load(g)
 
     def getTransmissionData(self, transmissionID):
         if self.__pid != 0:
