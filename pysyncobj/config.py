@@ -96,6 +96,14 @@ class SyncObjConf(object):
         # Use fork if available when serializing on disk.
         self.useFork = kwargs.get('useFork', True)
 
+        # Custom serialize function, it will be called when logCompaction (fullDump) happens.
+        # If specified - there should be a custom deserializer too.
+        self.serializer = kwargs.get('serializer', None)
+
+        # Custom deserialize function, it will be called when restore from fullDump.
+        # If specified - there should be a custom serializer too.
+        self.deserializer = kwargs.get('deserializer', None)
+
     def validate(self):
         assert self.autoTickPeriod > 0
         assert self.commandsQueueSize >= 0
@@ -113,3 +121,4 @@ class SyncObjConf(object):
         assert self.logCompactionMinTime > 0
         assert self.logCompactionBatchSize > 0
         assert self.bindRetryTime > 0
+        assert (self.deserializer is None) == (self.serializer is None)
