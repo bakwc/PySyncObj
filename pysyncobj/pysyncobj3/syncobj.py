@@ -91,7 +91,10 @@ class SyncObj(object):
         globalDnsResolver().setTimeouts(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
         self.__serializer = Serializer(self.__conf.fullDumpFile,
                                        self.__conf.logCompactionBatchSize,
-                                       self.__conf.useFork)
+                                       self.__conf.useFork,
+                                       self.__conf.serializer,
+                                       self.__conf.deserializer,
+                                       self.__conf.serializeChecker)
         self.__isInitialized = False
         self.__lastInitTryTime = 0
         self._poller = createPoller(self.__conf.pollerType)
