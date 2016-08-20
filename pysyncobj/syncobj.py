@@ -801,15 +801,19 @@ class SyncObj(object):
         if len(lastAppliedEntries) < 2 or lastAppliedEntries[0][1] == self.__lastSerializedEntry:
             return
 
-        data = dict([(k, self.__dict__[k]) for k in self.__dict__.keys() if k not in self.__properies])
+        if self.__conf.serializer is None:
+            data = dict([(k, self.__dict__[k]) for k in self.__dict__.keys() if k not in self.__properies])
+        else:
+            data = None
         cluster = self.__otherNodesAddrs + [self.__selfNodeAddr]
         self.__serializer.serialize((data, lastAppliedEntries[1], lastAppliedEntries[0], cluster), lastAppliedEntries[0][1])
 
     def __loadDumpFile(self, clearJournal):
         try:
             data = self.__serializer.deserialize()
-            for k, v in data[0].iteritems():
-                self.__dict__[k] = v
+            if data[0] is not None:
+                for k, v in data[0].iteritems():
+                    self.__dict__[k] = v
 
             if clearJournal or \
                     len(self.__raftLog) < 2 or \

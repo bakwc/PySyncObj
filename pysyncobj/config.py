@@ -7,6 +7,11 @@ class FAIL_REASON:
     NOT_LEADER = 4
     LEADER_CHANGED = 5
 
+class SERIALIZER_STATE:
+    NOT_SERIALIZING = 0     # Serialization not started or already finished.
+    SERIALIZING = 1         # Serialization in progress.
+    SUCCESS = 2             # Serialization successfully finished (should be returned only one time after finished).
+    FAILED = 3              # Serialization failed (should be returned only one time after finished).
 
 class SyncObjConf(object):
     def __init__(self, **kwargs):
@@ -98,7 +103,13 @@ class SyncObjConf(object):
 
         # Custom serialize function, it will be called when logCompaction (fullDump) happens.
         # If specified - there should be a custom deserializer too.
+        # Arguments: serializer(fileName, data)
+        #  data - some internall stuff that is *required* to be serialized with your object data.
         self.serializer = kwargs.get('serializer', None)
+
+        # Check custom serialization state, for async serializer.
+        # Should return one of SERIALIZER_STATE.
+        self.serializeChecker = kwargs.get('serializeChecker', None)
 
         # Custom deserialize function, it will be called when restore from fullDump.
         # If specified - there should be a custom serializer too.
@@ -121,4 +132,4 @@ class SyncObjConf(object):
         assert self.logCompactionMinTime > 0
         assert self.logCompactionBatchSize > 0
         assert self.bindRetryTime > 0
-        assert (self.deserializer is None) == (self.serializer is None)
+        assert (self.deserializer is None) == (self.serializer is None) == (self.fullDumpFile is None)
