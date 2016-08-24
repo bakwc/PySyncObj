@@ -27,7 +27,10 @@ class Serializer(object):
 
     def checkSerializing(self):
         if self.__serializeChecker is not None:
-            return self.__serializeChecker(), self.__currentID
+            status = self.__serializeChecker()
+            if status in (SERIALIZER_STATE.SUCCESS, SERIALIZER_STATE.FAILED):
+                self.__pid = 0
+            return status, self.__currentID
 
         # In-memory case
         if self.__fileName is None or not self.__useFork:
