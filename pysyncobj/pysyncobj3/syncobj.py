@@ -801,10 +801,23 @@ class SyncObj(object):
                 not self.__forceLogCompaction:
             return
 
+        if self.__conf.logCompactionSplit:
+            allNodes = sorted(self.__otherNodesAddrs + [self.__selfNodeAddr])
+            nodesCount = len(allNodes)
+            selfIdx = allNodes.index(self.__selfNodeAddr)
+            interval = self.__conf.logCompactionMinTime
+            periodStart = int(currTime) / interval * interval
+            nodeInterval = float(interval) / nodesCount
+            nodeIntervalStart = periodStart + selfIdx * nodeInterval
+            nodeIntervalEnd = nodeIntervalStart + 0.3 * nodeInterval
+            if currTime < nodeIntervalStart or currTime >= nodeIntervalEnd:
+                return
+
         self.__forceLogCompaction = False
 
         lastAppliedEntries = self.__getEntries(self.__raftLastApplied - 1, 2)
         if len(lastAppliedEntries) < 2 or lastAppliedEntries[0][1] == self.__lastSerializedEntry:
+            self.__lastSerializedTime = currTime
             return
 
         if self.__conf.serializer is None:

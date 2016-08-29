@@ -67,6 +67,11 @@ class SyncObjConf(object):
         self.logCompactionMinEntries = kwargs.get('logCompactionMinEntries', 5000)
         self.logCompactionMinTime = kwargs.get('logCompactionMinTime', 300)
 
+        # If true - each node will start log compaction in separate time window.
+        # eg. node1 in 12.00-12.10, node2 in 12.10-12.20, node3 12.20 - 12.30,
+        # then again node1 12.30-12.40, node2 12.40-12.50, etc.
+        self.logCompactionSplit = kwargs.get('logCompactionSplit', False)
+
         # Max number of bytes per single append_entries command
         # while sending serialized object.
         self.logCompactionBatchSize = kwargs.get('logCompactionBatchSize', 2 ** 16)
