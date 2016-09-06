@@ -82,6 +82,7 @@ class SyncObj(object):
         self.__changeClusterIDx = None
         self.__noopIDx = None
         self.__destroying = False
+        self.__recvTransmission = ''
 
 
         self.__startTime = time.time()
@@ -417,6 +418,21 @@ class SyncObj(object):
 
             # Regular append entries
             if 'prevLogIdx' in message:
+                transmission = message.get('transmission', None)
+                if transmission is not None:
+                    if transmission == 'start':
+                        self.__recvTransmission = message['data']
+                        return
+                    elif transmission == 'process':
+                        self.__recvTransmission += message['data']
+                        return
+                    elif transmission == 'finish':
+                        self.__recvTransmission += message['data']
+                        newEntries = [cPickle.loads(self.__recvTransmission)]
+                        self.__recvTransmission = ''
+                    else:
+                        raise Exception('Wrong transmission type')
+
                 prevLogIdx = message['prevLogIdx']
                 prevLogTerm = message['prevLogTerm']
                 prevEntries = self.__getEntries(prevLogIdx)
@@ -645,6 +661,8 @@ class SyncObj(object):
 
         startTime = time.time()
 
+        batchSizeBytes = self.__conf.appendEntriesBatchSizeBytes
+
         for node in self.__nodes:
             nodeAddr = node.getAddress()
 
@@ -661,18 +679,39 @@ class SyncObj(object):
                     prevLogIdx, prevLogTerm = self.__getPrevLogIndexTerm(nextNodeIndex)
                     entries = []
                     if nextNodeIndex <= self.__getCurrentLogIndex():
-                        entries = self.__getEntries(nextNodeIndex, None, self.__conf.appendEntriesBatchSizeBytes)
+                        entries = self.__getEntries(nextNodeIndex, None, batchSizeBytes)
                         self.__raftNextIndex[nodeAddr] = entries[-1][1] + 1
 
-                    message = {
-                        'type': 'append_entries',
-                        'term': self.__raftCurrentTerm,
-                        'commit_index': self.__raftCommitIndex,
-                        'entries': entries,
-                        'prevLogIdx': prevLogIdx,
-                        'prevLogTerm': prevLogTerm,
-                    }
-                    node.send(message)
+                    if len(entries) == 1 and len(entries[0][0]) >= batchSizeBytes:
+                        entry = cPickle.dumps(entries[0], -1)
+                        for pos in xrange(0, len(entry), batchSizeBytes):
+                            currData = entry[pos:pos + batchSizeBytes]
+                            if pos == 0:
+                                transmission = 'start'
+                            elif pos + batchSizeBytes >= len(entries[0][0]):
+                                transmission = 'finish'
+                            else:
+                                transmission = 'process'
+                            message = {
+                                'type': 'append_entries',
+                                'transmission': transmission,
+                                'data': currData,
+                                'term': self.__raftCurrentTerm,
+                                'commit_index': self.__raftCommitIndex,
+                                'prevLogIdx': prevLogIdx,
+                                'prevLogTerm': prevLogTerm,
+                            }
+                            node.send(message)
+                    else:
+                        message = {
+                            'type': 'append_entries',
+                            'term': self.__raftCurrentTerm,
+                            'commit_index': self.__raftCommitIndex,
+                            'entries': entries,
+                            'prevLogIdx': prevLogIdx,
+                            'prevLogTerm': prevLogTerm,
+                        }
+                        node.send(message)
                 else:
                     transmissionData = self.__serializer.getTransmissionData(nodeAddr)
                     message = {
