@@ -844,7 +844,8 @@ def test_journalTest1():
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump1.bin', journalFile='journal1.bin')
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump2.bin', journalFile='journal2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady() and\
+									   o1.getCounter() == 350 and o2.getCounter() == 350)
 	assert o1._isReady()
 	assert o2._isReady()
 
