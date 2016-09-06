@@ -99,16 +99,19 @@ class TestObj(SyncObj):
 	def dumpKeys(self):
 		print 'keys:', sorted(self.__data.keys())
 
-def singleTickFunc(o, timeToTick, interval):
+def singleTickFunc(o, timeToTick, interval, stopFunc):
 	currTime = time.time()
 	finishTime = currTime + timeToTick
 	while time.time() < finishTime:
 		o._onTick(interval)
+		if stopFunc is not None:
+			if stopFunc():
+				break
 
-def doTicks(objects, timeToTick, interval = 0.05):
+def doTicks(objects, timeToTick, interval = 0.05, stopFunc = None):
 	threads = []
 	for o in objects:
-		t = threading.Thread(target=singleTickFunc, args=(o, timeToTick, interval))
+		t = threading.Thread(target=singleTickFunc, args=(o, timeToTick, interval, stopFunc))
 		t.start()
 		threads.append(t)
 	for t in threads:
@@ -134,7 +137,7 @@ def test_syncTwoObjects():
 	assert not o1._isReady()
 	assert not o2._isReady()
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10.0, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	o1._printStatus()
 
@@ -146,7 +149,7 @@ def test_syncTwoObjects():
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10.0, stopFunc=lambda: o1.getCounter() == 350 and o2.getCounter() == 350)
 
 	assert o1._isReady()
 	assert o2._isReady()
@@ -172,7 +175,7 @@ def test_syncThreeObjectsLeaderFail():
 	assert not o2._isReady()
 	assert not o3._isReady()
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10.0, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
 
 	assert o1._isReady()
 	assert o2._isReady()
@@ -185,7 +188,7 @@ def test_syncThreeObjectsLeaderFail():
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10.0, stopFunc=lambda: o3.getCounter() == 350)
 
 	assert o3.getCounter() == 350
 
@@ -195,18 +198,22 @@ def test_syncThreeObjectsLeaderFail():
 
 	assert len(newObjs) == 2
 
-	doTicks(newObjs, 4.5)
+	doTicks(newObjs, 10.0, stopFunc=lambda: newObjs[0]._getLeader() != prevLeader and \
+											newObjs[0]._getLeader() in a and \
+											newObjs[0]._getLeader() == newObjs[1]._getLeader())
+
 	assert newObjs[0]._getLeader() != prevLeader
 	assert newObjs[0]._getLeader() in a
 	assert newObjs[0]._getLeader() == newObjs[1]._getLeader()
 
 	newObjs[1].addValue(50)
 
-	doTicks(newObjs, 1.5)
+	doTicks(newObjs, 10, stopFunc=lambda: newObjs[0].getCounter() == 400)
 
 	assert newObjs[0].getCounter() == 400
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10.0, stopFunc=lambda: sum([int(o.getCounter() == 400) for o in objs]) == len(objs))
+
 	for o in objs:
 		assert o.getCounter() == 400
 
@@ -229,7 +236,7 @@ def test_manyActionsLogCompaction():
 	assert not o2._isReady()
 	assert not o3._isReady()
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
 
 	assert o1._isReady()
 	assert o2._isReady()
@@ -243,7 +250,9 @@ def test_manyActionsLogCompaction():
 		o1.addValue(1)
 		o2.addValue(1)
 
-	doTicks(objs, 6.5)
+	doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 1000 and \
+									   o2.getCounter() == 1000 and \
+									   o3.getCounter() == 1000)
 
 	assert o1.getCounter() == 1000
 	assert o2.getCounter() == 1000
@@ -254,19 +263,20 @@ def test_manyActionsLogCompaction():
 	assert o3._getRaftLogSize() <= 100
 
 	newObjs = [o1, o2]
-	doTicks(newObjs, 4.5)
+	doTicks(newObjs, 10, stopFunc=lambda: o3._getLeader() is None)
 
 	for i in xrange(0, 500):
 		o1.addValue(1)
 		o2.addValue(1)
 
-	doTicks(newObjs, 6.5)
+	doTicks(newObjs, 10, stopFunc=lambda: o1.getCounter() == 2000 and \
+										  o2.getCounter() == 2000)
 
 	assert o1.getCounter() == 2000
 	assert o2.getCounter() == 2000
 	assert o3.getCounter() != 2000
 
-	doTicks(objs, 6.5)
+	doTicks(objs, 10, stopFunc=lambda: o3.getCounter() == 2000)
 
 	assert o3.getCounter() == 2000
 
@@ -299,7 +309,7 @@ def test_checkCallbacksSimple():
 	assert not o2._isReady()
 	assert not o3._isReady()
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
 
 	assert o1._isReady()
 	assert o2._isReady()
@@ -315,7 +325,7 @@ def test_checkCallbacksSimple():
 	}
 	o1.addValue(3, callback=partial(onAddValue, info=callbackInfo))
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10, stopFunc=lambda: o2.getCounter() == 3 and callbackInfo['callback'] == True)
 
 	assert o2.getCounter() == 3
 	assert callbackInfo['callback'] == True
@@ -342,7 +352,7 @@ def checkDumpToFile(useFork):
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin', useFork = useFork)
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin', useFork = useFork)
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -350,7 +360,7 @@ def checkDumpToFile(useFork):
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 350 and o2.getCounter() == 350)
 
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
@@ -363,14 +373,11 @@ def checkDumpToFile(useFork):
 	o1._destroy()
 	o2._destroy()
 
-	del o1
-	del o2
-
 	a = [getNextAddr(), getNextAddr()]
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin', useFork = useFork)
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin', useFork = useFork)
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 	assert o1._isReady()
 	assert o2._isReady()
 
@@ -405,7 +412,7 @@ def test_checkBigStorage():
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin')
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -417,7 +424,8 @@ def test_checkBigStorage():
 	o1.addKeyValue('test', testRandStr)
 
 	# Wait for replication.
-	doTicks(objs, 40.0)
+	doTicks(objs, 60, stopFunc=lambda: o1.getValue('test') == testRandStr and \
+									   o2.getValue('test') == testRandStr)
 
 	assert o1.getValue('test') == testRandStr
 
@@ -436,7 +444,7 @@ def test_checkBigStorage():
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	# Wait for disk load, election and replication
-	doTicks(objs, 8.0)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -461,7 +469,7 @@ def test_encryptionCorrectPassword():
 	o1 = TestObj(a[0], [a[1]], password='asd')
 	o2 = TestObj(a[1], [a[0]], password='asd')
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -469,13 +477,13 @@ def test_encryptionCorrectPassword():
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 1.5)
-
-	o1._destroy()
-	o2._destroy()
+	doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 350 and o2.getCounter() == 350)
 
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
+
+	o1._destroy()
+	o2._destroy()
 
 
 def test_encryptionWrongPassword():
@@ -491,10 +499,12 @@ def test_encryptionWrongPassword():
 	o3 = TestObj(a[2], [a[0], a[1]], password='qwe')
 	objs = [o1, o2, o3]
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
+
+	doTicks(objs, 1.0)
 	assert o3._getLeader() is None
 
 	o1._destroy()
@@ -623,7 +633,7 @@ def test_logCompactionRegressionTest1():
 	o2 = TestObj(a[1], [a[0]])
 	objs = [o1, o2]
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -651,11 +661,13 @@ def test_logCompactionRegressionTest2():
 	o3 = TestObj(a[2], [a[0], a[1]], dumpFile = 'dump3.bin')
 	objs = [o1, o2]
 
-	doTicks(objs, 3.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
+
 	objs = [o1, o2, o3]
 	o1.addValue(2)
 	o1.addValue(3)
-	doTicks(objs, 0.5)
+	doTicks(objs, 10, stopFunc=lambda: o3.getCounter() == 5)
+
 	o3._forceLogCompaction()
 	doTicks(objs, 0.5)
 
@@ -663,7 +675,6 @@ def test_logCompactionRegressionTest2():
 	assert o1._getLeader() == o2._getLeader() == o3._getLeader()
 
 	o3._destroy()
-	del o3
 
 	objs = [o1, o2]
 
@@ -677,7 +688,7 @@ def test_logCompactionRegressionTest2():
 
 	o3 = TestObj(a[2], [a[0], a[1]], dumpFile='dump3.bin')
 	objs = [o1, o2, o3]
-	doTicks(objs, 3.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
 
 	assert o1._isReady()
 	assert o2._isReady()
@@ -764,7 +775,6 @@ def test_doChangeClusterUT1():
 	o1._forceLogCompaction()
 	doTicks([o1], 0.5)
 	o1._destroy()
-	del o1
 
 	o2 = TestObj(oterAddr, [baseAddr, 'localhost:1236'], dumpFile='dump1.bin', dynamicMembershipChange=True)
 	doTicks([o2], 0.5)
@@ -784,7 +794,8 @@ def test_doChangeClusterUT2():
 	o2 = TestObj(a[1], [a[2], a[0]], dynamicMembershipChange=True)
 	o3 = TestObj(a[2], [a[0], a[1]], dynamicMembershipChange=True)
 
-	doTicks([o1, o2, o3], 3.5)
+	doTicks([o1, o2, o3], 10, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
+
 	assert o1._isReady() == o2._isReady() == o3._isReady() == True
 	o3.addValue(50)
 	o2._addNodeToCluster(a[3])
@@ -793,10 +804,9 @@ def test_doChangeClusterUT2():
 	__checkParnerNodeExists(o2, a[3], True)
 	__checkParnerNodeExists(o3, a[3], True)
 	o4 = TestObj(a[3], [a[0], a[1], a[2]], dynamicMembershipChange=True)
-	doTicks([o1, o2, o3, o4], 3.5)
+	doTicks([o1, o2, o3, o4], 10, stopFunc=lambda: o4._isReady())
 	o1.addValue(450)
-	doTicks([o1, o2, o3, o4], 1.5)
-	assert o4._isReady()
+	doTicks([o1, o2, o3, o4], 10, stopFunc=lambda: o4.getCounter() == 500)
 	assert o4.getCounter() == 500
 
 	o1._destroy()
@@ -814,7 +824,7 @@ def test_journalTest1():
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump1.bin', journalFile='journal1.bin')
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump2.bin', journalFile='journal2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -822,21 +832,20 @@ def test_journalTest1():
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 350 and o2.getCounter() == 350)
 
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
 
 	o1._destroy()
 	o2._destroy()
-	del o1
-	del o2
 
 	a = [getNextAddr(), getNextAddr()]
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump1.bin', journalFile='journal1.bin')
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump2.bin', journalFile='journal2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady() and\
+									   o1.getCounter() == 350 and o2.getCounter() == 350)
 	assert o1._isReady()
 	assert o2._isReady()
 
@@ -849,7 +858,7 @@ def test_journalTest1():
 	o1.addValue(100)
 	o2.addValue(150)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 600 and o2.getCounter() == 600)
 
 	assert o1.getCounter() == 600
 	assert o2.getCounter() == 600
@@ -862,21 +871,20 @@ def test_journalTest1():
 	o1.addValue(150)
 	o2.addValue(150)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 900 and o2.getCounter() == 900)
 
 	assert o1.getCounter() == 900
 	assert o2.getCounter() == 900
 
 	o1._destroy()
 	o2._destroy()
-	del o1
-	del o2
 
 	a = [getNextAddr(), getNextAddr()]
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile='dump1.bin', journalFile='journal1.bin')
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile='dump2.bin', journalFile='journal2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady() and \
+									   o1.getCounter() == 900 and o2.getCounter() == 900)
 	assert o1._isReady()
 	assert o2._isReady()
 
@@ -956,3 +964,71 @@ def test_autoTick1():
 	o1._destroy()
 	o2._destroy()
 	time.sleep(0.5)
+
+
+def test_largeCommands():
+	removeFiles(['dump1.bin', 'dump2.bin'])
+
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin')
+	objs = [o1, o2]
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	# Generate ~20Mb data.
+	testRandStr = getRandStr()
+	bigStr = ''
+	for i in xrange(0, 200):
+		bigStr += getRandStr()
+	o1.addKeyValue('big', bigStr)
+	o1.addKeyValue('test', testRandStr)
+
+	# Wait for replication.
+	doTicks(objs, 10, stopFunc=lambda: o1.getValue('test') == testRandStr and \
+									   o2.getValue('test') == testRandStr and \
+									   o1.getValue('big') == bigStr and \
+									   o2.getValue('big') == bigStr)
+
+	assert o1.getValue('test') == testRandStr
+	assert o2.getValue('big') == bigStr
+
+	o1._forceLogCompaction()
+	o2._forceLogCompaction()
+
+	# Wait for disk dump
+	doTicks(objs, 8.0)
+
+	o1._destroy()
+	o2._destroy()
+
+
+	a = [getNextAddr(), getNextAddr()]
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin')
+	objs = [o1, o2]
+	# Wait for disk load, election and replication
+
+	doTicks(objs, 10, stopFunc=lambda: o1.getValue('test') == testRandStr and \
+									   o2.getValue('test') == testRandStr and \
+									   o1.getValue('big') == bigStr and \
+									   o2.getValue('big') == bigStr and \
+									   o1._isReady() and o2._isReady())
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+
+	assert o1.getValue('test') == testRandStr
+	assert o2.getValue('big') == bigStr
+	assert o1.getValue('test') == testRandStr
+	assert o2.getValue('big') == bigStr
+
+	o1._destroy()
+	o2._destroy()
+
+	removeFiles(['dump1.bin', 'dump2.bin'])
