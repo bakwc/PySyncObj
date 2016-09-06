@@ -312,7 +312,7 @@ def test_checkCallbacksSimple():
 	assert not o2._isReady()
 	assert not o3._isReady()
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
 
 	assert o1._isReady()
 	assert o2._isReady()
@@ -328,7 +328,7 @@ def test_checkCallbacksSimple():
 	}
 	o1.addValue(3, callback=partial(onAddValue, info=callbackInfo))
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10, stopFunc=lambda: o2.getCounter() == 3 and callbackInfo['callback'] == True)
 
 	assert o2.getCounter() == 3
 	assert callbackInfo['callback'] == True
@@ -355,7 +355,7 @@ def checkDumpToFile(useFork):
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin', useFork = useFork)
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin', useFork = useFork)
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -363,7 +363,7 @@ def checkDumpToFile(useFork):
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 350 and o2.getCounter() == 350)
 
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
@@ -383,7 +383,7 @@ def checkDumpToFile(useFork):
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin', useFork = useFork)
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin', useFork = useFork)
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 	assert o1._isReady()
 	assert o2._isReady()
 
@@ -418,7 +418,7 @@ def test_checkBigStorage():
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin')
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -430,7 +430,8 @@ def test_checkBigStorage():
 	o1.addKeyValue('test', testRandStr)
 
 	# Wait for replication.
-	doTicks(objs, 40.0)
+	doTicks(objs, 60, stopFunc=lambda: o1.getValue('test') == testRandStr and \
+									   o2.getValue('test') == testRandStr)
 
 	assert o1.getValue('test') == testRandStr
 
@@ -449,7 +450,7 @@ def test_checkBigStorage():
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	# Wait for disk load, election and replication
-	doTicks(objs, 8.0)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
