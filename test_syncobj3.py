@@ -678,7 +678,6 @@ def test_logCompactionRegressionTest2():
 	assert o1._getLeader() == o2._getLeader() == o3._getLeader()
 
 	o3._destroy()
-	del o3
 
 	objs = [o1, o2]
 
@@ -779,7 +778,6 @@ def test_doChangeClusterUT1():
 	o1._forceLogCompaction()
 	doTicks([o1], 0.5)
 	o1._destroy()
-	del o1
 
 	o2 = TestObj(oterAddr, [baseAddr, 'localhost:1236'], dumpFile='dump1.bin', dynamicMembershipChange=True)
 	doTicks([o2], 0.5)
@@ -882,8 +880,6 @@ def test_journalTest1():
 
 	o1._destroy()
 	o2._destroy()
-	del o1
-	del o2
 
 	a = [getNextAddr(), getNextAddr()]
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile='dump1.bin', journalFile='journal1.bin')
