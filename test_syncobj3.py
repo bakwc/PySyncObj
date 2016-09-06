@@ -376,9 +376,6 @@ def checkDumpToFile(useFork):
 	o1._destroy()
 	o2._destroy()
 
-	del o1
-	del o2
-
 	a = [getNextAddr(), getNextAddr()]
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin', useFork = useFork)
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin', useFork = useFork)
@@ -475,7 +472,7 @@ def test_encryptionCorrectPassword():
 	o1 = TestObj(a[0], [a[1]], password='asd')
 	o2 = TestObj(a[1], [a[0]], password='asd')
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -483,13 +480,13 @@ def test_encryptionCorrectPassword():
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 1.5)
-
-	o1._destroy()
-	o2._destroy()
+	doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 350 and o2.getCounter() == 350)
 
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
+
+	o1._destroy()
+	o2._destroy()
 
 
 def test_encryptionWrongPassword():
@@ -505,10 +502,12 @@ def test_encryptionWrongPassword():
 	o3 = TestObj(a[2], [a[0], a[1]], password='qwe')
 	objs = [o1, o2, o3]
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
+
+	doTicks(objs, 1.0)
 	assert o3._getLeader() is None
 
 	o1._destroy()
@@ -637,7 +636,7 @@ def test_logCompactionRegressionTest1():
 	o2 = TestObj(a[1], [a[0]])
 	objs = [o1, o2]
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
