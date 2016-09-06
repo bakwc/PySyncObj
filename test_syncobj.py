@@ -99,16 +99,19 @@ class TestObj(SyncObj):
 	def dumpKeys(self):
 		print 'keys:', sorted(self.__data.keys())
 
-def singleTickFunc(o, timeToTick, interval):
+def singleTickFunc(o, timeToTick, interval, stopFunc):
 	currTime = time.time()
 	finishTime = currTime + timeToTick
 	while time.time() < finishTime:
 		o._onTick(interval)
+		if stopFunc is not None:
+			if stopFunc():
+				break
 
-def doTicks(objects, timeToTick, interval = 0.05):
+def doTicks(objects, timeToTick, interval = 0.05, stopFunc = None):
 	threads = []
 	for o in objects:
-		t = threading.Thread(target=singleTickFunc, args=(o, timeToTick, interval))
+		t = threading.Thread(target=singleTickFunc, args=(o, timeToTick, interval, stopFunc))
 		t.start()
 		threads.append(t)
 	for t in threads:
@@ -134,7 +137,7 @@ def test_syncTwoObjects():
 	assert not o1._isReady()
 	assert not o2._isReady()
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10.0, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	o1._printStatus()
 
@@ -146,7 +149,7 @@ def test_syncTwoObjects():
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10.0, stopFunc=lambda: o1.getCounter() == 350 and o2.getCounter() == 350)
 
 	assert o1._isReady()
 	assert o2._isReady()
@@ -172,7 +175,7 @@ def test_syncThreeObjectsLeaderFail():
 	assert not o2._isReady()
 	assert not o3._isReady()
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10.0, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
 
 	assert o1._isReady()
 	assert o2._isReady()
@@ -185,7 +188,7 @@ def test_syncThreeObjectsLeaderFail():
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10.0, stopFunc=lambda: o3.getCounter() == 350)
 
 	assert o3.getCounter() == 350
 
@@ -195,18 +198,22 @@ def test_syncThreeObjectsLeaderFail():
 
 	assert len(newObjs) == 2
 
-	doTicks(newObjs, 4.5)
+	doTicks(newObjs, 10.0, stopFunc=lambda: newObjs[0]._getLeader() != prevLeader and \
+											newObjs[0]._getLeader() in a and \
+											newObjs[0]._getLeader() == newObjs[1]._getLeader())
+
 	assert newObjs[0]._getLeader() != prevLeader
 	assert newObjs[0]._getLeader() in a
 	assert newObjs[0]._getLeader() == newObjs[1]._getLeader()
 
 	newObjs[1].addValue(50)
 
-	doTicks(newObjs, 1.5)
+	doTicks(newObjs, 10, stopFunc=lambda: newObjs[0].getCounter() == 400)
 
 	assert newObjs[0].getCounter() == 400
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10.0, stopFunc=lambda: sum([int(o.getCounter() == 400) for o in objs]) == len(objs))
+
 	for o in objs:
 		assert o.getCounter() == 400
 
@@ -229,7 +236,7 @@ def test_manyActionsLogCompaction():
 	assert not o2._isReady()
 	assert not o3._isReady()
 
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
 
 	assert o1._isReady()
 	assert o2._isReady()
@@ -243,7 +250,9 @@ def test_manyActionsLogCompaction():
 		o1.addValue(1)
 		o2.addValue(1)
 
-	doTicks(objs, 6.5)
+	doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 1000 and \
+									   o2.getCounter() == 1000 and \
+									   o3.getCounter() == 1000)
 
 	assert o1.getCounter() == 1000
 	assert o2.getCounter() == 1000
@@ -254,19 +263,20 @@ def test_manyActionsLogCompaction():
 	assert o3._getRaftLogSize() <= 100
 
 	newObjs = [o1, o2]
-	doTicks(newObjs, 4.5)
+	doTicks(newObjs, 10, stopFunc=lambda: o3._getLeader() is None)
 
 	for i in xrange(0, 500):
 		o1.addValue(1)
 		o2.addValue(1)
 
-	doTicks(newObjs, 6.5)
+	doTicks(newObjs, 10, stopFunc=lambda: o1.getCounter() == 2000 and \
+										  o2.getCounter() == 2000)
 
 	assert o1.getCounter() == 2000
 	assert o2.getCounter() == 2000
 	assert o3.getCounter() != 2000
 
-	doTicks(objs, 6.5)
+	doTicks(objs, 10, stopFunc=lambda: o3.getCounter() == 2000)
 
 	assert o3.getCounter() == 2000
 
