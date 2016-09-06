@@ -664,11 +664,13 @@ def test_logCompactionRegressionTest2():
 	o3 = TestObj(a[2], [a[0], a[1]], dumpFile = 'dump3.bin')
 	objs = [o1, o2]
 
-	doTicks(objs, 3.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
+
 	objs = [o1, o2, o3]
 	o1.addValue(2)
 	o1.addValue(3)
-	doTicks(objs, 0.5)
+	doTicks(objs, 10, stopFunc=lambda: o3.getCounter() == 5)
+
 	o3._forceLogCompaction()
 	doTicks(objs, 0.5)
 
@@ -690,7 +692,7 @@ def test_logCompactionRegressionTest2():
 
 	o3 = TestObj(a[2], [a[0], a[1]], dumpFile='dump3.bin')
 	objs = [o1, o2, o3]
-	doTicks(objs, 3.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
 
 	assert o1._isReady()
 	assert o2._isReady()
@@ -797,7 +799,8 @@ def test_doChangeClusterUT2():
 	o2 = TestObj(a[1], [a[2], a[0]], dynamicMembershipChange=True)
 	o3 = TestObj(a[2], [a[0], a[1]], dynamicMembershipChange=True)
 
-	doTicks([o1, o2, o3], 3.5)
+	doTicks([o1, o2, o3], 10, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
+
 	assert o1._isReady() == o2._isReady() == o3._isReady() == True
 	o3.addValue(50)
 	o2._addNodeToCluster(a[3])
@@ -806,10 +809,9 @@ def test_doChangeClusterUT2():
 	__checkParnerNodeExists(o2, a[3], True)
 	__checkParnerNodeExists(o3, a[3], True)
 	o4 = TestObj(a[3], [a[0], a[1], a[2]], dynamicMembershipChange=True)
-	doTicks([o1, o2, o3, o4], 3.5)
+	doTicks([o1, o2, o3, o4], 10, stopFunc=lambda: o4._isReady())
 	o1.addValue(450)
-	doTicks([o1, o2, o3, o4], 1.5)
-	assert o4._isReady()
+	doTicks([o1, o2, o3, o4], 10, stopFunc=lambda: o4.getCounter() == 500)
 	assert o4.getCounter() == 500
 
 	o1._destroy()
@@ -827,7 +829,7 @@ def test_journalTest1():
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump1.bin', journalFile='journal1.bin')
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump2.bin', journalFile='journal2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -835,21 +837,19 @@ def test_journalTest1():
 	o1.addValue(150)
 	o2.addValue(200)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 350 and o2.getCounter() == 350)
 
 	assert o1.getCounter() == 350
 	assert o2.getCounter() == 350
 
 	o1._destroy()
 	o2._destroy()
-	del o1
-	del o2
 
 	a = [getNextAddr(), getNextAddr()]
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump1.bin', journalFile='journal1.bin')
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump2.bin', journalFile='journal2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 	assert o1._isReady()
 	assert o2._isReady()
 
@@ -862,7 +862,7 @@ def test_journalTest1():
 	o1.addValue(100)
 	o2.addValue(150)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 600 and o2.getCounter() == 600)
 
 	assert o1.getCounter() == 600
 	assert o2.getCounter() == 600
@@ -875,7 +875,7 @@ def test_journalTest1():
 	o1.addValue(150)
 	o2.addValue(150)
 
-	doTicks(objs, 1.5)
+	doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 900 and o2.getCounter() == 900)
 
 	assert o1.getCounter() == 900
 	assert o2.getCounter() == 900
@@ -889,7 +889,8 @@ def test_journalTest1():
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile='dump1.bin', journalFile='journal1.bin')
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile='dump2.bin', journalFile='journal2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady() and \
+									   o1.getCounter() == 900 and o2.getCounter() == 900)
 	assert o1._isReady()
 	assert o2._isReady()
 
@@ -981,7 +982,7 @@ def test_largeCommands():
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin')
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
-	doTicks(objs, 4.5)
+	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
@@ -995,7 +996,10 @@ def test_largeCommands():
 	o1.addKeyValue('test', testRandStr)
 
 	# Wait for replication.
-	doTicks(objs, 20.0)
+	doTicks(objs, 10, stopFunc=lambda: o1.getValue('test') == testRandStr and \
+									   o2.getValue('test') == testRandStr and \
+									   o1.getValue('big') == bigStr and \
+									   o2.getValue('big') == bigStr)
 
 	assert o1.getValue('test') == testRandStr
 	assert o2.getValue('big') == bigStr
@@ -1015,7 +1019,12 @@ def test_largeCommands():
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin')
 	objs = [o1, o2]
 	# Wait for disk load, election and replication
-	doTicks(objs, 8.0)
+
+	doTicks(objs, 10, stopFunc=lambda: o1.getValue('test') == testRandStr and \
+									   o2.getValue('test') == testRandStr and \
+									   o1.getValue('big') == bigStr and \
+									   o2.getValue('big') == bigStr and \
+									   o1._isReady() and o2._isReady())
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
