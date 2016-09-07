@@ -348,6 +348,8 @@ class SyncObj(object):
                 if node.isConnected():
                     newReadonlyNodes.append(node)
                 else:
+                    self.__raftNextIndex.pop(node, None)
+                    self.__raftMatchIndex.pop(node, None)
                     node._destroy()
 
         self._poller.poll(timeToWait)
@@ -360,6 +362,8 @@ class SyncObj(object):
         LOG_DEBUG('partner nodes', len(self.__nodes))
         for n in self.__nodes:
             LOG_DEBUG(n.getAddress(), n.getStatus())
+        LOG_DEBUG('readonly nodes', len(self.__readonlyNodes))
+        LOG_DEBUG('unknown connections:', len(self.__unknownConnections))
         LOG_DEBUG('log len:', len(self.__raftLog))
         LOG_DEBUG('last applied:', self.__raftLastApplied)
         LOG_DEBUG('commit idx:', self.__raftCommitIndex)
@@ -584,7 +588,7 @@ class SyncObj(object):
                 partnerNode = node
                 break
 
-        if partnerNode is None and message is not None:
+        if partnerNode is None and message != 'readonly':
             conn.disconnect()
             self.__unknownConnections.pop(descr, None)
             return
@@ -592,9 +596,12 @@ class SyncObj(object):
         if partnerNode is not None:
             partnerNode.onPartnerConnected(conn)
         else:
-            node = Node(self, str(self.__readonlyNodesCounter), shouldConnect=False)
+            nodeAddr = str(self.__readonlyNodesCounter)
+            node = Node(self, nodeAddr, shouldConnect=False)
             node.onPartnerConnected(conn)
             self.__readonlyNodes.append(node)
+            self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
+            self.__raftMatchIndex[nodeAddr] = 0
             self.__readonlyNodesCounter += 1
 
         self.__unknownConnections.pop(descr, None)
@@ -816,7 +823,7 @@ class SyncObj(object):
         else:
             return False
 
-        if self.__selfNodeAddr:
+        if self.__selfNodeAddr is not None:
             shouldConnect = None
         else:
             shouldConnect = True

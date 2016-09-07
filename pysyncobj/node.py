@@ -55,7 +55,11 @@ class Node(object):
             self.__conn.recvRandKey = os.urandom(32)
             self.__conn.send(self.__conn.recvRandKey)
             return
-        self.__conn.send(self.__syncObj()._getSelfNodeAddr())
+        selfAddr = self.__syncObj()._getSelfNodeAddr()
+        if selfAddr is not None:
+            self.__conn.send(selfAddr)
+        else:
+            self.__conn.send('readonly')
 
     def __onDisconnected(self):
         self.__status = NODE_STATUS.DISCONNECTED

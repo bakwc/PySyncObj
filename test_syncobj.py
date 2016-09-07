@@ -1032,3 +1032,49 @@ def test_largeCommands():
 	o2._destroy()
 
 	removeFiles(['dump1.bin', 'dump2.bin'])
+
+def test_readOnlyNodes():
+
+	random.seed(12)
+
+	a = [getNextAddr(), getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1], a[2]])
+	o2 = TestObj(a[1], [a[2], a[0]])
+	o3 = TestObj(a[2], [a[0], a[1]])
+	objs = [o1, o2, o3]
+
+	b1 = TestObj(None, [a[0], a[1], a[2]])
+	b2 = TestObj(None, [a[0], a[1], a[2]])
+
+	roObjs = [b1, b2]
+
+	doTicks(objs, 10.0, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
+
+	assert o1._isReady()
+	assert o2._isReady()
+	assert o3._isReady()
+
+	o1.addValue(150)
+	o2.addValue(200)
+
+	doTicks(objs, 10.0, stopFunc=lambda: o3.getCounter() == 350)
+
+	doTicks(objs + roObjs, 4.0, stopFunc=lambda: b1.getCounter() == 350 and b2.getCounter() == 350)
+
+	o1._printStatus()
+	o2._printStatus()
+	o3._printStatus()
+
+	b1._printStatus()
+
+	assert b1.getCounter() == b2.getCounter() == 350
+	assert o1._getLeader() == b1._getLeader() == o2._getLeader() == b2._getLeader()
+	assert b1._getLeader() in a
+
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+
+	b1._destroy()
+	b2._destroy()
