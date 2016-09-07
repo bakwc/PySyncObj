@@ -799,7 +799,7 @@ def test_doChangeClusterUT2():
 	assert o1._isReady() == o2._isReady() == o3._isReady() == True
 	o3.addValue(50)
 	o2._addNodeToCluster(a[3])
-	doTicks([o1, o2, o3], 1.5)
+	doTicks([o1, o2, o3], 3.5)
 	__checkParnerNodeExists(o1, a[3], True)
 	__checkParnerNodeExists(o2, a[3], True)
 	__checkParnerNodeExists(o3, a[3], True)
