@@ -710,12 +710,16 @@ def __checkParnerNodeExists(obj, nodeName, shouldExist = True):
 	if nodesSet1 != nodesSet2:
 		print 'otherNodes:', nodesSet2
 		print 'nodes:', nodesSet1
+		return False
 
-	assert nodesSet1 == nodesSet2
 	if shouldExist:
-		assert nodeName in nodesSet1
+		#assert nodeName in nodesSet1
+		if nodeName not in nodesSet1:
+			return False
 	else:
-		assert nodeName not in nodesSet1
+		if nodeName in nodesSet1:
+			return False
+	return True
 
 def test_doChangeClusterUT1():
 	removeFiles(['dump1.bin'])
@@ -799,10 +803,21 @@ def test_doChangeClusterUT2():
 	assert o1._isReady() == o2._isReady() == o3._isReady() == True
 	o3.addValue(50)
 	o2._addNodeToCluster(a[3])
-	doTicks([o1, o2, o3], 1.5)
-	__checkParnerNodeExists(o1, a[3], True)
-	__checkParnerNodeExists(o2, a[3], True)
-	__checkParnerNodeExists(o3, a[3], True)
+
+	success = False
+	for i in xrange(10):
+		doTicks([o1, o2, o3], 0.5)
+		res = True
+		res &= __checkParnerNodeExists(o1, a[3], True)
+		res &= __checkParnerNodeExists(o2, a[3], True)
+		res &= __checkParnerNodeExists(o3, a[3], True)
+		if res:
+			success = True
+			break
+		o2._addNodeToCluster(a[3])
+
+	assert success
+
 	o4 = TestObj(a[3], [a[0], a[1], a[2]], dynamicMembershipChange=True)
 	doTicks([o1, o2, o3, o4], 10, stopFunc=lambda: o4._isReady())
 	o1.addValue(450)
@@ -990,7 +1005,7 @@ def test_largeCommands():
 	o1.addKeyValue('test', testRandStr)
 
 	# Wait for replication.
-	doTicks(objs, 10, stopFunc=lambda: o1.getValue('test') == testRandStr and \
+	doTicks(objs, 60, stopFunc=lambda: o1.getValue('test') == testRandStr and \
 									   o2.getValue('test') == testRandStr and \
 									   o1.getValue('big') == bigStr and \
 									   o2.getValue('big') == bigStr)
@@ -1014,7 +1029,7 @@ def test_largeCommands():
 	objs = [o1, o2]
 	# Wait for disk load, election and replication
 
-	doTicks(objs, 10, stopFunc=lambda: o1.getValue('test') == testRandStr and \
+	doTicks(objs, 60, stopFunc=lambda: o1.getValue('test') == testRandStr and \
 									   o2.getValue('test') == testRandStr and \
 									   o1.getValue('big') == bigStr and \
 									   o2.getValue('big') == bigStr and \
@@ -1032,3 +1047,75 @@ def test_largeCommands():
 	o2._destroy()
 
 	removeFiles(['dump1.bin', 'dump2.bin'])
+
+def test_readOnlyNodes():
+
+	random.seed(12)
+
+	a = [getNextAddr(), getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1], a[2]])
+	o2 = TestObj(a[1], [a[2], a[0]])
+	o3 = TestObj(a[2], [a[0], a[1]])
+	objs = [o1, o2, o3]
+
+	b1 = TestObj(None, [a[0], a[1], a[2]])
+	b2 = TestObj(None, [a[0], a[1], a[2]])
+
+	roObjs = [b1, b2]
+
+	doTicks(objs, 10.0, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
+
+	assert o1._isReady()
+	assert o2._isReady()
+	assert o3._isReady()
+
+	o1.addValue(150)
+	o2.addValue(200)
+
+	doTicks(objs, 10.0, stopFunc=lambda: o3.getCounter() == 350)
+
+	doTicks(objs + roObjs, 4.0, stopFunc=lambda: b1.getCounter() == 350 and b2.getCounter() == 350)
+
+	assert b1.getCounter() == b2.getCounter() == 350
+	assert o1._getLeader() == b1._getLeader() == o2._getLeader() == b2._getLeader()
+	assert b1._getLeader() in a
+
+	prevLeader = o1._getLeader()
+
+	newObjs = [o for o in objs if o._getSelfNodeAddr() != prevLeader]
+
+	assert len(newObjs) == 2
+
+	doTicks(newObjs + roObjs, 10.0, stopFunc=lambda: newObjs[0]._getLeader() != prevLeader and \
+											newObjs[0]._getLeader() in a and \
+											newObjs[0]._getLeader() == newObjs[1]._getLeader())
+
+	assert newObjs[0]._getLeader() != prevLeader
+	assert newObjs[0]._getLeader() in a
+	assert newObjs[0]._getLeader() == newObjs[1]._getLeader()
+
+	newObjs[1].addValue(50)
+
+	doTicks(newObjs + roObjs, 10.0, stopFunc=lambda: newObjs[0].getCounter() == 400 and b1.getCounter() == 400)
+
+	o1._printStatus()
+	o2._printStatus()
+	o3._printStatus()
+
+	b1._printStatus()
+
+	assert newObjs[0].getCounter() == 400
+	assert b1.getCounter() == 400
+
+	doTicks(objs + roObjs, 10.0, stopFunc=lambda: sum([int(o.getCounter() == 400) for o in objs + roObjs]) == len(objs + roObjs))
+
+	for o in objs + roObjs:
+		assert o.getCounter() == 400
+
+	o1._destroy()
+	o2._destroy()
+	o3._destroy()
+
+	b1._destroy()
+	b2._destroy()

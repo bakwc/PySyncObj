@@ -11,15 +11,22 @@ class NODE_STATUS:
 
 
 class Node(object):
-    def __init__(self, syncObj, nodeAddr):
+
+    def __init__(self, syncObj, nodeAddr, shouldConnect = None):
         self.__syncObj = weakref.ref(syncObj)
         self.__nodeAddr = nodeAddr
-        self.__ip = globalDnsResolver().resolve(nodeAddr.split(':')[0])
-        self.__port = int(nodeAddr.split(':')[1])
-        self.__shouldConnect = syncObj._getSelfNodeAddr() > nodeAddr
+
+        if shouldConnect is not None:
+            self.__shouldConnect = shouldConnect
+        else:
+            self.__shouldConnect = syncObj._getSelfNodeAddr() > nodeAddr
+
         self.__encryptor = syncObj._getEncryptor()
         self.__conn = None
+
         if self.__shouldConnect:
+            self.__ip = globalDnsResolver().resolve(nodeAddr.split(':')[0])
+            self.__port = int(nodeAddr.split(':')[1])
             self.__conn = TcpConnection(poller=syncObj._poller,
                                         onConnected=self.__onConnected,
                                         onMessageReceived=self.__onMessageReceived,
@@ -48,7 +55,11 @@ class Node(object):
             self.__conn.recvRandKey = os.urandom(32)
             self.__conn.send(self.__conn.recvRandKey)
             return
-        self.__conn.send(self.__syncObj()._getSelfNodeAddr())
+        selfAddr = self.__syncObj()._getSelfNodeAddr()
+        if selfAddr is not None:
+            self.__conn.send(selfAddr)
+        else:
+            self.__conn.send('readonly')
 
     def __onDisconnected(self):
         self.__status = NODE_STATUS.DISCONNECTED
