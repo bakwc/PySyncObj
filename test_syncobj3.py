@@ -1008,7 +1008,7 @@ def test_largeCommands():
 	o1.addKeyValue('test', testRandStr)
 
 	# Wait for replication.
-	doTicks(objs, 10, stopFunc=lambda: o1.getValue('test') == testRandStr and \
+	doTicks(objs, 60, stopFunc=lambda: o1.getValue('test') == testRandStr and \
 									   o2.getValue('test') == testRandStr and \
 									   o1.getValue('big') == bigStr and \
 									   o2.getValue('big') == bigStr)
@@ -1032,7 +1032,7 @@ def test_largeCommands():
 	objs = [o1, o2]
 	# Wait for disk load, election and replication
 
-	doTicks(objs, 10, stopFunc=lambda: o1.getValue('test') == testRandStr and \
+	doTicks(objs, 60, stopFunc=lambda: o1.getValue('test') == testRandStr and \
 									   o2.getValue('test') == testRandStr and \
 									   o1.getValue('big') == bigStr and \
 									   o2.getValue('big') == bigStr and \
@@ -1080,15 +1080,41 @@ def test_readOnlyNodes():
 
 	doTicks(objs + roObjs, 4.0, stopFunc=lambda: b1.getCounter() == 350 and b2.getCounter() == 350)
 
+	assert b1.getCounter() == b2.getCounter() == 350
+	assert o1._getLeader() == b1._getLeader() == o2._getLeader() == b2._getLeader()
+	assert b1._getLeader() in a
+
+	prevLeader = o1._getLeader()
+
+	newObjs = [o for o in objs if o._getSelfNodeAddr() != prevLeader]
+
+	assert len(newObjs) == 2
+
+	doTicks(newObjs + roObjs, 10.0, stopFunc=lambda: newObjs[0]._getLeader() != prevLeader and \
+											newObjs[0]._getLeader() in a and \
+											newObjs[0]._getLeader() == newObjs[1]._getLeader())
+
+	assert newObjs[0]._getLeader() != prevLeader
+	assert newObjs[0]._getLeader() in a
+	assert newObjs[0]._getLeader() == newObjs[1]._getLeader()
+
+	newObjs[1].addValue(50)
+
+	doTicks(newObjs + roObjs, 10.0, stopFunc=lambda: newObjs[0].getCounter() == 400 and b1.getCounter() == 400)
+
 	o1._printStatus()
 	o2._printStatus()
 	o3._printStatus()
 
 	b1._printStatus()
 
-	assert b1.getCounter() == b2.getCounter() == 350
-	assert o1._getLeader() == b1._getLeader() == o2._getLeader() == b2._getLeader()
-	assert b1._getLeader() in a
+	assert newObjs[0].getCounter() == 400
+	assert b1.getCounter() == 400
+
+	doTicks(objs + roObjs, 10.0, stopFunc=lambda: sum([int(o.getCounter() == 400) for o in objs + roObjs]) == len(objs + roObjs))
+
+	for o in objs + roObjs:
+		assert o.getCounter() == 400
 
 	o1._destroy()
 	o2._destroy()
