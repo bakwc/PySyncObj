@@ -710,12 +710,16 @@ def __checkParnerNodeExists(obj, nodeName, shouldExist = True):
 	if nodesSet1 != nodesSet2:
 		print 'otherNodes:', nodesSet2
 		print 'nodes:', nodesSet1
+		return False
 
-	assert nodesSet1 == nodesSet2
 	if shouldExist:
-		assert nodeName in nodesSet1
+		#assert nodeName in nodesSet1
+		if nodeName not in nodesSet1:
+			return False
 	else:
-		assert nodeName not in nodesSet1
+		if nodeName in nodesSet1:
+			return False
+	return True
 
 def test_doChangeClusterUT1():
 	removeFiles(['dump1.bin'])
@@ -799,10 +803,21 @@ def test_doChangeClusterUT2():
 	assert o1._isReady() == o2._isReady() == o3._isReady() == True
 	o3.addValue(50)
 	o2._addNodeToCluster(a[3])
-	doTicks([o1, o2, o3], 3.5)
-	__checkParnerNodeExists(o1, a[3], True)
-	__checkParnerNodeExists(o2, a[3], True)
-	__checkParnerNodeExists(o3, a[3], True)
+
+	success = False
+	for i in xrange(10):
+		doTicks([o1, o2, o3], 0.5)
+		res = True
+		res &= __checkParnerNodeExists(o1, a[3], True)
+		res &= __checkParnerNodeExists(o2, a[3], True)
+		res &= __checkParnerNodeExists(o3, a[3], True)
+		if res:
+			success = True
+			break
+		o2._addNodeToCluster(a[3])
+
+	assert success
+
 	o4 = TestObj(a[3], [a[0], a[1], a[2]], dynamicMembershipChange=True)
 	doTicks([o1, o2, o3, o4], 10, stopFunc=lambda: o4._isReady())
 	o1.addValue(450)
