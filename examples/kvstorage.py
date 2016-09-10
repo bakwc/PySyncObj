@@ -3,15 +3,12 @@
 import sys
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 sys.path.append("../")
-from pysyncobj import SyncObj, SyncObjConf, replicated
+from pysyncobj import SyncObj, replicated
 
 
 class KVStorage(SyncObj):
-    def __init__(self, selfAddress, partnerAddrs, dumpFile):
-        conf = SyncObjConf(
-            fullDumpFile=dumpFile,
-        )
-        super(KVStorage, self).__init__(selfAddress, partnerAddrs, conf)
+    def __init__(self, selfAddress, partnerAddrs):
+        super(KVStorage, self).__init__(selfAddress, partnerAddrs)
         self.__data = {}
 
     @replicated
@@ -28,53 +25,33 @@ class KVStorage(SyncObj):
 _g_kvstorage = None
 
 
-class KVRequestHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        try:
-            value = _g_kvstorage.get(self.path)
-
-            if value is None:
-                self.send_response(404)
-                self.send_header("Content-type", "text/plain")
-                self.end_headers()
-                return
-
-            self.send_response(200)
-            self.send_header("Content-type", "text/plain")
-            self.end_headers()
-            self.wfile.write(value)
-        except:
-            pass
-
-    def do_POST(self):
-        try:
-            key = self.path
-            value = self.rfile.read(int(self.headers.getheader('content-length')))
-            _g_kvstorage.set(key, value)
-            self.send_response(201)
-            self.send_header("Content-type", "text/plain")
-            self.end_headers()
-        except:
-            pass
-
-
 def main():
-    if len(sys.argv) < 4:
-        print 'Usage: %s http_port dump_file.bin selfHost:port partner1Host:port partner2Host:port ...'
+    if len(sys.argv) < 2:
+        print 'Usage: %s selfHost:port partner1Host:port partner2Host:port ...'
         sys.exit(-1)
 
-    httpPort = int(sys.argv[1])
-    dumpFile = sys.argv[2]
-    selfAddr = sys.argv[3]
+    selfAddr = sys.argv[1]
+    if selfAddr == 'readonly':
+        selfAddr = None
     partners = []
-    for i in xrange(4, len(sys.argv)):
+    for i in xrange(2, len(sys.argv)):
         partners.append(sys.argv[i])
 
     global _g_kvstorage
-    _g_kvstorage = KVStorage(selfAddr, partners, dumpFile)
-    httpServer = HTTPServer(('', httpPort), KVRequestHandler)
-    httpServer.serve_forever()
+    _g_kvstorage = KVStorage(selfAddr, partners)
 
+    while True:
+        cmd = raw_input(">> ").split()
+        if not cmd:
+            continue
+        elif cmd[0] == 'set':
+            _g_kvstorage.set(cmd[1], cmd[2])
+        elif cmd[0] == 'get':
+            print _g_kvstorage.get(cmd[1])
+        elif cmd[0] == 'pop':
+            print _g_kvstorage.pop(cmd[1])
+        else:
+            print 'Wrong command'
 
 if __name__ == '__main__':
     main()
