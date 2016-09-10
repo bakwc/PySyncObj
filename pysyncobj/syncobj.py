@@ -777,7 +777,7 @@ class SyncObj(object):
                     break
 
     def __send(self, nodeAddr, message):
-        for node in self.__nodes:
+        for node in self.__nodes + self.__readonlyNodes:
             if node.getAddress() == nodeAddr:
                 node.send(message)
                 break

@@ -44,6 +44,8 @@ if __name__ == '__main__':
     cmdSize = int(sys.argv[2])
 
     selfAddr = sys.argv[3]
+    if selfAddr == 'readonly':
+        selfAddr = None
     partners = []
     for i in xrange(4, len(sys.argv)):
         partners.append(sys.argv[i])
@@ -53,11 +55,13 @@ if __name__ == '__main__':
     obj = TestObj(selfAddr, partners)
 
     while obj._getLeader() is None:
-        time.sleep(0.1)
+        time.sleep(0.5)
+
+    time.sleep(4.0)
 
     startTime = time.time()
 
-    while time.time() - startTime < 20.0:
+    while time.time() - startTime < 25.0:
         st = time.time()
         for i in xrange(0, numCommands):
             obj.testMethod(getRandStr(cmdSize), callback=clbck)
@@ -65,14 +69,16 @@ if __name__ == '__main__':
         delta = time.time() - st
         assert delta <= 1.0
         time.sleep(1.0 - delta)
-    time.sleep(1.0)
+
+    time.sleep(4.0)
 
     successRate = float(_g_success) / float(_g_sent)
     print 'SUCCESS RATE:', successRate
-    print 'LOST RATE:', 1.0 - float(_g_success + _g_error) / float(_g_sent)
-    print 'ERRORS STATS:'
-    for err in _g_errors:
-        print err, float(_g_errors[err]) / float(_g_error)
-    if successRate >= 0.9:
-        sys.exit(0)
-    sys.exit(1)
+
+    if successRate < 0.9:
+        print 'LOST RATE:', 1.0 - float(_g_success + _g_error) / float(_g_sent)
+        print 'ERRORS STATS: %d' % len(_g_errors)
+        for err in _g_errors:
+            print err, float(_g_errors[err]) / float(_g_error)
+
+    sys.exit(int(successRate * 100))

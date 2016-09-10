@@ -26,8 +26,8 @@ def memoize(fileName):
         return wrap
     return doMemoize
 
-def singleBenchmark(requestsPerSecond, requestSize, numNodes):
-    rpsPerNode = requestsPerSecond / numNodes
+def singleBenchmark(requestsPerSecond, requestSize, numNodes, numNodesReadonly = 0):
+    rpsPerNode = requestsPerSecond / (numNodes + numNodesReadonly)
     cmd = 'python2.7 testobj.py %d %d' % (rpsPerNode, requestSize)
     processes = []
     allAddrs = []
@@ -38,13 +38,21 @@ def singleBenchmark(requestsPerSecond, requestSize, numNodes):
         selfAddr = addrs.pop(i)
         addrs = [selfAddr] + addrs
         currCmd = cmd + ' ' + ' '.join(addrs)
-        p = Popen(currCmd, shell=True, stdin=PIPE, stdout=DEVNULL, stderr=STDOUT)
+        p = Popen(currCmd, shell=True, stdin=PIPE)
         processes.append(p)
+    for i in xrange(numNodesReadonly):
+        addrs = list(allAddrs)
+        addrs = ['readonly'] + addrs
+        currCmd = cmd + ' ' + ' '.join(addrs)
+        p = Popen(currCmd, shell=True, stdin=PIPE)
+        processes.append(p)
+    errRates = []
     for p in processes:
         p.communicate()
-        if p.returncode != 0:
-            return False
-    return True
+        errRates.append(float(p.returncode) / 100.0)
+    avgRate = sum(errRates) / len(errRates)
+    #print 'average success rate:', avgRate
+    return avgRate >= 0.9
 
 def doDetectMaxRps(requestSize, numNodes):
     a = MIN_RPS

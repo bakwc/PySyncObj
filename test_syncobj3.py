@@ -1116,6 +1116,21 @@ def test_readOnlyNodes():
 	for o in objs + roObjs:
 		assert o.getCounter() == 400
 
+	currRes = {}
+	def onAdd(res, err):
+		currRes[0] = err
+
+	b1.addValue(50, callback=onAdd)
+
+	doTicks(objs + roObjs, 5.0, stopFunc=lambda: o1.getCounter() == 450 and \
+												 b1.getCounter() == 450 and \
+												 b2.getCounter() == 450 and
+												 currRes.get(0) == FAIL_REASON.SUCCESS)
+	assert o1.getCounter() == 450
+	assert b1.getCounter() == 450
+	assert b2.getCounter() == 450
+	assert currRes.get(0) == FAIL_REASON.SUCCESS
+
 	o1._destroy()
 	o2._destroy()
 	o3._destroy()
