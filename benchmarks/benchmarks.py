@@ -94,7 +94,7 @@ if __name__ == '__main__':
 
     mode = sys.argv[1]
     if mode == 'delay':
-        print 'Average delay:', singleBenchmark(30, 10, 3, delay=True)
+        print 'Average delay:', singleBenchmark(50, 10, 5, delay=True)
     elif mode == 'rps':
         for i in xrange(10, 2100, 500):
             res = detectMaxRps(i, 3)

@@ -13,7 +13,9 @@ import collections
 import functools
 import struct
 from .dns_resolver import globalDnsResolver
-from .poller import createPoller
+from .poller import createPoller, POLL_EVENT_TYPE
+import socket
+import fcntl
 from .serializer import Serializer, SERIALIZER_STATE
 from .tcp_server import TcpServer
 from .node import Node, NODE_STATUS
@@ -118,6 +120,15 @@ class SyncObj(object):
         self.__mainThread = None
         self.__initialised = None
         self.__commandsQueue = queue.Queue(self.__conf.commandsQueueSize)
+        if not self.__conf.appendEntriesUseBatch:
+            self.__pipeR, self.__pipeW = os.pipe()
+
+            flag = fcntl.fcntl(self.__pipeR, fcntl.F_GETFD)
+            fcntl.fcntl(self.__pipeR, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+
+            flag = fcntl.fcntl(self.__pipeW, fcntl.F_GETFD)
+            fcntl.fcntl(self.__pipeW, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+
         self.__nodes = []
         self.__readonlyNodes = []
         self.__readonlyNodesCounter = 0
@@ -162,6 +173,9 @@ class SyncObj(object):
             self.__lastInitTryTime = time.time()
             if self.__selfNodeAddr is not None:
                 self.__server.bind()
+                if not self.__conf.appendEntriesUseBatch:
+                    self._poller.subscribe(self.__pipeR, self.__onNewCommand, POLL_EVENT_TYPE.READ)
+                    pass
                 shouldConnect = None
             else:
                 shouldConnect = True
@@ -174,6 +188,15 @@ class SyncObj(object):
             self.__isInitialized = True
         except:
             LOG_CURRENT_EXCEPTION()
+
+    def __onNewCommand(self, descr, eventMask):
+        try:
+            while os.read(self.__pipeR, 1024):
+                pass
+        except OSError as e:
+            if e.errno not in (socket.errno.EAGAIN, socket.errno.EWOULDBLOCK):
+                raise
+        # onTick will be called automatically
 
     def _addNodeToCluster(self, nodeName, callback = None):
         if not self.__conf.dynamicMembershipChange:
@@ -191,6 +214,8 @@ class SyncObj(object):
                 self.__commandsQueue.put_nowait((command, callback))
             else:
                 self.__commandsQueue.put_nowait((_bchr(commandType) + command, callback))
+            if not self.__conf.appendEntriesUseBatch:
+                os.write(self.__pipeW, 'o')
         except queue.Full:
             self.__callErrCallback(FAIL_REASON.QUEUE_FULL, callback)
 
@@ -315,8 +340,7 @@ class SyncObj(object):
                     break
             self.__leaderCommitIndex = self.__raftCommitIndex
 
-            if time.time() > self.__newAppendEntriesTime:
-                self.__sendAppendEntries()
+        needSendAppendEntries = False
 
         if self.__raftCommitIndex > self.__raftLastApplied:
             count = self.__raftCommitIndex - self.__raftLastApplied
@@ -332,6 +356,12 @@ class SyncObj(object):
                         callback(None, FAIL_REASON.DISCARDED)
 
                 self.__raftLastApplied += 1
+            if not self.__conf.appendEntriesUseBatch:
+                needSendAppendEntries = True
+
+        if self.__raftState == _RAFT_STATE.LEADER:
+            if time.time() > self.__newAppendEntriesTime or needSendAppendEntries:
+                self.__sendAppendEntries()
 
         if not self.__onReadyCalled and self.__raftLastApplied == self.__leaderCommitIndex:
             if self.__conf.onReady:

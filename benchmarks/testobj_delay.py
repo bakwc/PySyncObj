@@ -8,7 +8,10 @@ from pysyncobj import SyncObj, replicated, SyncObjConf, FAIL_REASON
 class TestObj(SyncObj):
 
     def __init__(self, selfNodeAddr, otherNodeAddrs):
-        super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs)
+        cfg = SyncObjConf(
+            appendEntriesUseBatch=False,
+        )
+        super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs, cfg)
         self.__appliedCommands = 0
 
     @replicated
