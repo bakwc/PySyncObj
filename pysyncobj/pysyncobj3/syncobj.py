@@ -215,7 +215,7 @@ class SyncObj(object):
             else:
                 self.__commandsQueue.put_nowait((_bchr(commandType) + command, callback))
             if not self.__conf.appendEntriesUseBatch:
-                os.write(self.__pipeW, 'o')
+                os.write(self.__pipeW, b'o')
         except queue.Full:
             self.__callErrCallback(FAIL_REASON.QUEUE_FULL, callback)
 
