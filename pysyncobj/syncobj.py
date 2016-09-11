@@ -2,7 +2,6 @@ import time
 import random
 import os
 import cPickle
-import zlib
 import threading
 import Queue
 import weakref
@@ -10,9 +9,8 @@ import collections
 import functools
 import struct
 from dns_resolver import globalDnsResolver
-from poller import createPoller, POLL_EVENT_TYPE
-import socket
-import fcntl
+from poller import createPoller
+from pipe_notifier import PipeNotifier
 from serializer import Serializer, SERIALIZER_STATE
 from tcp_server import TcpServer
 from node import Node, NODE_STATUS
@@ -118,13 +116,7 @@ class SyncObj(object):
         self.__initialised = None
         self.__commandsQueue = Queue.Queue(self.__conf.commandsQueueSize)
         if not self.__conf.appendEntriesUseBatch:
-            self.__pipeR, self.__pipeW = os.pipe()
-
-            flag = fcntl.fcntl(self.__pipeR, fcntl.F_GETFD)
-            fcntl.fcntl(self.__pipeR, fcntl.F_SETFL, flag | os.O_NONBLOCK)
-
-            flag = fcntl.fcntl(self.__pipeW, fcntl.F_GETFD)
-            fcntl.fcntl(self.__pipeW, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+            self.__pipeNotifier = PipeNotifier(self._poller)
 
         self.__nodes = []
         self.__readonlyNodes = []
@@ -170,9 +162,6 @@ class SyncObj(object):
             self.__lastInitTryTime = time.time()
             if self.__selfNodeAddr is not None:
                 self.__server.bind()
-                if not self.__conf.appendEntriesUseBatch:
-                    self._poller.subscribe(self.__pipeR, self.__onNewCommand, POLL_EVENT_TYPE.READ)
-                    pass
                 shouldConnect = None
             else:
                 shouldConnect = True
@@ -185,15 +174,6 @@ class SyncObj(object):
             self.__isInitialized = True
         except:
             LOG_CURRENT_EXCEPTION()
-
-    def __onNewCommand(self, descr, eventMask):
-        try:
-            while os.read(self.__pipeR, 1024):
-                pass
-        except OSError as e:
-            if e.errno not in (socket.errno.EAGAIN, socket.errno.EWOULDBLOCK):
-                raise
-        # onTick will be called automatically
 
     def _addNodeToCluster(self, nodeName, callback = None):
         if not self.__conf.dynamicMembershipChange:
@@ -212,7 +192,7 @@ class SyncObj(object):
             else:
                 self.__commandsQueue.put_nowait((_bchr(commandType) + command, callback))
             if not self.__conf.appendEntriesUseBatch:
-                os.write(self.__pipeW, b'o')
+                self.__pipeNotifier.notify()
         except Queue.Full:
             self.__callErrCallback(FAIL_REASON.QUEUE_FULL, callback)
 
