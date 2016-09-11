@@ -8,6 +8,7 @@ import weakref
 import collections
 import functools
 import struct
+import logging
 from dns_resolver import globalDnsResolver
 from poller import createPoller
 from pipe_notifier import PipeNotifier
@@ -16,7 +17,6 @@ from tcp_server import TcpServer
 from node import Node, NODE_STATUS
 from journal import createJournal
 from config import SyncObjConf, FAIL_REASON
-from debug_utils import LOG_CURRENT_EXCEPTION, LOG_DEBUG, LOG_WARNING
 from encryptor import HAS_CRYPTO, getEncryptor
 from version import VERSION
 from revision import REVISION
@@ -173,7 +173,7 @@ class SyncObj(object):
             self.__needLoadDumpFile = True
             self.__isInitialized = True
         except:
-            LOG_CURRENT_EXCEPTION()
+            logging.exception('failed to perform initialization')
 
     def _addNodeToCluster(self, nodeName, callback = None):
         if not self.__conf.dynamicMembershipChange:
@@ -365,24 +365,24 @@ class SyncObj(object):
         self._poller.poll(timeToWait)
 
     def _printStatus(self):
-        LOG_DEBUG('version', VERSION, REVISION)
-        LOG_DEBUG('self', self.__selfNodeAddr)
-        LOG_DEBUG('state:', self.__raftState)
-        LOG_DEBUG('leader', self.__raftLeader)
-        LOG_DEBUG('partner nodes', len(self.__nodes))
+        logging.info('version: %s %s', VERSION, REVISION)
+        logging.info('self: %s', self.__selfNodeAddr)
+        logging.info('state: %d', self.__raftState)
+        logging.info('leader: %s', self.__raftLeader)
+        logging.info('partner nodes: %d', len(self.__nodes))
         for n in self.__nodes:
-            LOG_DEBUG(n.getAddress(), n.getStatus())
-        LOG_DEBUG('readonly nodes', len(self.__readonlyNodes))
-        LOG_DEBUG('unknown connections:', len(self.__unknownConnections))
-        LOG_DEBUG('log len:', len(self.__raftLog))
-        LOG_DEBUG('last applied:', self.__raftLastApplied)
-        LOG_DEBUG('commit idx:', self.__raftCommitIndex)
-        LOG_DEBUG('raft term:', self.__raftCurrentTerm)
-        LOG_DEBUG('next node idx:', self.__raftNextIndex)
-        LOG_DEBUG('match idx:', self.__raftMatchIndex)
-        LOG_DEBUG('leader commit idx:', self.__leaderCommitIndex)
-        LOG_DEBUG('uptime:', int(time.time() - self.__startTime))
-        LOG_DEBUG('')
+            logging.info('%s: %d', n.getAddress(), n.getStatus())
+        logging.info('readonly nodes: %d', len(self.__readonlyNodes))
+        logging.info('unknown connections: %d', len(self.__unknownConnections))
+        logging.info('log len: %d', len(self.__raftLog))
+        logging.info('last applied: %d', self.__raftLastApplied)
+        logging.info('commit idx: %d', self.__raftCommitIndex)
+        logging.info('raft term: %d', self.__raftCurrentTerm)
+        logging.info('next node idx: %d', self.__raftNextIndex)
+        logging.info('match idx: %d', self.__raftMatchIndex)
+        logging.info('leader commit idx: %d', self.__leaderCommitIndex)
+        logging.info('uptime: %d', int(time.time() - self.__startTime))
+        logging.info('')
 
     def _forceLogCompaction(self):
         self.__forceLogCompaction = True
@@ -879,7 +879,7 @@ class SyncObj(object):
             self.__lastSerializedEntry = serializeID
 
         if serializeState == SERIALIZER_STATE.FAILED:
-            LOG_WARNING("Failed to store full dump")
+            logging.warning('Failed to store full dump')
 
         if serializeState != SERIALIZER_STATE.NOT_SERIALIZING:
             return
@@ -936,8 +936,7 @@ class SyncObj(object):
                 self.__otherNodesAddrs = [node for node in data[3] if node != self.__selfNodeAddr]
                 self.__updateClusterConfiguration()
         except:
-            LOG_WARNING('Failed to load full dump')
-            LOG_CURRENT_EXCEPTION()
+            logging.exception('failed to load full dump')
 
     def __updateClusterConfiguration(self):
         currentNodes = set()

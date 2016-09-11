@@ -1,7 +1,7 @@
 import time
 import socket
 import random
-from debug_utils import LOG_WARNING
+import logging
 
 
 class DnsCachingResolver(object):
@@ -30,7 +30,7 @@ class DnsCachingResolver(object):
         try:
             ips = socket.gethostbyname_ex(hostname)[2]
         except socket.gaierror:
-            LOG_WARNING('failed to resolve host %s' % hostname)
+            logging.warning('failed to resolve host %s', hostname)
             ips = []
         return ips
 

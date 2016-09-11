@@ -2,7 +2,7 @@ import os
 import zlib
 import cPickle
 import gzip
-from debug_utils import LOG_WARNING, LOG_CURRENT_EXCEPTION
+import logging
 from atomic_replace import atomicReplace
 from config import SERIALIZER_STATE
 
@@ -125,8 +125,7 @@ class Serializer(object):
                         'transmitted': 0,
                     }
             except:
-                LOG_CURRENT_EXCEPTION()
-                LOG_WARNING('Failed to open file for transmission')
+                logging.exception('Failed to open file for transmission')
                 self.__transmissions.pop(transmissionID, None)
                 return None
         isFirst = transmission['transmitted'] == 0
@@ -137,7 +136,7 @@ class Serializer(object):
             else:
                 data = transmission['file'].read(self.__transmissionBatchSize)
         except:
-            LOG_WARNING('Error reading transmission file')
+            logging.exception('Error reading transmission file')
             self.__transmissions.pop(transmissionID, None)
             return False
         size = len(data)
@@ -173,8 +172,7 @@ class Serializer(object):
             try:
                 self.__incomingTransmissionFile = open(tmpFile, 'wb')
             except:
-                LOG_WARNING('Failed to open file for incoming transition')
-                LOG_CURRENT_EXCEPTION()
+                logging.exception('Failed to open file for incoming transition')
                 self.__incomingTransmissionFile = None
                 return False
         elif self.__incomingTransmissionFile is None:
@@ -182,8 +180,7 @@ class Serializer(object):
         try:
             self.__incomingTransmissionFile.write(data)
         except:
-            LOG_WARNING('Failed to write incoming transition data')
-            LOG_CURRENT_EXCEPTION()
+            logging.exception('Failed to write incoming transition data')
             self.__incomingTransmissionFile = None
             return False
         if isLast:
@@ -192,8 +189,7 @@ class Serializer(object):
             try:
                 atomicReplace(tmpFile, self.__fileName)
             except:
-                LOG_WARNING('Failed to rename temporary incoming transition file')
-                LOG_CURRENT_EXCEPTION()
+                logging.exception('Failed to rename temporary incoming transition file')
                 return False
             return True
         return False

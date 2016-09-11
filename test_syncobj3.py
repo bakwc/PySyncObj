@@ -9,7 +9,10 @@ import pickle
 from functools import partial
 import functools
 import struct
+import logging
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, createJournal, HAS_CRYPTO, replicated_sync
+
+logging.basicConfig(format = '[%(asctime)s %(filename)s:%(lineno)d %(levelname)s]  %(message)s', level = logging.DEBUG)
 
 _bchr = functools.partial(struct.pack, 'B')
 
