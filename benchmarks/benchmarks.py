@@ -26,9 +26,12 @@ def memoize(fileName):
         return wrap
     return doMemoize
 
-def singleBenchmark(requestsPerSecond, requestSize, numNodes, numNodesReadonly = 0):
+def singleBenchmark(requestsPerSecond, requestSize, numNodes, numNodesReadonly = 0, delay = False):
     rpsPerNode = requestsPerSecond / (numNodes + numNodesReadonly)
-    cmd = 'python2.7 testobj.py %d %d' % (rpsPerNode, requestSize)
+    if delay:
+        cmd = 'python2.7 testobj_delay.py %d %d' % (rpsPerNode, requestSize)
+    else:
+        cmd = 'python2.7 testobj.py %d %d' % (rpsPerNode, requestSize)
     processes = []
     allAddrs = []
     for i in xrange(numNodes):
@@ -52,6 +55,8 @@ def singleBenchmark(requestsPerSecond, requestSize, numNodes, numNodesReadonly =
         errRates.append(float(p.returncode) / 100.0)
     avgRate = sum(errRates) / len(errRates)
     #print 'average success rate:', avgRate
+    if delay:
+        return avgRate
     return avgRate >= 0.9
 
 def doDetectMaxRps(requestSize, numNodes):
@@ -78,11 +83,25 @@ def detectMaxRps(requestSize, numNodes):
         results.append(res)
     return sorted(results)[len(results) / 2]
 
-if __name__ == '__main__':
-    for i in xrange(10, 2100, 500):
-        res = detectMaxRps(i, 3)
-        print 'request size: %d, rps: %d' % (i, int(res))
+def printUsage():
+    print 'Usage: %s mode(delay/rps)' % sys.argv[0]
+    sys.exit(-1)
 
-    for i in xrange(3, 8):
-        res = detectMaxRps(200, i)
-        print 'nodes number: %d, rps: %d' % (i, int(res))
+if __name__ == '__main__':
+
+    if len(sys.argv) != 2:
+        printUsage()
+
+    mode = sys.argv[1]
+    if mode == 'delay':
+        print 'Average delay:', singleBenchmark(30, 10, 3, delay=True)
+    elif mode == 'rps':
+        for i in xrange(10, 2100, 500):
+            res = detectMaxRps(i, 3)
+            print 'request size: %d, rps: %d' % (i, int(res))
+
+        for i in xrange(3, 8):
+            res = detectMaxRps(200, i)
+            print 'nodes number: %d, rps: %d' % (i, int(res))
+    else:
+        printUsage()
