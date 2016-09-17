@@ -17,7 +17,7 @@
 [gitter-image]: https://badges.gitter.im/bakwc/PySyncObj.svg
 [gitter]: https://gitter.im/bakwc/PySyncObj?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
 
-PySyncObj is a python library that provides ability to sync your data between multiple servers.
+PySyncObj is a python library that provides ability to sync your data between multiple servers. 
 - It use [raft protocol](http://raft.github.io/) for leader election and log replication.
 - It supports log compaction. It use fork for copy-on-write while serializing data on disk.
 - It supports [dynamic membership changes ](https://github.com/bakwc/PySyncObj/wiki/Dynamic-membership-change) (cluster reconfiguration).
@@ -28,9 +28,10 @@ PySyncObj is a python library that provides ability to sync your data between mu
 - Convenient interface - you can easily transform arbitrary class into a replicated one (see example below).
 
 ## Content
-1. [Install](#install)
-2. [Usage](#usage)
-3. [Performance](#performance)
+ * [Install](#install)
+ * [Basic Usage](#usage)
+ * [Api Documentation](http://pysyncobj.readthedocs.io)
+ * [Performance](#performance)
 
 ## Install
 PySyncObj itself:
@@ -73,7 +74,7 @@ class MyCounter(SyncObj):
 	def getCounter(self):
 		return self.__counter
 ```
-And thats all! Now you can call `incCounter` on `serverA`, and check counter value on `serverB` - they will be synchronized. You can look at examples and syncobj_ut.py for more use-cases.
+And thats all! Now you can call `incCounter` on `serverA`, and check counter value on `serverB` - they will be synchronized. You can look at [examples](https://github.com/bakwc/PySyncObj/tree/master/examples) and [test_syncobj.py](https://github.com/bakwc/PySyncObj/blob/master/test_syncobj.py) for more use-cases or read [api documentation](http://pysyncobj.readthedocs.io).
 
 ## Performance
 ![15K rps on 3 nodes; 14K rps on 7 nodes;](http://pastexen.com/i/Ge3lnrM1OY.png "RPS vs Cluster Size")
