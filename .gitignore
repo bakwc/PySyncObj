@@ -5,3 +5,4 @@ dist/
 *.bak
 *.bin
 build/
+docs/build*

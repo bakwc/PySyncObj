@@ -46,6 +46,16 @@ class SyncObjException(Exception):
 
 class SyncObj(object):
     def __init__(self, selfNodeAddr, otherNodesAddrs, conf=None):
+        """
+        Main SyncObj class, you should inherit your own class from it.
+
+        :param selfNodeAddr: address of the current node server, 'host:port'
+        :type selfNodeAddr: str
+        :param otherNodesAddrs: addresses of partner nodes, ['host1:port1', 'host2:port2', ...]
+        :type otherNodesAddrs: list of str
+        :param conf: configuration object
+        :type conf: SyncObjConf
+        """
 
         if conf is None:
             self.__conf = SyncObjConf()
@@ -963,6 +973,12 @@ class SyncObj(object):
                 self.__raftMatchIndex[nodeAddr] = 0
 
 def replicated(func):
+    """Replicated decorator. Use it to mark your class members that modifies
+    a class state. Function will be called asynchronously. Function accepts
+    callback parameter: callback(failReason, result), failReason - FAIL_REASON.
+    :param func: arbitrary class member
+    :type func: function
+    """
     def newFunc(self, *args, **kwargs):
         if kwargs.pop('_doApply', False):
             return func(self, *args, **kwargs)
@@ -979,6 +995,14 @@ def replicated(func):
     return newFunc
 
 def replicated_sync(func, timeout = None):
+    """Same as replicated, but synchronous.
+
+    :param func: aribtrary class member
+    :type func: function
+    :param timeout: time to wait (seconds). Default: None
+    :type timeout: float or None
+    """
+
     def newFunc(self, *args, **kwargs):
         class local:
             result = None
