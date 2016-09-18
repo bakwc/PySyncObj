@@ -30,7 +30,7 @@ PySyncObj is a python library that provides ability to sync your data between mu
 ## Content
  * [Install](#install)
  * [Basic Usage](#usage)
- * [Api Documentation](http://pysyncobj.readthedocs.io)
+ * [API Documentation](http://pysyncobj.readthedocs.io)
  * [Performance](#performance)
 
 ## Install
@@ -74,7 +74,7 @@ class MyCounter(SyncObj):
 	def getCounter(self):
 		return self.__counter
 ```
-And thats all! Now you can call `incCounter` on `serverA`, and check counter value on `serverB` - they will be synchronized. You can look at [examples](https://github.com/bakwc/PySyncObj/tree/master/examples) and [test_syncobj.py](https://github.com/bakwc/PySyncObj/blob/master/test_syncobj.py) for more use-cases or read [api documentation](http://pysyncobj.readthedocs.io).
+And thats all! Now you can call `incCounter` on `serverA`, and check counter value on `serverB` - they will be synchronized. You can look at [examples](https://github.com/bakwc/PySyncObj/tree/master/examples) and [test_syncobj.py](https://github.com/bakwc/PySyncObj/blob/master/test_syncobj.py) for more use-cases or read [API documentation](http://pysyncobj.readthedocs.io).
 
 ## Performance
 ![15K rps on 3 nodes; 14K rps on 7 nodes;](http://pastexen.com/i/Ge3lnrM1OY.png "RPS vs Cluster Size")

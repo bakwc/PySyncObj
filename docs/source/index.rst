@@ -1,5 +1,10 @@
-Welcome to PySyncObj's documentation!
-=====================================
+PySyncObj API documentation
+===========================
+
+* The code is available on GitHub at `bakwc/PySyncObj`_
+
+.. _bakwc/PySyncObj: https://github.com/bakwc/PySyncObj
+
 
 Contents:
 
