@@ -152,11 +152,17 @@ class SyncObj(object):
         else:
             self.__initInTickThread()
 
-    def _destroy(self):
+    def destroy(self):
+        """
+        Correctly destroy PySyncOb. Stop autoTickThread, close connections, etc.
+        """
         if self.__conf.autoTick:
             self.__destroying = True
         else:
             self._doDestroy()
+
+    def _destroy(self):
+        self._destroy()
 
     def _doDestroy(self):
         for node in self.__nodes:
@@ -185,15 +191,39 @@ class SyncObj(object):
         except:
             logging.exception('failed to perform initialization')
 
-    def _addNodeToCluster(self, nodeName, callback = None):
+    def addNodeToCluster(self, nodeName, callback = None):
+        """Add single node to cluster (dynamic membership changes). Async.
+        You should wait until node successfully added before adding
+        next node.
+
+        :param nodeName: nodeHost:nodePort
+        :type nodeName: str
+        :param callback: will be called on success or fail
+        :type callback: function(`FAIL_REASON <#pysyncobj.FAIL_REASON>`_, None)
+        """
         if not self.__conf.dynamicMembershipChange:
             raise Exception('dynamicMembershipChange is disabled')
         self._applyCommand(cPickle.dumps(['add', nodeName]), callback, _COMMAND_TYPE.MEMBERSHIP)
 
-    def _removeNodeFromCluster(self, nodeName, callback = None):
+    def removeNodeFromCluster(self, nodeName, callback = None):
+        """Remove single node from cluster (dynamic membership changes). Async.
+        You should wait until node successfully added before adding
+        next node.
+
+        :param nodeName: nodeHost:nodePort
+        :type nodeName: str
+        :param callback: will be called on success or fail
+        :type callback: function(`FAIL_REASON <#pysyncobj.FAIL_REASON>`_, None)
+        """
         if not self.__conf.dynamicMembershipChange:
             raise Exception('dynamicMembershipChange is disabled')
         self._applyCommand(cPickle.dumps(['rem', nodeName]), callback, _COMMAND_TYPE.MEMBERSHIP)
+
+    def _addNodeToCluster(self, nodeName, callback=None):
+        self.addNodeToCluster(nodeName, callback)
+
+    def _removeNodeFromCluster(self, nodeName, callback=None):
+        self.removeNodeFromCluster(nodeName, callback)
 
     def _applyCommand(self, command, callback, commandType = None):
         try:
@@ -282,6 +312,16 @@ class SyncObj(object):
                 self._onTick(self.__conf.autoTickPeriod)
         except ReferenceError:
             pass
+
+    def doTick(self, timeToWait=0.0):
+        """Performs single tick. Should be called manually if `autoTick <#pysyncobj.SyncObjConf.autoTick>`_ disabled
+
+        :param timeToWait: max time to wait for next tick. If zero - perform single tick without waiting for new events.
+            Otherwise - wait for new socket event and return.
+        :type timeToWait: float
+        """
+        assert not self.__conf.autoTick
+        self._onTick(timeToWait)
 
     def _onTick(self, timeToWait=0.0):
         if not self.__isInitialized:
@@ -374,7 +414,8 @@ class SyncObj(object):
 
         self._poller.poll(timeToWait)
 
-    def _printStatus(self):
+    def printStatus(self):
+        """Dumps different debug info about cluster to default logger"""
         logging.info('version: %s %s', VERSION, REVISION)
         logging.info('self: %s', self.__selfNodeAddr)
         logging.info('state: %d', self.__raftState)
@@ -394,8 +435,15 @@ class SyncObj(object):
         logging.info('uptime: %d', int(time.time() - self.__startTime))
         logging.info('')
 
-    def _forceLogCompaction(self):
+    def _printStatus(self):
+        self.printStatus()
+
+    def forceLogCompaction(self):
+        """Force to start log compaction (without waiting required time or required number of entries)"""
         self.__forceLogCompaction = True
+
+    def _forceLogCompaction(self):
+        self.forceLogCompaction()
 
     def __doApplyCommand(self, command):
         commandType = ord(command[:1])
@@ -667,8 +715,16 @@ class SyncObj(object):
     def _getLeader(self):
         return self.__raftLeader
 
-    def _isReady(self):
+    def isReady(self):
+        """Check if current node is initially synced with others and has an actual data.
+
+        :return: True if ready, False otherwise
+        :rtype: bool
+        """
         return self.__onReadyCalled
+
+    def _isReady(self):
+        return self._isReady()
 
     def _getTerm(self):
         return self.__raftCurrentTerm
@@ -972,7 +1028,8 @@ class SyncObj(object):
 def replicated(func):
     """Replicated decorator. Use it to mark your class members that modifies
     a class state. Function will be called asynchronously. Function accepts
-    callback parameter: callback(failReason, result), failReason - FAIL_REASON.
+    callback parameter: callback(result, failReason), failReason - `FAIL_REASON <#pysyncobj.FAIL_REASON>`_.
+
     :param func: arbitrary class member
     :type func: function
     """

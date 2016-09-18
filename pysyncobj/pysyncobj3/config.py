@@ -22,7 +22,7 @@ class SyncObjConf(object):
     def __init__(self, **kwargs):
 
         # Encrypt session with specified password.
-        # Install 'cryptography' module to be able to set password.
+        # Install `cryptography` module to be able to set password.
         self.password = kwargs.get('password', None)
 
         #: Disable autoTick if you want to call onTick manually.
@@ -91,7 +91,7 @@ class SyncObjConf(object):
         self.logCompactionBatchSize = kwargs.get('logCompactionBatchSize', 2 ** 16)
 
         #: If true - commands will be enqueued and executed after leader detected.
-        #: Otherwise - FAIL_REASON.MISSING_LEADER error will be emitted.
+        #: Otherwise - `FAIL_REASON.MISSING_LEADER <#pysyncobj.FAIL_REASON.MISSING_LEADER>`_ error will be emitted.
         #: Leader is missing when esteblishing connection or when election in progress.
         self.commandsWaitLeader = kwargs.get('commandsWaitLeader', True)
 
@@ -112,9 +112,9 @@ class SyncObjConf(object):
         self.dynamicMembershipChange = kwargs.get('dynamicMembershipChange', False)
 
         #: Sockets poller:
-        #:  * 'auto' - auto select best available on current platform
-        #:  * 'select' - use select poller
-        #:  * 'poll' - use poll poller
+        #:  * `auto` - auto select best available on current platform
+        #:  * `select` - use select poller
+        #:  * `poll` - use poll poller
         self.pollerType = kwargs.get('pollerType', 'auto')
 
         #: Use fork if available when serializing on disk.
@@ -127,7 +127,7 @@ class SyncObjConf(object):
         self.serializer = kwargs.get('serializer', None)
 
         #: Check custom serialization state, for async serializer.
-        #: Should return one of SERIALIZER_STATE.
+        #: Should return one of `SERIALIZER_STATE <#pysyncobj.SERIALIZER_STATE>`_.
         self.serializeChecker = kwargs.get('serializeChecker', None)
 
         #: Custom deserialize function, it will be called when restore from fullDump.
