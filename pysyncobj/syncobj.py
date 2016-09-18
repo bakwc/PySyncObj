@@ -162,7 +162,7 @@ class SyncObj(object):
             self._doDestroy()
 
     def _destroy(self):
-        self._destroy()
+        self.destroy()
 
     def _doDestroy(self):
         for node in self.__nodes:
