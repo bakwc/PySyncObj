@@ -157,7 +157,7 @@ class SyncObj(object):
 
     def destroy(self):
         """
-        Correctly destroy PySyncOb. Stop autoTickThread, close connections, etc.
+        Correctly destroy SyncObj. Stop autoTickThread, close connections, etc.
         """
         if self.__conf.autoTick:
             self.__destroying = True
@@ -727,7 +727,7 @@ class SyncObj(object):
         return self.__onReadyCalled
 
     def _isReady(self):
-        return self._isReady()
+        return self.isReady()
 
     def _getTerm(self):
         return self.__raftCurrentTerm
