@@ -32,6 +32,7 @@ def singleBenchmark(requestsPerSecond, requestSize, numNodes, numNodesReadonly =
         cmd = 'python2.7 testobj_delay.py %d %d' % (rpsPerNode, requestSize)
     else:
         cmd = 'python2.7 testobj.py %d %d' % (rpsPerNode, requestSize)
+        #cmd = 'python2.7 -m cProfile -s time testobj.py %d %d' % (rpsPerNode, requestSize)
     processes = []
     allAddrs = []
     for i in xrange(numNodes):
@@ -54,7 +55,7 @@ def singleBenchmark(requestsPerSecond, requestSize, numNodes, numNodesReadonly =
         p.communicate()
         errRates.append(float(p.returncode) / 100.0)
     avgRate = sum(errRates) / len(errRates)
-    #print 'average success rate:', avgRate
+    print 'average success rate:', avgRate
     if delay:
         return avgRate
     return avgRate >= 0.9
@@ -84,7 +85,7 @@ def detectMaxRps(requestSize, numNodes):
     return sorted(results)[len(results) / 2]
 
 def printUsage():
-    print 'Usage: %s mode(delay/rps)' % sys.argv[0]
+    print 'Usage: %s mode(delay/rps/custom)' % sys.argv[0]
     sys.exit(-1)
 
 if __name__ == '__main__':
@@ -103,5 +104,7 @@ if __name__ == '__main__':
         for i in xrange(3, 8):
             res = detectMaxRps(200, i)
             print 'nodes number: %d, rps: %d' % (i, int(res))
+    elif mode == 'custom':
+        singleBenchmark(25000, 10, 3)
     else:
         printUsage()

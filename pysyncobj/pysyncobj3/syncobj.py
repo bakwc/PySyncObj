@@ -23,7 +23,7 @@ from .config import SyncObjConf, FAIL_REASON
 from .encryptor import HAS_CRYPTO, getEncryptor
 from .version import VERSION
 from .revision import REVISION
-
+from .fast_queue import FastQueue
 
 class _RAFT_STATE:
     FOLLOWER = 0
@@ -127,7 +127,7 @@ class SyncObj(object):
         self.__thread = None
         self.__mainThread = None
         self.__initialised = None
-        self.__commandsQueue = queue.Queue(self.__conf.commandsQueueSize)
+        self.__commandsQueue = FastQueue(self.__conf.commandsQueueSize)
         if not self.__conf.appendEntriesUseBatch:
             self.__pipeNotifier = PipeNotifier(self._poller)
 
