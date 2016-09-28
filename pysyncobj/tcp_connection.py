@@ -23,8 +23,8 @@ class TcpConnection(object):
         self.encryptor = None
 
         self.__socket = socket
-        self.__readBuffer = bytes()
-        self.__writeBuffer = bytes()
+        self.__readBuffer = bytearray()
+        self.__writeBuffer = bytearray()
         self.__lastReadTime = time.time()
         self.__timeout = timeout
         self.__poller = poller
@@ -60,8 +60,8 @@ class TcpConnection(object):
         self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.__recvBufferSize)
         self.__socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self.__socket.setblocking(0)
-        self.__readBuffer = bytes()
-        self.__writeBuffer = bytes()
+        self.__readBuffer = bytearray()
+        self.__writeBuffer = bytearray()
         self.__lastReadTime = time.time()
 
         try:
@@ -101,8 +101,8 @@ class TcpConnection(object):
         if self.__fileno is not None:
             self.__poller.unsubscribe(self.__fileno)
             self.__fileno = None
-        self.__writeBuffer = bytes()
-        self.__readBuffer = bytes()
+        self.__writeBuffer = bytearray()
+        self.__readBuffer = bytearray()
         self.__state = CONNECTION_STATE.DISCONNECTED
 
     def getSendBufferSize(self):
@@ -205,7 +205,7 @@ class TcpConnection(object):
         l = struct.unpack('i', self.__readBuffer[:4])[0]
         if len(self.__readBuffer) - 4 < l:
             return None
-        data = self.__readBuffer[4:4 + l]
+        data = bytes(self.__readBuffer[4:4 + l])
         try:
             if self.encryptor:
                 data = self.encryptor.decrypt(data)

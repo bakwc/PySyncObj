@@ -92,7 +92,7 @@ class SyncObj(object):
         self.__changeClusterIDx = None
         self.__noopIDx = None
         self.__destroying = False
-        self.__recvTransmission = ''
+        self.__recvTransmission = bytearray()
 
 
         self.__startTime = time.time()
@@ -520,8 +520,8 @@ class SyncObj(object):
                         return
                     elif transmission == 'finish':
                         self.__recvTransmission += message['data']
-                        newEntries = [cPickle.loads(self.__recvTransmission)]
-                        self.__recvTransmission = ''
+                        newEntries = [cPickle.loads(bytes(self.__recvTransmission))]
+                        self.__recvTransmission = bytearray()
                     else:
                         raise Exception('Wrong transmission type')
 
