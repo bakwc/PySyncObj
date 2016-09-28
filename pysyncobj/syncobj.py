@@ -282,6 +282,7 @@ class SyncObj(object):
                         'type': 'apply_command',
                         'command': command,
                     }
+
                     if callback is not None:
                         self.__commandsLocalCounter += 1
                         self.__commandsWaitingReply[self.__commandsLocalCounter] = callback
