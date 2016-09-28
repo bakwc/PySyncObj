@@ -154,12 +154,12 @@ class Serializer(object):
         # In-memory case
         if self.__fileName is None:
             if isFirst:
-                self.__incomingTransmissionFile = bytes()
+                self.__incomingTransmissionFile = bytearray()
             elif self.__incomingTransmissionFile is None:
                 return False
             self.__incomingTransmissionFile += data
             if isLast:
-                self.__inMemorySerializedData = self.__incomingTransmissionFile
+                self.__inMemorySerializedData = bytes(self.__incomingTransmissionFile)
                 self.__incomingTransmissionFile = None
                 return True
             return False
