@@ -417,26 +417,46 @@ class SyncObj(object):
 
         self._poller.poll(timeToWait)
 
+    def getStatus(self):
+        """Dumps different debug info about cluster to list and return it"""
+        #  type(key) == str
+        #  type(value) == str || type(value) == int
+
+        status = list()
+        status.append(('version', VERSION))
+        status.append(('revision', REVISION))
+        status.append(('self', self.__selfNodeAddr))
+        status.append(('state' , self.__raftState))
+        status.append(('leader',  self.__raftLeader))
+        status.append(('partner_nodes_count' , len(self.__nodes)))
+        for n in self.__nodes:
+            status.append(('partner_node_status_server_'+n.getAddress(), n.getStatus()))
+        status.append(('readonly_nodes_count', len(self.__readonlyNodes)))
+        for n in self.__readonlyNodes:
+            status.append(('readonly_node_status_server_'+n.getAddress(), n.getStatus()))
+        status.append(('unknown_connections_count', len(self.__unknownConnections)))
+        status.append(('log_len', len(self.__raftLog)))
+        status.append(('last_applied', self.__raftLastApplied))
+        status.append(('commit_idx', self.__raftCommitIndex))
+        status.append(('raft_term', self.__raftCurrentTerm))
+        status.append(('next_node_idx_count', len(self.__raftNextIndex)))
+        for k, v in self.__raftNextIndex.items():
+            status.append(('next_node_idx_server_'+k, v))
+        status.append(('match_idx_count', len(self.__raftMatchIndex)))
+        for k, v in self.__raftMatchIndex.items():
+            status.append(('match_idx_server_'+k,  v))
+        status.append(('leader_commit_idx', self.__leaderCommitIndex))
+        status.append(('uptime', int(time.time() - self.__startTime)))
+        return status
+
+    def _getStatus(self):
+        return self.getStatus()
+
     def printStatus(self):
         """Dumps different debug info about cluster to default logger"""
-        logging.info('version: %s %s', VERSION, REVISION)
-        logging.info('self: %s', self.__selfNodeAddr)
-        logging.info('state: %d', self.__raftState)
-        logging.info('leader: %s', self.__raftLeader)
-        logging.info('partner nodes: %d', len(self.__nodes))
-        for n in self.__nodes:
-            logging.info('%s: %d', n.getAddress(), n.getStatus())
-        logging.info('readonly nodes: %d', len(self.__readonlyNodes))
-        logging.info('unknown connections: %d', len(self.__unknownConnections))
-        logging.info('log len: %d', len(self.__raftLog))
-        logging.info('last applied: %d', self.__raftLastApplied)
-        logging.info('commit idx: %d', self.__raftCommitIndex)
-        logging.info('raft term: %d', self.__raftCurrentTerm)
-        logging.info('next node idx: %d', self.__raftNextIndex)
-        logging.info('match idx: %d', self.__raftMatchIndex)
-        logging.info('leader commit idx: %d', self.__leaderCommitIndex)
-        logging.info('uptime: %d', int(time.time() - self.__startTime))
-        logging.info('')
+        status = self.getStatus()
+        for i in status:
+            logging.info(i[0]+': %s', str(i[1]))
 
     def _printStatus(self):
         self.printStatus()
