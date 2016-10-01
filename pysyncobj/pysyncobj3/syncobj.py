@@ -419,10 +419,8 @@ class SyncObj(object):
 
     def getStatus(self):
         """Dumps different debug info about cluster to list and return it"""
-        #  type(key) == str
-        #  type(value) == str || type(value) == int
 
-        status = list()
+        status = []
         status.append(('version', VERSION))
         status.append(('revision', REVISION))
         status.append(('self', self.__selfNodeAddr))
