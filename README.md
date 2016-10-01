@@ -20,7 +20,8 @@
 [docs-image]: https://readthedocs.org/projects/pysyncobj/badge/?version=latest
 [docs]: http://pysyncobj.readthedocs.io/en/latest/
 
-PySyncObj is a python library that provides ability to sync your data between multiple servers. 
+PySyncObj is a python library for building fault-tolerant distributed systems. It provides the ability to replicate your application data between multiple servers.
+
 - It use [raft protocol](http://raft.github.io/) for leader election and log replication.
 - It supports log compaction. It use fork for copy-on-write while serializing data on disk.
 - It supports [dynamic membership changes ](https://github.com/bakwc/PySyncObj/wiki/Dynamic-membership-change) (cluster reconfiguration).
