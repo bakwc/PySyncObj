@@ -33,13 +33,17 @@ class TestObj(SyncObj):
 				 journalFile = None,
 				 password = None,
 				 dynamicMembershipChange = False,
-				 useFork = True):
+				 useFork = True,
+				 testBindAddr = False):
 
 		cfg = SyncObjConf(autoTick=False, appendEntriesUseBatch=False)
 		cfg.appendEntriesPeriod = 0.1
 		cfg.raftMinTimeout = 0.5
 		cfg.raftMaxTimeout = 1.0
 		cfg.dynamicMembershipChange = dynamicMembershipChange
+
+		if testBindAddr:
+			cfg.bindAddress = selfNodeAddr
 
 		if dumpFile is not None:
 			cfg.fullDumpFile = dumpFile
@@ -172,9 +176,9 @@ def test_syncThreeObjectsLeaderFail():
 
 	a = [getNextAddr(), getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1], a[2]])
-	o2 = TestObj(a[1], [a[2], a[0]])
-	o3 = TestObj(a[2], [a[0], a[1]])
+	o1 = TestObj(a[0], [a[1], a[2]], testBindAddr=True)
+	o2 = TestObj(a[1], [a[2], a[0]], testBindAddr=True)
+	o3 = TestObj(a[2], [a[0], a[1]], testBindAddr=True)
 	objs = [o1, o2, o3]
 
 	assert not o1._isReady()
