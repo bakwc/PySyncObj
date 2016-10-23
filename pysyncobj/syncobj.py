@@ -276,6 +276,17 @@ class SyncObj(object):
                         })
                     if not self.__conf.appendEntriesUseBatch:
                         self.__sendAppendEntries()
+                else:
+
+                    if requestNode is None:
+                        if callback is not None:
+                            callback(None, FAIL_REASON.DISCARDED)
+                    else:
+                        self.__send(requestNode, {
+                            'type': 'apply_command_response',
+                            'request_id': requestID,
+                            'error': FAIL_REASON.DISCARDED,
+                        })
 
             elif self.__raftLeader is not None:
                 if requestNode is None:
@@ -661,11 +672,50 @@ class SyncObj(object):
         conn.setOnMessageReceivedCallback(functools.partial(self.__onMessageReceived, conn))
         conn.setOnDisconnectedCallback(functools.partial(self.__onDisconnected, conn))
 
+
+    def __utilityCallback(self, res, err, conn, cmd, node):
+        cmdResult = 'FAIL'
+        if err == FAIL_REASON.SUCCESS:
+            cmdResult = 'SUCCESS'
+        conn.send(cmdResult + ' ' + cmd + ' ' + node)
+
+    def __onUtilityMessage(self, conn, message):
+
+        descr = conn.fileno()
+
+        if message == 'status':
+            status = self.getStatus()
+            data = bytes()
+            for i in status:
+                data += i[0] + ':' + str(i[1]) + '\n'
+            conn.send(data)
+            self.__unknownConnections.pop(descr, None)
+            return True
+        elif message[:len('add')] == 'add':
+            self.__unknownConnections.pop(descr, None)
+            nodeToAdd = message[len('add'):]
+            self.addNodeToCluster(nodeToAdd, callback=functools.partial(self.__utilityCallback, conn=conn, cmd='ADD', node=nodeToAdd))
+            self.__unknownConnections.pop(descr, None)
+            return True
+        elif message[:len('remove')] == 'remove':
+            nodeToRemove = message[len('remove'):]
+            if nodeToRemove == self.__selfNodeAddr:
+                conn.send('FAIL REMOVE ' + nodeToRemove)
+            else:
+                self.removeNodeFromCluster(nodeToRemove, callback=functools.partial(self.__utilityCallback, conn=conn, cmd='REMOVE', node=nodeToRemove))
+            self.__unknownConnections.pop(descr, None)
+            return True
+
+        return False
+
     def __onMessageReceived(self, conn, message):
         if self.__encryptor and not conn.sendRandKey:
             conn.sendRandKey = message
             conn.recvRandKey = os.urandom(32)
             conn.send(conn.recvRandKey)
+            return
+
+        if self.__onUtilityMessage(conn, message):
             return
 
         descr = conn.fileno()
@@ -945,6 +995,7 @@ class SyncObj(object):
                     self.__nodes.pop(i)
                     self.__otherNodesAddrs.pop(i)
                     del self.__raftNextIndex[oldNode]
+                    del self.__raftMatchIndex[oldNode]
                     return True
             return False
 

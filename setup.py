@@ -1,4 +1,4 @@
-from distutils.core import setup
+from setuptools import setup
 from pysyncobj.version import VERSION
 
 description='A library for replicating your python class between multiple servers, based on raft protocol'
@@ -10,7 +10,7 @@ except(IOError, ImportError, RuntimeError):
 
 setup(
     name='pysyncobj',
-    packages=['pysyncobj', 'pysyncobj.pysyncobj3'],
+    packages=['pysyncobj', 'pysyncobj.pysyncobj3', 'monitoring_utility'],
     version=VERSION,
     description=description,
     long_description=long_description,
@@ -30,4 +30,8 @@ setup(
         'Operating System :: MacOS :: MacOS X',
         'License :: OSI Approved :: MIT License',
     ],
+    entry_points={
+        'console_scripts':
+            ['pysyncobj_utility=monitoring_utility:main'],
+    },
 )
