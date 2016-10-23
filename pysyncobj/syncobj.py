@@ -1044,6 +1044,13 @@ class SyncObj(object):
                 self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
                 self.__raftMatchIndex[nodeAddr] = 0
 
+def __autoRetryCallback(syncObj, cmd, origCallback, numRetries, res, failReason):
+    if failReason == FAIL_REASON.SUCCESS or numRetries <= 0:
+        origCallback(res, failReason)
+        return
+    callback = functools.partial(__autoRetryCallback, syncObj, cmd, origCallback, numRetries - 1)
+    syncObj._applyCommand(cmd, callback, _COMMAND_TYPE.REGULAR)
+
 def replicated(func):
     """Replicated decorator. Use it to mark your class members that modifies
     a class state. Function will be called asynchronously. Function accepts
@@ -1057,14 +1064,17 @@ def replicated(func):
             return func(self, *args, **kwargs)
         else:
             callback = kwargs.pop('callback', None)
+            numRetries = kwargs.pop('numRetries', 0)
             if kwargs:
                 cmd = (self._methodToID[func.__name__], args, kwargs)
             elif args and not kwargs:
                 cmd = (self._methodToID[func.__name__], args)
             else:
                 cmd = self._methodToID[func.__name__]
-
-            self._applyCommand(cPickle.dumps(cmd, -1), callback, _COMMAND_TYPE.REGULAR)
+            binCmd = cPickle.dumps(cmd, -1)
+            if numRetries:
+                callback = functools.partial(__autoRetryCallback, self, binCmd, callback, numRetries)
+            self._applyCommand(binCmd, callback, _COMMAND_TYPE.REGULAR)
     return newFunc
 
 def replicated_sync(func, timeout = None):
