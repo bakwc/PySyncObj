@@ -6,7 +6,7 @@ class FAIL_REASON:
     DISCARDED = 3           #: Command discarded (cause of new leader elected and another command was applied instead)
     NOT_LEADER = 4          #: Leader has changed, old leader did not have time to commit command.
     LEADER_CHANGED = 5      #: Simmilar to NOT_LEADER - leader has changed without command commit.
-    REQUEST_DENIED = 6      #: COMMMAND
+    REQUEST_DENIED = 6      #: Command denied
 
 class SERIALIZER_STATE:
     NOT_SERIALIZING = 0     #: Serialization not started or already finished.
