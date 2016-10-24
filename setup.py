@@ -10,7 +10,7 @@ except(IOError, ImportError, RuntimeError):
 
 setup(
     name='pysyncobj',
-    packages=['pysyncobj', 'pysyncobj.pysyncobj3', 'monitoring_utility'],
+    packages=['pysyncobj', 'pysyncobj.pysyncobj3'],
     version=VERSION,
     description=description,
     long_description=long_description,
@@ -31,7 +31,9 @@ setup(
         'License :: OSI Approved :: MIT License',
     ],
     entry_points={
-        'console_scripts':
-            ['pysyncobj_utility=monitoring_utility:main'],
+        'console_scripts': [
+            'syncobj_admin2=pysyncobj.syncobj_admin:main',
+            'syncobj_admin3=pysyncobj.pysyncobj3.syncobj_admin:main',
+        ],
     },
 )

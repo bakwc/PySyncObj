@@ -280,12 +280,12 @@ class SyncObj(object):
 
                     if requestNode is None:
                         if callback is not None:
-                            callback(None, FAIL_REASON.DISCARDED)
+                            callback(None, FAIL_REASON.REQUEST_DENIED)
                     else:
                         self.__send(requestNode, {
                             'type': 'apply_command_response',
                             'request_id': requestID,
-                            'error': FAIL_REASON.DISCARDED,
+                            'error': FAIL_REASON.REQUEST_DENIED,
                         })
 
             elif self.__raftLeader is not None:
@@ -683,29 +683,21 @@ class SyncObj(object):
 
     def __onUtilityMessage(self, conn, message):
 
-        descr = conn.fileno()
-
-        if message == 'status':
+        if message[0] == 'status':
             status = self.getStatus()
             data = bytes()
             for i in status:
                 data += i[0] + ':' + str(i[1]) + '\n'
             conn.send(data)
-            self.__unknownConnections.pop(descr, None)
             return True
-        elif message[:len('add')] == 'add':
-            self.__unknownConnections.pop(descr, None)
-            nodeToAdd = message[len('add'):]
-            self.addNodeToCluster(nodeToAdd, callback=functools.partial(self.__utilityCallback, conn=conn, cmd='ADD', node=nodeToAdd))
-            self.__unknownConnections.pop(descr, None)
+        elif message[0] == 'add':
+            self.addNodeToCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='ADD', node=message[1]))
             return True
-        elif message[:len('remove')] == 'remove':
-            nodeToRemove = message[len('remove'):]
-            if nodeToRemove == self.__selfNodeAddr:
-                conn.send('FAIL REMOVE ' + nodeToRemove)
+        elif message[0] == 'remove':
+            if message[1] == self.__selfNodeAddr:
+                conn.send('FAIL REMOVE ' + message[1])
             else:
-                self.removeNodeFromCluster(nodeToRemove, callback=functools.partial(self.__utilityCallback, conn=conn, cmd='REMOVE', node=nodeToRemove))
-            self.__unknownConnections.pop(descr, None)
+                self.removeNodeFromCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='REMOVE', node=message[1]))
             return True
 
         return False
@@ -717,10 +709,12 @@ class SyncObj(object):
             conn.send(conn.recvRandKey)
             return
 
-        if self.__onUtilityMessage(conn, message):
+        descr = conn.fileno()
+
+        if isinstance(message, list) and self.__onUtilityMessage(conn, message):
+            self.__unknownConnections.pop(descr, None)
             return
 
-        descr = conn.fileno()
         partnerNode = None
         for node in self.__nodes:
             if node.getAddress() == message:
