@@ -170,6 +170,35 @@ def test_syncTwoObjects():
 	o1._destroy()
 	o2._destroy()
 
+def test_singleObject():
+
+	random.seed(42)
+
+	a = [getNextAddr(),]
+
+	o1 = TestObj(a[0], [])
+	objs = [o1,]
+
+	assert not o1._isReady()
+
+	doTicks(objs, 3.0, stopFunc=lambda: o1._isReady())
+
+	o1._printStatus()
+
+	assert o1._getLeader() in a
+	assert o1._isReady()
+
+	o1.addValue(150)
+	o1.addValue(200)
+
+	doTicks(objs, 3.0, stopFunc=lambda: o1.getCounter() == 350)
+
+	assert o1._isReady()
+
+	assert o1.getCounter() == 350
+
+	o1._destroy()
+
 def test_syncThreeObjectsLeaderFail():
 
 	random.seed(12)
