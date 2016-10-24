@@ -368,6 +368,8 @@ class SyncObj(object):
                         'last_log_term': self.__getCurrentLogTerm(),
                     })
                 self.__onLeaderChanged()
+                if self.__votesCount > (len(self.__nodes) + 1) / 2:
+                    self.__onBecomeLeader()
 
         if self.__raftState == _RAFT_STATE.LEADER:
             while self.__raftCommitIndex < self.__getCurrentLogIndex():
@@ -934,6 +936,8 @@ class SyncObj(object):
         for node in self.__nodes:
             if node.getStatus() == NODE_STATUS.CONNECTED:
                 return True
+        if not self.__nodes:
+            return True
         return False
 
     def _getSelfNodeAddr(self):
