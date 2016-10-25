@@ -7,8 +7,7 @@ from functools import partial
 import functools
 import struct
 import logging
-from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, createJournal, HAS_CRYPTO, replicated_sync
-from pysyncobj.syncobj_admin import Utility
+from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, createJournal, HAS_CRYPTO, replicated_sync, Utility
 
 logging.basicConfig(format = u'[%(asctime)s %(filename)s:%(lineno)d %(levelname)s]  %(message)s', level = logging.DEBUG)
 
@@ -1179,12 +1178,13 @@ def test_syncobjAdminStatus():
 	a = [getNextAddr(), getNextAddr()]
 
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.AUTO_TICK_1, password='123')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.AUTO_TICK_1,  password='123')
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.AUTO_TICK_1, password='123')
 
 	assert not o1._isReady()
 	assert not o2._isReady()
 
-	time.sleep(4.5)
+	time.sleep(1.3)
+
 	assert o1._isReady()
 	assert o2._isReady()
 
@@ -1202,14 +1202,13 @@ def test_syncobjAdminStatus():
 	u1 = Utility(['-conn', a[0], '-pass', '123', '-status'])
 	u2 = Utility(['-conn', a[1], '-pass', '123', '-status'])
 
-	time.sleep(3.0)
+	time.sleep(1.3)
 
 	assert len(statusStr1) == len(u1.getResult())
 	assert len(statusStr2) == len(u2.getResult())
 
 	o1._destroy()
 	o2._destroy()
-	time.sleep(0.5)
 
 def test_syncobjAdminAddRemove():
 
@@ -1218,35 +1217,39 @@ def test_syncobjAdminAddRemove():
 	a = [getNextAddr(), getNextAddr(), getNextAddr()]
 
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.AUTO_TICK_1, dynamicMembershipChange=True)
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.AUTO_TICK_1,  dynamicMembershipChange=True)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.AUTO_TICK_1, dynamicMembershipChange=True)
 
 	assert not o1._isReady()
 	assert not o2._isReady()
 
-	time.sleep(4.5)
+	time.sleep(1.3)
+
 	assert o1._isReady()
 	assert o2._isReady()
 
 	u1 = Utility(['-conn', a[0], '-add', a[2]])
-	time.sleep(3.0)
+	time.sleep(1.3)
 	assert u1.getResult() == 'SUCCESS ADD '+ a[2]
 
 	o3 = TestObj(a[2], [a[1], a[0]], TEST_TYPE.AUTO_TICK_1,  dynamicMembershipChange=True)
-	time.sleep(4.5)
+
+	time.sleep(1.3)
+
 	assert o1._isReady()
 	assert o2._isReady()
 	assert o3._isReady()
 
 	u2 = Utility(['-conn', a[0], '-remove', a[2]])
-	time.sleep(3.0)
+	time.sleep(1.3)
 	assert u2.getResult() == 'SUCCESS REMOVE '+ a[2]
-
 	o3._destroy()
-	time.sleep(4.5)
+
+	time.sleep(1.3)
+
 	assert o1._isReady()
 	assert o2._isReady()
 
 	o1._destroy()
 	o2._destroy()
-	time.sleep(0.5)
+
 
