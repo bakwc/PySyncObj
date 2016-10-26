@@ -11,6 +11,8 @@ class Utility(object):
 
     def __init__(self, args):
 
+        self.__result = None
+
         if self.__getData(args):
             self.__poller = createPoller('auto')
             self.__connection = TcpConnection(self.__poller, onDisconnected=self.__onDisconnected, onMessageReceived=self.__onMessageReceived, onConnected=self.__onConnected)
