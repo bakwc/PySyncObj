@@ -1200,6 +1200,8 @@ def test_readOnlyNodes():
 	b2._destroy()
 
 def test_syncobjAdminStatus():
+	if not HAS_CRYPTO:
+		return
 
 	random.seed(42)
 
