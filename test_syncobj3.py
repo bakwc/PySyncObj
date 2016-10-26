@@ -1220,15 +1220,15 @@ def test_syncobjAdminStatus():
 	status2 = o2._getStatus()
 
 	trueRes = {
-		o1 : bytes(),
-		o2 : bytes()
+		o1 : '',
+		o2 : ''
 	}
 
 
 	for i in status1:
-		trueRes[o1] += i[0] + ':' + bytes(i[1]) + '\n'
+		trueRes[o1] += i[0] + ':' + str(i[1]) + '\n'
 	for i in status2:
-		trueRes[o2] += i[0] + ':' + bytes(i[1]) + '\n'
+		trueRes[o2] += i[0] + ':' + str(i[1]) + '\n'
 
 	currRes = {
 	}

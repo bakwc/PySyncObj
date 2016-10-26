@@ -688,9 +688,9 @@ class SyncObj(object):
 
         if message[0] == 'status':
             status = self.getStatus()
-            data = bytes()
+            data = ''
             for i in status:
-                data += i[0] + ':' + bytes(i[1]) + '\n'
+                data += i[0] + ':' + str(i[1]) + '\n'
             conn.send(data)
             return True
         elif message[0] == 'add':
