@@ -279,6 +279,17 @@ class SyncObj(object):
                         })
                     if not self.__conf.appendEntriesUseBatch:
                         self.__sendAppendEntries()
+                else:
+
+                    if requestNode is None:
+                        if callback is not None:
+                            callback(None, FAIL_REASON.REQUEST_DENIED)
+                    else:
+                        self.__send(requestNode, {
+                            'type': 'apply_command_response',
+                            'request_id': requestID,
+                            'error': FAIL_REASON.REQUEST_DENIED,
+                        })
 
             elif self.__raftLeader is not None:
                 if requestNode is None:
@@ -666,6 +677,34 @@ class SyncObj(object):
         conn.setOnMessageReceivedCallback(functools.partial(self.__onMessageReceived, conn))
         conn.setOnDisconnectedCallback(functools.partial(self.__onDisconnected, conn))
 
+
+    def __utilityCallback(self, res, err, conn, cmd, node):
+        cmdResult = 'FAIL'
+        if err == FAIL_REASON.SUCCESS:
+            cmdResult = 'SUCCESS'
+        conn.send(cmdResult + ' ' + cmd + ' ' + node)
+
+    def __onUtilityMessage(self, conn, message):
+
+        if message[0] == 'status':
+            status = self.getStatus()
+            data = ''
+            for i in status:
+                data += i[0] + ':' + str(i[1]) + '\n'
+            conn.send(data)
+            return True
+        elif message[0] == 'add':
+            self.addNodeToCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='ADD', node=message[1]))
+            return True
+        elif message[0] == 'remove':
+            if message[1] == self.__selfNodeAddr:
+                conn.send('FAIL REMOVE ' + message[1])
+            else:
+                self.removeNodeFromCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='REMOVE', node=message[1]))
+            return True
+
+        return False
+
     def __onMessageReceived(self, conn, message):
         if self.__encryptor and not conn.sendRandKey:
             conn.sendRandKey = message
@@ -674,6 +713,11 @@ class SyncObj(object):
             return
 
         descr = conn.fileno()
+
+        if isinstance(message, list) and self.__onUtilityMessage(conn, message):
+            self.__unknownConnections.pop(descr, None)
+            return
+
         partnerNode = None
         for node in self.__nodes:
             if node.getAddress() == message:
@@ -952,6 +996,7 @@ class SyncObj(object):
                     self.__nodes.pop(i)
                     self.__otherNodesAddrs.pop(i)
                     del self.__raftNextIndex[oldNode]
+                    del self.__raftMatchIndex[oldNode]
                     return True
             return False
 

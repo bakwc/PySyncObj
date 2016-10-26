@@ -7,7 +7,7 @@ from functools import partial
 import functools
 import struct
 import logging
-from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, createJournal, HAS_CRYPTO, replicated_sync
+from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, createJournal, HAS_CRYPTO, replicated_sync, Utility
 
 logging.basicConfig(format = u'[%(asctime)s %(filename)s:%(lineno)d %(levelname)s]  %(message)s', level = logging.DEBUG)
 
@@ -114,6 +114,31 @@ def singleTickFunc(o, timeToTick, interval, stopFunc):
 		if stopFunc is not None:
 			if stopFunc():
 				break
+
+def utilityTickFunc(args, currRes, key, timeToTick):
+	u = Utility(args)
+	currTime = time.time()
+	finishTime = currTime + timeToTick
+	while time.time() < finishTime:
+		if u.getResult() is not None:
+			currRes[key] = u.getResult()
+			break
+
+def doSyncObjAdminTicks(objects, arguments, timeToTick, currRes, interval = 0.05, stopFunc=None):
+	objThreads = []
+	utilityThreads = []
+	for o in objects:
+		t1= threading.Thread(target=singleTickFunc, args=(o, timeToTick, interval, stopFunc))
+		t1.start()
+		objThreads.append(t1)
+		if arguments.get(o) is not None:
+			t2 = threading.Thread(target=utilityTickFunc, args=(arguments[o], currRes, o, timeToTick))
+			t2.start()
+			utilityThreads.append(t2)
+	for t in objThreads:
+		t.join()
+	for t in utilityThreads:
+		t.join()
 
 def doTicks(objects, timeToTick, interval = 0.05, stopFunc = None):
 	threads = []
@@ -1170,3 +1195,105 @@ def test_readOnlyNodes():
 
 	b1._destroy()
 	b2._destroy()
+
+def test_syncobjAdminStatus():
+	if not HAS_CRYPTO:
+		return
+
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]], password='123')
+	o2 = TestObj(a[1], [a[0]], password='123')
+
+	assert not o1._isReady()
+	assert not o2._isReady()
+
+	doTicks([o1, o2], 10.0, stopFunc= lambda : o1._isReady() and o2._isReady())
+
+	assert o1._isReady()
+	assert o2._isReady()
+
+	status1 = o1._getStatus()
+	status2 = o2._getStatus()
+
+	trueRes = {
+		o1 : '',
+		o2 : ''
+	}
+
+
+	for i in status1:
+		trueRes[o1] += i[0] + ':' + str(i[1]) + '\n'
+	for i in status2:
+		trueRes[o2] += i[0] + ':' + str(i[1]) + '\n'
+
+	currRes = {
+	}
+	args = {
+		o1 : ['-conn', a[0], '-pass', '123', '-status'],
+		o2 : ['-conn', a[1], '-pass', '123', '-status'],
+	}
+	doSyncObjAdminTicks([o1, o2], args, 10.0, currRes, stopFunc= lambda : currRes.get(o1) is not None and currRes.get(o2) is not None)
+
+	assert len(currRes[o1]) == len(trueRes[o1])
+	assert len(currRes[o2]) == len(trueRes[o2])
+
+	o1._destroy()
+	o2._destroy()
+
+def test_syncobjAdminAddRemove():
+
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]], dynamicMembershipChange=True)
+	o2 = TestObj(a[1], [a[0]], dynamicMembershipChange=True)
+
+	assert not o1._isReady()
+	assert not o2._isReady()
+
+	doTicks([o1, o2], 10.0, stopFunc= lambda : o1._isReady() and o2._isReady())
+
+	assert o1._isReady()
+	assert o2._isReady()
+
+	trueRes = 'SUCCESS ADD '+ a[2]
+
+	currRes = {}
+
+	args = {
+		o1 : ['-conn', a[0], '-add', a[2]],
+	}
+
+	doSyncObjAdminTicks([o1, o2], args, 10.0, currRes, stopFunc=lambda :currRes.get(o1) is not None)
+
+	assert currRes[o1] == trueRes
+
+	o3 = TestObj(a[2], [a[1], a[0]], dynamicMembershipChange=True)
+
+	doTicks([o1, o2, o3], 10.0, stopFunc= lambda : o1._isReady() and o2._isReady() and o3._isReady())
+
+	assert o1._isReady()
+	assert o2._isReady()
+	assert o3._isReady()
+
+	trueRes = 'SUCCESS REMOVE '+ a[2]
+	args[o1] = None
+	args[o2] = ['-conn', a[1], '-remove', a[2]]
+
+	doSyncObjAdminTicks([o1, o2, o3], args, 10.0, currRes, stopFunc=lambda :currRes.get(o2) is not None)
+
+	assert currRes[o2] == trueRes
+
+	o3._destroy()
+
+	doTicks([o1, o2], 10.0, stopFunc= lambda : o1._isReady() and o2._isReady())
+
+	assert o1._isReady()
+	assert o2._isReady()
+
+	o1._destroy()
+	o2._destroy()
