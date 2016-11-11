@@ -125,6 +125,8 @@ class SyncObj(object):
         self.__thread = None
         self.__mainThread = None
         self.__initialised = None
+        self.__bindedEvent = threading.Event()
+        self.__bindRetries = 0
         self.__commandsQueue = FastQueue(self.__conf.commandsQueueSize)
         if not self.__conf.appendEntriesUseBatch:
             self.__pipeNotifier = PipeNotifier(self._poller)
@@ -148,8 +150,9 @@ class SyncObj(object):
             self.__initialised = threading.Event()
             self.__thread = threading.Thread(target=SyncObj._autoTickThread, args=(weakref.proxy(self),))
             self.__thread.start()
-            while not self.__initialised.is_set():
-                pass
+            self.__initialised.wait()
+            # while not self.__initialised.is_set():
+            #     pass
         else:
             self.__initInTickThread()
 
@@ -161,6 +164,16 @@ class SyncObj(object):
             self.__destroying = True
         else:
             self._doDestroy()
+
+    def waitBinded(self):
+        """
+        Waits until initialized (binded port).
+        If success - just returns.
+        If failed to initialized after conf.maxBindRetries - raise SyncObjException.
+        """
+        self.__bindedEvent.wait()
+        if not self.__isInitialized:
+            raise SyncObjException('BindError')
 
     def _destroy(self):
         self.destroy()
@@ -189,7 +202,12 @@ class SyncObj(object):
                 self.__raftMatchIndex[nodeAddr] = 0
             self.__needLoadDumpFile = True
             self.__isInitialized = True
+            self.__bindedEvent.set()
         except:
+            self.__bindRetries += 1
+            if self.__conf.maxBindRetries and self.__bindRetries >= self.__conf.maxBindRetries:
+                self.__bindedEvent.set()
+                raise SyncObjException('BindError')
             logging.exception('failed to perform initialization')
 
     def addNodeToCluster(self, nodeName, callback = None):
@@ -311,8 +329,14 @@ class SyncObj(object):
                 self.__callErrCallback(FAIL_REASON.MISSING_LEADER, callback)
 
     def _autoTickThread(self):
-        self.__initInTickThread()
-        self.__initialised.set()
+        try:
+            self.__initInTickThread()
+        except SyncObjException as e:
+            if e.errorCode == 'BindError':
+                return
+            raise
+        finally:
+            self.__initialised.set()
         time.sleep(0.1)
         try:
             while True:

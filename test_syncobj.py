@@ -1,5 +1,6 @@
 import os
 import time
+import pytest
 import random
 import threading
 import cPickle
@@ -7,7 +8,8 @@ from functools import partial
 import functools
 import struct
 import logging
-from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, createJournal, HAS_CRYPTO, replicated_sync, Utility
+from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE,\
+	createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException
 
 logging.basicConfig(format = u'[%(asctime)s %(filename)s:%(lineno)d %(levelname)s]  %(message)s', level = logging.DEBUG)
 
@@ -20,6 +22,7 @@ class TEST_TYPE:
 	RAND_1 = 3
 	JOURNAL_1 = 4
 	AUTO_TICK_1 = 5
+	WAIT_BIND = 6
 
 class TestObj(SyncObj):
 
@@ -78,6 +81,10 @@ class TestObj(SyncObj):
 		if testType == TEST_TYPE.AUTO_TICK_1:
 			cfg.autoTick = True
 			cfg.pollerType = 'select'
+
+		if testType == TEST_TYPE.WAIT_BIND:
+			cfg.maxBindRetries = 1
+			cfg.autoTick = True
 
 		super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs, cfg)
 		self.__counter = 0
@@ -170,6 +177,9 @@ def test_syncTwoObjects():
 	assert not o2._isReady()
 
 	doTicks(objs, 10.0, stopFunc=lambda: o1._isReady() and o2._isReady())
+
+	o1.waitBinded()
+	o2.waitBinded()
 
 	o1._printStatus()
 
@@ -1297,3 +1307,21 @@ def test_syncobjAdminAddRemove():
 
 	o1._destroy()
 	o2._destroy()
+
+def test_syncobjWaitBinded():
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]], testType=TEST_TYPE.WAIT_BIND)
+	o2 = TestObj(a[1], [a[0]], testType=TEST_TYPE.WAIT_BIND)
+
+	o1.waitBinded()
+	o2.waitBinded()
+
+	o1.destroy()
+	o2.destroy()
+
+	o3 = TestObj(a[1], [a[0]], testType=TEST_TYPE.WAIT_BIND)
+	with pytest.raises(SyncObjException):
+		o3.waitBinded()
