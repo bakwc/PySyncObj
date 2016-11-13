@@ -8,7 +8,7 @@
 [coverage-image]: https://coveralls.io/repos/github/bakwc/PySyncObj/badge.svg?branch=master
 [coverage]: https://coveralls.io/github/bakwc/PySyncObj?branch=master
 
-[release-image]: https://img.shields.io/badge/release-0.2.3-blue.svg?style=flat
+[release-image]: https://img.shields.io/badge/release-0.2.4-blue.svg?style=flat
 [releases]: https://github.com/bakwc/PySyncObj/releases
 
 [license-image]: https://img.shields.io/badge/license-MIT-blue.svg?style=flat
