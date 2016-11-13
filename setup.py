@@ -1,5 +1,6 @@
 from setuptools import setup
 from pysyncobj.version import VERSION
+import sys
 
 description='A library for replicating your python class between multiple servers, based on raft protocol'
 try:
@@ -7,6 +8,11 @@ try:
     long_description = pypandoc.convert('README.md', 'rst')
 except(IOError, ImportError, RuntimeError):
     long_description = description
+
+if sys.version_info[0] == 3:
+    syncobjAdmin = 'pysyncobj.pysyncobj3.syncobj_admin:main'
+else:
+    syncobjAdmin = 'pysyncobj.syncobj_admin:main'
 
 setup(
     name='pysyncobj',
@@ -32,8 +38,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'syncobj_admin2=pysyncobj.syncobj_admin:main',
-            'syncobj_admin3=pysyncobj.pysyncobj3.syncobj_admin:main',
+            'syncobj_admin=%s' % syncobjAdmin,
         ],
     },
 )
