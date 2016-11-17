@@ -1141,6 +1141,7 @@ def replicated(func):
                 cmd = self._methodToID[func.__name__]
 
             self._applyCommand(pickle.dumps(cmd, -1), callback, _COMMAND_TYPE.REGULAR)
+    newFunc.__dict__['replicated'] = True
     return newFunc
 
 def replicated_sync(func, timeout = None):
