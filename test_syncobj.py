@@ -345,7 +345,7 @@ def test_manyActionsLogCompaction():
 	newObjs = [o1, o2]
 	doTicks(newObjs, 10, stopFunc=lambda: o3._getLeader() is None)
 
-	for i in range(0, 500):
+	for i in xrange(0, 500):
 		o1.addValue(1)
 		o2.addValue(1)
 
