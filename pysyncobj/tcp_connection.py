@@ -1,10 +1,17 @@
 import time
 import socket
 import zlib
-import cPickle
+import sys
+if sys.version_info >= (3, 0):
+    import pickle
+else:
+    try:
+        import cPickle as pickle
+    except ImportError:
+        import pickle
 import struct
 
-from poller import POLL_EVENT_TYPE
+from .poller import POLL_EVENT_TYPE
 
 
 class CONNECTION_STATE:
@@ -79,7 +86,7 @@ class TcpConnection(object):
     def send(self, message):
         if self.sendRandKey:
             message = (self.sendRandKey, message)
-        data = zlib.compress(cPickle.dumps(message, -1), 3)
+        data = zlib.compress(pickle.dumps(message, -1), 3)
         if self.encryptor:
             data = self.encryptor.encrypt(data)
         data = struct.pack('i', len(data)) + data
@@ -209,7 +216,7 @@ class TcpConnection(object):
         try:
             if self.encryptor:
                 data = self.encryptor.decrypt(data)
-            message = cPickle.loads(zlib.decompress(data))
+            message = pickle.loads(zlib.decompress(data))
             if self.recvRandKey:
                 randKey, message = message
                 assert randKey == self.recvRandKey

@@ -2,9 +2,9 @@
 
 import sys, os
 from argparse import ArgumentParser
-from encryptor import getEncryptor
-from poller import createPoller
-from tcp_connection import TcpConnection
+from .encryptor import getEncryptor
+from .poller import createPoller
+from .tcp_connection import TcpConnection
 
 
 class Utility(object):

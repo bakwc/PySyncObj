@@ -1,7 +1,7 @@
 import os
 import mmap
 import struct
-from version import VERSION
+from .version import VERSION
 
 class Journal(object):
 

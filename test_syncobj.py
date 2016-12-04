@@ -1,15 +1,24 @@
+from __future__ import print_function
 import os
 import time
 import pytest
 import random
 import threading
-import cPickle
+import sys
+if sys.version_info >= (3, 0):
+    import pickle
+    xrange = range
+else:
+    try:
+        import cPickle as pickle
+    except ImportError:
+        import pickle
 from functools import partial
 import functools
 import struct
 import logging
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE,\
-	createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException
+    createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException
 
 logging.basicConfig(format = u'[%(asctime)s %(filename)s:%(lineno)d %(levelname)s]  %(message)s', level = logging.DEBUG)
 
@@ -111,7 +120,7 @@ class TestObj(SyncObj):
 		return self.__data.get(key, None)
 
 	def dumpKeys(self):
-		print 'keys:', sorted(self.__data.keys())
+		print('keys:', sorted(self.__data.keys()))
 
 def singleTickFunc(o, timeToTick, interval, stopFunc):
 	currTime = time.time()
@@ -648,7 +657,7 @@ def test_randomTest1():
 			random.choice(objs).addValue(random.randint(0, 10))
 
 	if not (o1.getCounter() == o2.getCounter() == o3.getCounter()):
-		print time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter()
+		print(time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter())
 	st = time.time()
 	while not (o1.getCounter() == o2.getCounter() == o3.getCounter()):
 		doTicks(objs, 2.0, interval=0.05)
@@ -659,8 +668,8 @@ def test_randomTest1():
 		o1._printStatus()
 		o2._printStatus()
 		o3._printStatus()
-		print 'Logs same:', o1._SyncObj__raftLog == o2._SyncObj__raftLog == o3._SyncObj__raftLog
-		print time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter()
+		print('Logs same:', o1._SyncObj__raftLog == o2._SyncObj__raftLog == o3._SyncObj__raftLog)
+		print(time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter())
 		raise AssertionError('Values not equal')
 
 	counter = o1.getCounter()
@@ -687,8 +696,8 @@ def test_randomTest1():
 		o1._printStatus()
 		o2._printStatus()
 		o3._printStatus()
-		print 'Logs same:', o1._SyncObj__raftLog == o2._SyncObj__raftLog == o3._SyncObj__raftLog
-		print time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter(), counter
+		print('Logs same:', o1._SyncObj__raftLog == o2._SyncObj__raftLog == o3._SyncObj__raftLog)
+		print(time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter(), counter)
 		raise AssertionError('Values not equal')
 
 	removeFiles(['journal1.bin', 'journal2.bin', 'journal3.bin'])
@@ -779,8 +788,8 @@ def __checkParnerNodeExists(obj, nodeName, shouldExist = True):
 		nodesSet1.add(node.getAddress())
 
 	if nodesSet1 != nodesSet2:
-		print 'otherNodes:', nodesSet2
-		print 'nodes:', nodesSet1
+		print('otherNodes:', nodesSet2)
+		print('nodes:', nodesSet1)
 		return False
 
 	if shouldExist:
@@ -813,7 +822,7 @@ def test_doChangeClusterUT1():
 		'prevLogIdx': 1,
 		'prevLogTerm': 0,
 		'commit_index': 2,
-		'entries': [(noop, 2, 1), (noop, 3, 1), (member + cPickle.dumps(['add', 'localhost:1238']), 4, 1)]
+		'entries': [(noop, 2, 1), (noop, 3, 1), (member + pickle.dumps(['add', 'localhost:1238']), 4, 1)]
 	})
 	__checkParnerNodeExists(o1, 'localhost:1238', True)
 	__checkParnerNodeExists(o1, 'localhost:1239', False)
@@ -825,7 +834,7 @@ def test_doChangeClusterUT1():
 		'prevLogIdx': 2,
 		'prevLogTerm': 1,
 		'commit_index': 3,
-		'entries': [(noop, 3, 2), (member + cPickle.dumps(['add', 'localhost:1239']), 4, 2)]
+		'entries': [(noop, 3, 2), (member + pickle.dumps(['add', 'localhost:1239']), 4, 2)]
 	})
 	__checkParnerNodeExists(o1, 'localhost:1238', False)
 	__checkParnerNodeExists(o1, 'localhost:1239', True)
@@ -838,7 +847,7 @@ def test_doChangeClusterUT1():
 		'prevLogIdx': 4,
 		'prevLogTerm': 2,
 		'commit_index': 4,
-		'entries': [(member + cPickle.dumps(['rem', 'localhost:1235']), 5, 2)]
+		'entries': [(member + pickle.dumps(['rem', 'localhost:1235']), 5, 2)]
 	})
 
 	__checkParnerNodeExists(o1, 'localhost:1238', False)

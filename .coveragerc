@@ -1,9 +1,5 @@
 [report]
 
-omit =
-    pysyncobj/pysyncobj3/*
-    pysyncobj/py3init.py
-
 exclude_lines =
     # Have to re-enable the standard pragma
     pragma: no cover

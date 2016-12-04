@@ -1,4 +1,7 @@
-import Queue
+try:
+    import Queue
+except ImportError:
+    import queue as Queue
 from collections import deque
 import threading
 

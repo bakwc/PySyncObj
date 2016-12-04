@@ -11,6 +11,9 @@ if hasattr(ctypes, 'windll'):     # pragma: no cover
     MOVEFILE_REPLACE_EXISTING = 0x1
     MOVEFILE_WRITE_THROUGH = 0x8
 
+    if sys.version_info >= (3, 0):
+        unicode = str
+
     def atomicReplace(oldPath, newPath):
         if not isinstance(oldPath, unicode):
             oldPath = unicode(oldPath, sys.getfilesystemencoding())

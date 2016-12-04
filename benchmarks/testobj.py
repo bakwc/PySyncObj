@@ -1,3 +1,4 @@
+from __future__ import print_function
 import sys
 import time
 import random
@@ -37,7 +38,7 @@ def getRandStr(l):
 
 if __name__ == '__main__':
     if len(sys.argv) < 5:
-        print 'Usage: %s RPS requestSize selfHost:port partner1Host:port partner2Host:port ...' % sys.argv[0]
+        print('Usage: %s RPS requestSize selfHost:port partner1Host:port partner2Host:port ...' % sys.argv[0])
         sys.exit(-1)
 
     numCommands = int(sys.argv[1])
@@ -46,9 +47,7 @@ if __name__ == '__main__':
     selfAddr = sys.argv[3]
     if selfAddr == 'readonly':
         selfAddr = None
-    partners = []
-    for i in xrange(4, len(sys.argv)):
-        partners.append(sys.argv[i])
+    partners = sys.argv[4:]
 
     maxCommandsQueueSize = int(0.9 * SyncObjConf().commandsQueueSize / len(partners))
 
@@ -73,12 +72,12 @@ if __name__ == '__main__':
     time.sleep(4.0)
 
     successRate = float(_g_success) / float(_g_sent)
-    print 'SUCCESS RATE:', successRate
+    print('SUCCESS RATE:', successRate)
 
     if successRate < 0.9:
-        print 'LOST RATE:', 1.0 - float(_g_success + _g_error) / float(_g_sent)
-        print 'ERRORS STATS: %d' % len(_g_errors)
+        print('LOST RATE:', 1.0 - float(_g_success + _g_error) / float(_g_sent))
+        print('ERRORS STATS: %d' % len(_g_errors))
         for err in _g_errors:
-            print err, float(_g_errors[err]) / float(_g_error)
+            print(err, float(_g_errors[err]) / float(_g_error))
 
     sys.exit(int(successRate * 100))

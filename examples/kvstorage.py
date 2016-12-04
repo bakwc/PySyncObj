@@ -1,7 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
+from __future__ import print_function
 
 import sys
-from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 sys.path.append("../")
 from pysyncobj import SyncObj, replicated
 
@@ -27,31 +27,35 @@ _g_kvstorage = None
 
 def main():
     if len(sys.argv) < 2:
-        print 'Usage: %s selfHost:port partner1Host:port partner2Host:port ...'
+        print('Usage: %s selfHost:port partner1Host:port partner2Host:port ...')
         sys.exit(-1)
 
     selfAddr = sys.argv[1]
     if selfAddr == 'readonly':
         selfAddr = None
-    partners = []
-    for i in xrange(2, len(sys.argv)):
-        partners.append(sys.argv[i])
+    partners = sys.argv[2:]
 
     global _g_kvstorage
     _g_kvstorage = KVStorage(selfAddr, partners)
 
+    def get_input(v):
+        if sys.version_info >= (3, 0):
+            return input(v)
+        else:
+            return raw_input(v)
+
     while True:
-        cmd = raw_input(">> ").split()
+        cmd = get_input(">> ").split()
         if not cmd:
             continue
         elif cmd[0] == 'set':
             _g_kvstorage.set(cmd[1], cmd[2])
         elif cmd[0] == 'get':
-            print _g_kvstorage.get(cmd[1])
+            print(_g_kvstorage.get(cmd[1]))
         elif cmd[0] == 'pop':
-            print _g_kvstorage.pop(cmd[1])
+            print(_g_kvstorage.pop(cmd[1]))
         else:
-            print 'Wrong command'
+            print('Wrong command')
 
 if __name__ == '__main__':
     main()
