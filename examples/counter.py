@@ -1,4 +1,5 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
+from __future__ import print_function
 
 import sys
 import time
@@ -28,18 +29,15 @@ class TestObj(SyncObj):
 
 
 def onAdd(res, err, cnt):
-    print 'onAdd %d:' % cnt, res, err
+    print('onAdd %d:' % cnt, res, err)
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
-        print 'Usage: %s self_port partner1_port partner2_port ...' % sys.argv[0]
+        print('Usage: %s self_port partner1_port partner2_port ...' % sys.argv[0])
         sys.exit(-1)
 
     port = int(sys.argv[1])
-    partners = []
-    for i in xrange(2, len(sys.argv)):
-        partners.append('localhost:%d' % int(sys.argv[i]))
-
+    partners = ['localhost:%d' % int(p) for p in sys.argv[2:]]
     o = TestObj('localhost:%d' % port, partners)
     n = 0
     old_value = -1
@@ -48,7 +46,7 @@ if __name__ == '__main__':
         time.sleep(0.5)
         if o.getCounter() != old_value:
             old_value = o.getCounter()
-            print old_value
+            print(old_value)
         if o._getLeader() is None:
             continue
         # if n < 2000:
@@ -57,4 +55,4 @@ if __name__ == '__main__':
         n += 1
         # if n % 200 == 0:
         # if True:
-        #    print 'Counter value:', o.getCounter(), o._getLeader(), o._getRaftLogSize(), o._getLastCommitIndex()
+        #    print('Counter value:', o.getCounter(), o._getLeader(), o._getRaftLogSize(), o._getLastCommitIndex())

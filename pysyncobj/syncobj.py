@@ -1,26 +1,44 @@
 import time
 import random
 import os
-import cPickle
+try:
+    import Queue
+    is_py3 = False
+
+    def iteritems(v):
+        return v.iteritems()
+
+    try:
+        import cPickle as pickle
+    except ImportError:
+        import pickle
+except ImportError:  # python3
+    is_py3 = True
+    xrange = range
+
+    def iteritems(v):
+        return v.items()
+
+    import pickle
+    import queue as Queue
 import threading
-import Queue
 import weakref
 import collections
 import functools
 import struct
 import logging
-from dns_resolver import globalDnsResolver
-from poller import createPoller
-from pipe_notifier import PipeNotifier
-from serializer import Serializer, SERIALIZER_STATE
-from tcp_server import TcpServer
-from node import Node, NODE_STATUS
-from journal import createJournal
-from config import SyncObjConf, FAIL_REASON
-from encryptor import HAS_CRYPTO, getEncryptor
-from version import VERSION
-from revision import REVISION
-from fast_queue import FastQueue
+from .dns_resolver import globalDnsResolver
+from .poller import createPoller
+from .pipe_notifier import PipeNotifier
+from .serializer import Serializer, SERIALIZER_STATE
+from .tcp_server import TcpServer
+from .node import Node, NODE_STATUS
+from .journal import createJournal
+from .config import SyncObjConf, FAIL_REASON
+from .encryptor import HAS_CRYPTO, getEncryptor
+from .version import VERSION
+from .revision import REVISION
+from .fast_queue import FastQueue
 
 class _RAFT_STATE:
     FOLLOWER = 0
@@ -222,7 +240,7 @@ class SyncObj(object):
         """
         if not self.__conf.dynamicMembershipChange:
             raise Exception('dynamicMembershipChange is disabled')
-        self._applyCommand(cPickle.dumps(['add', nodeName]), callback, _COMMAND_TYPE.MEMBERSHIP)
+        self._applyCommand(pickle.dumps(['add', nodeName]), callback, _COMMAND_TYPE.MEMBERSHIP)
 
     def removeNodeFromCluster(self, nodeName, callback = None):
         """Remove single node from cluster (dynamic membership changes). Async.
@@ -236,7 +254,7 @@ class SyncObj(object):
         """
         if not self.__conf.dynamicMembershipChange:
             raise Exception('dynamicMembershipChange is disabled')
-        self._applyCommand(cPickle.dumps(['rem', nodeName]), callback, _COMMAND_TYPE.MEMBERSHIP)
+        self._applyCommand(pickle.dumps(['rem', nodeName]), callback, _COMMAND_TYPE.MEMBERSHIP)
 
     def _addNodeToCluster(self, nodeName, callback=None):
         self.addNodeToCluster(nodeName, callback)
@@ -473,10 +491,10 @@ class SyncObj(object):
         status.append(('commit_idx', self.__raftCommitIndex))
         status.append(('raft_term', self.__raftCurrentTerm))
         status.append(('next_node_idx_count', len(self.__raftNextIndex)))
-        for k, v in self.__raftNextIndex.iteritems():
+        for k, v in iteritems(self.__raftNextIndex):
             status.append(('next_node_idx_server_'+k, v))
         status.append(('match_idx_count', len(self.__raftMatchIndex)))
-        for k, v in self.__raftMatchIndex.iteritems():
+        for k, v in iteritems(self.__raftMatchIndex):
             status.append(('match_idx_server_'+k,  v))
         status.append(('leader_commit_idx', self.__leaderCommitIndex))
         status.append(('uptime', int(time.time() - self.__startTime)))
@@ -506,7 +524,7 @@ class SyncObj(object):
         # Skip no-op and membership change commands
         if commandType != _COMMAND_TYPE.REGULAR:
             return
-        command = cPickle.loads(command[1:])
+        command = pickle.loads(command[1:])
         args = []
         kwargs = {
             '_doApply': True,
@@ -576,7 +594,7 @@ class SyncObj(object):
                         return
                     elif transmission == 'finish':
                         self.__recvTransmission += message['data']
-                        newEntries = [cPickle.loads(self.__recvTransmission)]
+                        newEntries = [pickle.loads(self.__recvTransmission)]
                         self.__recvTransmission = ''
                     else:
                         raise Exception('Wrong transmission type')
@@ -885,7 +903,7 @@ class SyncObj(object):
                         self.__raftNextIndex[nodeAddr] = entries[-1][1] + 1
 
                     if len(entries) == 1 and len(entries[0][0]) >= batchSizeBytes:
-                        entry = cPickle.dumps(entries[0], -1)
+                        entry = pickle.dumps(entries[0], -1)
                         for pos in xrange(0, len(entry), batchSizeBytes):
                             currData = entry[pos:pos + batchSizeBytes]
                             if pos == 0:
@@ -1025,7 +1043,7 @@ class SyncObj(object):
         commandType = ord(command[:1])
         if commandType != _COMMAND_TYPE.MEMBERSHIP:
             return None
-        return cPickle.loads(command[1:])
+        return pickle.loads(command[1:])
 
     def __tryLogCompaction(self):
         currTime = time.time()
@@ -1067,7 +1085,7 @@ class SyncObj(object):
             return
 
         if self.__conf.serializer is None:
-            data = dict([(k, self.__dict__[k]) for k in self.__dict__.keys() if k not in self.__properies])
+            data = dict([(k, v) for k, v in iteritems(self.__dict__) if k not in self.__properies])
         else:
             data = None
         cluster = self.__otherNodesAddrs + [self.__selfNodeAddr]
@@ -1077,7 +1095,7 @@ class SyncObj(object):
         try:
             data = self.__serializer.deserialize()
             if data[0] is not None:
-                for k, v in data[0].iteritems():
+                for k, v in iteritems(data[0]):
                     self.__dict__[k] = v
 
             if clearJournal or \
@@ -1137,8 +1155,9 @@ def replicated(func):
             else:
                 cmd = self._methodToID[func.__name__]
 
-            self._applyCommand(cPickle.dumps(cmd, -1), callback, _COMMAND_TYPE.REGULAR)
-    newFunc.func_dict['replicated'] = True
+            self._applyCommand(pickle.dumps(cmd, -1), callback, _COMMAND_TYPE.REGULAR)
+    func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
+    func_dict['replicated'] = True
     return newFunc
 
 def replicated_sync(func, timeout = None):

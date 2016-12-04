@@ -1,8 +1,8 @@
 import weakref
 import time
 import os
-from tcp_connection import TcpConnection
-from dns_resolver import globalDnsResolver
+from .tcp_connection import TcpConnection
+from .dns_resolver import globalDnsResolver
 
 class NODE_STATUS:
     DISCONNECTED = 0

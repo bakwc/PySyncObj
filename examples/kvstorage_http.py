@@ -1,7 +1,11 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
+from __future__ import print_function
 
 import sys
-from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+try:
+    from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+except ImportError:
+    from http.server import BaseHTTPRequestHandler, HTTPServer
 sys.path.append("../")
 from pysyncobj import SyncObj, SyncObjConf, replicated
 
@@ -42,14 +46,14 @@ class KVRequestHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "text/plain")
             self.end_headers()
-            self.wfile.write(value)
+            self.wfile.write(value.encode('utf-8'))
         except:
             pass
 
     def do_POST(self):
         try:
             key = self.path
-            value = self.rfile.read(int(self.headers.getheader('content-length')))
+            value = self.rfile.read(int(self.headers.get('content-length'))).decode('utf-8')
             _g_kvstorage.set(key, value)
             self.send_response(201)
             self.send_header("Content-type", "text/plain")
@@ -59,16 +63,14 @@ class KVRequestHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    if len(sys.argv) < 4:
-        print 'Usage: %s http_port dump_file.bin selfHost:port partner1Host:port partner2Host:port ...'
+    if len(sys.argv) < 5:
+        print('Usage: %s http_port dump_file.bin selfHost:port partner1Host:port partner2Host:port ...' % sys.argv[0])
         sys.exit(-1)
 
     httpPort = int(sys.argv[1])
     dumpFile = sys.argv[2]
     selfAddr = sys.argv[3]
-    partners = []
-    for i in xrange(4, len(sys.argv)):
-        partners.append(sys.argv[i])
+    partners = sys.argv[4:]
 
     global _g_kvstorage
     _g_kvstorage = KVStorage(selfAddr, partners, dumpFile)

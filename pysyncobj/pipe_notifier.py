@@ -1,7 +1,7 @@
 import os
 import fcntl
 import socket
-from poller import POLL_EVENT_TYPE
+from .poller import POLL_EVENT_TYPE
 
 
 class PipeNotifier(object):
