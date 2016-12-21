@@ -1,10 +1,9 @@
 import os
-import zlib
 import gzip
 import logging
-
 import pysyncobj.pickle as pickle
 
+from io import BytesIO
 from .atomic_replace import atomicReplace
 from .config import SERIALIZER_STATE
 
@@ -66,7 +65,10 @@ class Serializer(object):
 
         # In-memory case
         if self.__fileName is None:
-            self.__inMemorySerializedData = zlib.compress(pickle.dumps(data))
+            with BytesIO() as io:
+                with gzip.GzipFile(fileobj=io, mode='wb') as g:
+                    pickle.dump(data, g)
+                self.__inMemorySerializedData = io.getvalue()
             self.__pid = -1
             return
 
@@ -99,7 +101,9 @@ class Serializer(object):
 
     def deserialize(self):
         if self.__fileName is None:
-            return pickle.loads(zlib.decompress(self.__inMemorySerializedData))
+            with BytesIO(self.__inMemorySerializedData) as io:
+                with gzip.GzipFile(fileobj=io) as g:
+                    return pickle.load(g)
 
         if self.__deserializer is not None:
             return (None,) + self.__deserializer(self.__fileName)
