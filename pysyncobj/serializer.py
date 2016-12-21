@@ -1,15 +1,10 @@
 import os
 import zlib
-import sys
-if sys.version_info >= (3, 0):
-    import pickle
-else:
-    try:
-        import cPickle as pickle
-    except ImportError:
-        import pickle
 import gzip
 import logging
+
+import pysyncobj.pickle as pickle
+
 from .atomic_replace import atomicReplace
 from .config import SERIALIZER_STATE
 
@@ -71,7 +66,7 @@ class Serializer(object):
 
         # In-memory case
         if self.__fileName is None:
-            self.__inMemorySerializedData = zlib.compress(pickle.dumps(data, -1))
+            self.__inMemorySerializedData = zlib.compress(pickle.dumps(data))
             self.__pid = -1
             return
 
@@ -89,7 +84,7 @@ class Serializer(object):
             else:
                 with open(tmpFile, 'wb') as f:
                     with gzip.GzipFile(fileobj=f) as g:
-                        pickle.dump(data, g, -1)
+                        pickle.dump(data, g)
 
             atomicReplace(tmpFile, self.__fileName)
             if self.__useFork:
