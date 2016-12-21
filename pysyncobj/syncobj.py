@@ -131,8 +131,8 @@ class SyncObj(object):
 
         self._methodToID = {}
         self._idToMethod = {}
-        methods = sorted([m for m in dir(self) if callable(getattr(self, m))])
-        for i, method in enumerate(methods):
+        methods = [m for m in dir(self) if callable(getattr(self, m)) and getattr(getattr(self, m), 'replicated', False)]
+        for i, method in enumerate(sorted(methods)):
             self._methodToID[method] = i
             self._idToMethod[i] = getattr(self, method)
 
@@ -1185,4 +1185,6 @@ def replicated_sync(func, timeout = None):
             if not local.error == 0:
                 raise SyncObjException(local.error)
             return local.result
+    func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
+    func_dict['replicated'] = True
     return newFunc
