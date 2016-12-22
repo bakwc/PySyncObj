@@ -5,14 +5,9 @@ import pytest
 import random
 import threading
 import sys
+import pysyncobj.pickle as pickle
 if sys.version_info >= (3, 0):
-    import pickle
     xrange = range
-else:
-    try:
-        import cPickle as pickle
-    except ImportError:
-        import pickle
 from functools import partial
 import functools
 import struct
@@ -1334,3 +1329,18 @@ def test_syncobjWaitBinded():
 	o3 = TestObj(a[1], [a[0]], testType=TEST_TYPE.WAIT_BIND)
 	with pytest.raises(SyncObjException):
 		o3.waitBinded()
+
+def test_unpickle():
+	data = {'foo': 'bar', 'command': b'\xfa', 'entries': [b'\xfb', b'\xfc']}
+	python2_cpickle = b'\x80\x02}q\x01(U\x03fooq\x02U\x03barq\x03U\x07commandq\x04U\x01\xfaU\x07entriesq\x05]q\x06(U\x01\xfbU\x01\xfceu.'
+	python2_pickle = b'\x80\x02}q\x00(U\x03fooq\x01U\x03barq\x02U\x07commandq\x03U\x01\xfaq\x04U\x07entriesq\x05]q\x06(U\x01\xfbq\x07U\x01\xfcq\x08eu.'
+	python3_pickle = b'\x80\x02}q\x00(X\x03\x00\x00\x00fooq\x01X\x03\x00\x00\x00barq\x02X\x07\x00\x00\x00commandq\x03c_codecs\nencode\nq\x04X\x02\x00\x00\x00\xc3\xbaq\x05X\x06\x00\x00\x00latin1q\x06\x86q\x07Rq\x08X\x07\x00\x00\x00entriesq\t]q\n(h\x04X\x02\x00\x00\x00\xc3\xbbq\x0bh\x06\x86q\x0cRq\rh\x04X\x02\x00\x00\x00\xc3\xbcq\x0eh\x06\x86q\x0fRq\x10eu.'
+
+	python2_cpickle_data = pickle.loads(python2_cpickle)
+	assert data == python2_cpickle_data, 'Failed to unpickle data pickled by python2 cPickle'
+
+	python2_pickle_data = pickle.loads(python2_pickle)
+	assert data == python2_pickle_data, 'Failed to unpickle data pickled by python2 pickle'
+
+	python3_pickle_data = pickle.loads(python3_pickle)
+	assert data == python3_pickle_data, 'Failed to unpickle data pickled by python3 pickle'

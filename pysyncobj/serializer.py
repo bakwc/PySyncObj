@@ -163,7 +163,7 @@ class Serializer(object):
                 self.__incomingTransmissionFile = bytes()
             elif self.__incomingTransmissionFile is None:
                 return False
-            self.__incomingTransmissionFile += data
+            self.__incomingTransmissionFile += pickle.to_bytes(data)
             if isLast:
                 self.__inMemorySerializedData = self.__incomingTransmissionFile
                 self.__incomingTransmissionFile = None
