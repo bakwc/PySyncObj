@@ -1,7 +1,9 @@
 import os
 import mmap
 import struct
+
 from .version import VERSION
+from .pickle import to_bytes
 
 class Journal(object):
 
@@ -151,7 +153,7 @@ class FileJournal(Journal):
 
     def add(self, command, idx, term):
         self.__journal.append((command, idx, term))
-        cmdData = struct.pack('<QQ', idx, term) + command
+        cmdData = struct.pack('<QQ', idx, term) + to_bytes(command)
         cmdLenData = struct.pack('<I', len(cmdData))
         cmdData = cmdLenData + cmdData + cmdLenData
         self.__journalFile.write(self.__currentOffset, cmdData)

@@ -1,32 +1,28 @@
 import time
 import random
 import os
-try:
-    import Queue
-    is_py3 = False
-
-    def iteritems(v):
-        return v.iteritems()
-
-    try:
-        import cPickle as pickle
-    except ImportError:
-        import pickle
-except ImportError:  # python3
-    is_py3 = True
-    xrange = range
-
-    def iteritems(v):
-        return v.items()
-
-    import pickle
-    import queue as Queue
 import threading
 import weakref
 import collections
 import functools
 import struct
 import logging
+try:
+    import Queue
+    is_py3 = False
+
+    def iteritems(v):
+        return v.iteritems()
+except ImportError:  # python3
+    import queue as Queue
+    is_py3 = True
+    xrange = range
+
+    def iteritems(v):
+        return v.items()
+
+import pysyncobj.pickle as pickle
+
 from .dns_resolver import globalDnsResolver
 from .poller import createPoller
 from .pipe_notifier import PipeNotifier
@@ -135,8 +131,8 @@ class SyncObj(object):
 
         self._methodToID = {}
         self._idToMethod = {}
-        methods = sorted([m for m in dir(self) if callable(getattr(self, m))])
-        for i, method in enumerate(methods):
+        methods = [m for m in dir(self) if callable(getattr(self, m)) and getattr(getattr(self, m), 'replicated', False)]
+        for i, method in enumerate(sorted(methods)):
             self._methodToID[method] = i
             self._idToMethod[i] = getattr(self, method)
 
@@ -903,7 +899,7 @@ class SyncObj(object):
                         self.__raftNextIndex[nodeAddr] = entries[-1][1] + 1
 
                     if len(entries) == 1 and len(entries[0][0]) >= batchSizeBytes:
-                        entry = pickle.dumps(entries[0], -1)
+                        entry = pickle.dumps(entries[0])
                         for pos in xrange(0, len(entry), batchSizeBytes):
                             currData = entry[pos:pos + batchSizeBytes]
                             if pos == 0:
@@ -1155,7 +1151,7 @@ def replicated(func):
             else:
                 cmd = self._methodToID[func.__name__]
 
-            self._applyCommand(pickle.dumps(cmd, -1), callback, _COMMAND_TYPE.REGULAR)
+            self._applyCommand(pickle.dumps(cmd), callback, _COMMAND_TYPE.REGULAR)
     func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
     func_dict['replicated'] = True
     return newFunc
@@ -1189,4 +1185,6 @@ def replicated_sync(func, timeout = None):
             if not local.error == 0:
                 raise SyncObjException(local.error)
             return local.result
+    func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
+    func_dict['replicated'] = True
     return newFunc
