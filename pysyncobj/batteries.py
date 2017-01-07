@@ -3,7 +3,7 @@ import weakref
 import time
 import socket
 import os
-from syncobj import SyncObjConsumer, replicated
+from .syncobj import SyncObjConsumer, replicated
 
 
 class ReplCounter(SyncObjConsumer):

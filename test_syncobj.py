@@ -1471,6 +1471,7 @@ def test_batteriesCommon():
 
 	assert l1.tryAcquireLock('test.lock1', sync=True) == True
 	assert l2.tryAcquireLock('test.lock1', sync=True) == False
+	assert l2.isAcquired('test.lock1') == False
 
 	l1.release('test.lock1', sync=True)
 	assert l2.tryAcquireLock('test.lock1', sync=True) == True
