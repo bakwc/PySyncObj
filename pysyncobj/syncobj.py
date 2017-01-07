@@ -48,15 +48,35 @@ class _COMMAND_TYPE:
 
 _bchr = functools.partial(struct.pack, 'B')
 
-# https://github.com/bakwc/PySyncObj
 
 class SyncObjException(Exception):
     def __init__(self, errorCode, *args, **kwargs):
         Exception.__init__(self, *args, **kwargs)
         self.errorCode = errorCode
 
+
+class SyncObjConsumer(object):
+    def __init__(self):
+        self._syncObj = None
+        self.__properies = set()
+        for key in self.__dict__:
+            self.__properies.add(key)
+
+    def _destroy(self):
+        self._syncObj = None
+
+    def _serialize(self):
+        return dict([(k, v) for k, v in iteritems(self.__dict__) if k not in self.__properies])
+
+    def _deserialize(self, data):
+        for k, v in iteritems(data):
+            self.__dict__[k] = v
+
+
+# https://github.com/bakwc/PySyncObj
+
 class SyncObj(object):
-    def __init__(self, selfNodeAddr, otherNodesAddrs, conf=None):
+    def __init__(self, selfNodeAddr, otherNodesAddrs, conf=None, consumers=None):
         """
         Main SyncObj class, you should inherit your own class from it.
 
@@ -66,6 +86,8 @@ class SyncObj(object):
         :type otherNodesAddrs: list of str
         :param conf: configuration object
         :type conf: SyncObjConf
+        :param consumers: objects to be replicated
+        :type consumers: list of SyncObjConsumer inherited objects
         """
 
         if conf is None:
@@ -81,6 +103,9 @@ class SyncObj(object):
             self.__encryptor = getEncryptor(self.__conf.password)
         else:
             self.__encryptor = None
+
+        consumers = consumers or []
+        self.__consumers = consumers
 
         self.__selfNodeAddr = selfNodeAddr
         self.__otherNodesAddrs = otherNodesAddrs
@@ -131,10 +156,23 @@ class SyncObj(object):
 
         self._methodToID = {}
         self._idToMethod = {}
+        self._idToConsumer = {}
+
         methods = [m for m in dir(self) if callable(getattr(self, m)) and getattr(getattr(self, m), 'replicated', False)]
-        for i, method in enumerate(sorted(methods)):
-            self._methodToID[method] = i
-            self._idToMethod[i] = getattr(self, method)
+        currMethodID = 0
+        for method in sorted(methods):
+            self._methodToID[method] = currMethodID
+            self._idToMethod[currMethodID] = getattr(self, method)
+            currMethodID += 1
+
+        for consumer in consumers:
+            consumerID = id(consumer)
+            consumerMethods = [m for m in dir(consumer) if callable(getattr(consumer, m)) and getattr(getattr(consumer, m), 'replicated', False)]
+            for method in sorted(consumerMethods):
+                self._methodToID[(consumerID, method)] = currMethodID
+                self._idToMethod[currMethodID] = getattr(consumer, method)
+                currMethodID += 1
+            consumer._syncObj = self
 
         self.__thread = None
         self.__mainThread = None
@@ -199,6 +237,8 @@ class SyncObj(object):
             node._destroy()
         if self.__selfNodeAddr is not None:
             self.__server.unbind()
+        for consumer in self.__consumers:
+            consumer._syncObj = None
         self.__raftLog._destroy()
 
     def __initInTickThread(self):
@@ -467,33 +507,33 @@ class SyncObj(object):
         self._poller.poll(timeToWait)
 
     def getStatus(self):
-        """Dumps different debug info about cluster to list and return it"""
+        """Dumps different debug info about cluster to dict and return it"""
 
-        status = []
-        status.append(('version', VERSION))
-        status.append(('revision', REVISION))
-        status.append(('self', self.__selfNodeAddr))
-        status.append(('state' , self.__raftState))
-        status.append(('leader',  self.__raftLeader))
-        status.append(('partner_nodes_count' , len(self.__nodes)))
+        status = {}
+        status['version'] = VERSION
+        status['revision'] = REVISION
+        status['self'] = self.__selfNodeAddr
+        status['state'] = self.__raftState
+        status['leader'] = self.__raftLeader
+        status['partner_nodes_count'] = len(self.__nodes)
         for n in self.__nodes:
-            status.append(('partner_node_status_server_'+n.getAddress(), n.getStatus()))
-        status.append(('readonly_nodes_count', len(self.__readonlyNodes)))
+            status['partner_node_status_server_'+n.getAddress()] = n.getStatus()
+        status['readonly_nodes_count'] = len(self.__readonlyNodes)
         for n in self.__readonlyNodes:
-            status.append(('readonly_node_status_server_'+n.getAddress(), n.getStatus()))
-        status.append(('unknown_connections_count', len(self.__unknownConnections)))
-        status.append(('log_len', len(self.__raftLog)))
-        status.append(('last_applied', self.__raftLastApplied))
-        status.append(('commit_idx', self.__raftCommitIndex))
-        status.append(('raft_term', self.__raftCurrentTerm))
-        status.append(('next_node_idx_count', len(self.__raftNextIndex)))
+            status['readonly_node_status_server_'+n.getAddress()] = n.getStatus()
+        status['unknown_connections_count'] = len(self.__unknownConnections)
+        status['log_len'] = len(self.__raftLog)
+        status['last_applied'] = self.__raftLastApplied
+        status['commit_idx'] = self.__raftCommitIndex
+        status['raft_term'] = self.__raftCurrentTerm
+        status['next_node_idx_count'] = len(self.__raftNextIndex)
         for k, v in iteritems(self.__raftNextIndex):
-            status.append(('next_node_idx_server_'+k, v))
-        status.append(('match_idx_count', len(self.__raftMatchIndex)))
+            status['next_node_idx_server_'+k] = v
+        status['match_idx_count'] = len(self.__raftMatchIndex)
         for k, v in iteritems(self.__raftMatchIndex):
-            status.append(('match_idx_server_'+k,  v))
-        status.append(('leader_commit_idx', self.__leaderCommitIndex))
-        status.append(('uptime', int(time.time() - self.__startTime)))
+            status['match_idx_server_'+k] = v
+        status['leader_commit_idx'] = self.__leaderCommitIndex
+        status['uptime'] = int(time.time() - self.__startTime)
         return status
 
     def _getStatus(self):
@@ -502,8 +542,8 @@ class SyncObj(object):
     def printStatus(self):
         """Dumps different debug info about cluster to default logger"""
         status = self.getStatus()
-        for i in status:
-            logging.info(i[0]+': %s', str(i[1]))
+        for k, v in status.iteritems():
+            logging.info('%s: %s' % (str(k), str(v)))
 
     def _printStatus(self):
         self.printStatus()
@@ -1081,7 +1121,12 @@ class SyncObj(object):
             return
 
         if self.__conf.serializer is None:
-            data = dict([(k, v) for k, v in iteritems(self.__dict__) if k not in self.__properies])
+            selfData = dict([(k, v) for k, v in iteritems(self.__dict__) if k not in self.__properies])
+            data = selfData
+            if self.__consumers:
+                data = [selfData]
+                for consumer in self.__consumers:
+                    data.append(consumer._serialize())
         else:
             data = None
         cluster = self.__otherNodesAddrs + [self.__selfNodeAddr]
@@ -1091,8 +1136,18 @@ class SyncObj(object):
         try:
             data = self.__serializer.deserialize()
             if data[0] is not None:
-                for k, v in iteritems(data[0]):
+                if self.__consumers:
+                    selfData = data[0][0]
+                    consumersData = data[0][1:]
+                else:
+                    selfData = data[0]
+                    consumersData = []
+
+                for k, v in iteritems(selfData):
                     self.__dict__[k] = v
+
+                for i, consumer in enumerate(self.__consumers):
+                    consumer._deserialize(consumersData[i])
 
             if clearJournal or \
                     len(self.__raftLog) < 2 or \
@@ -1143,15 +1198,24 @@ def replicated(func):
         if kwargs.pop('_doApply', False):
             return func(self, *args, **kwargs)
         else:
+            if isinstance(self, SyncObj):
+                applier = self._applyCommand
+                funcID = self._methodToID[func.__name__]
+            elif isinstance(self, SyncObjConsumer):
+                funcID = self._syncObj._methodToID[(id(self), func.__name__)]
+                applier = self._syncObj._applyCommand
+            else:
+                raise SyncObjException("Class should be inherited from SyncObj or SyncObjConsumer")
+
             callback = kwargs.pop('callback', None)
             if kwargs:
-                cmd = (self._methodToID[func.__name__], args, kwargs)
+                cmd = (funcID, args, kwargs)
             elif args and not kwargs:
-                cmd = (self._methodToID[func.__name__], args)
+                cmd = (funcID, args)
             else:
-                cmd = self._methodToID[func.__name__]
+                cmd = funcID
 
-            self._applyCommand(pickle.dumps(cmd), callback, _COMMAND_TYPE.REGULAR)
+            applier(pickle.dumps(cmd), callback, _COMMAND_TYPE.REGULAR)
     func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
     func_dict['replicated'] = True
     return newFunc

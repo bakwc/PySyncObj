@@ -7,13 +7,13 @@ import threading
 import sys
 import pysyncobj.pickle as pickle
 if sys.version_info >= (3, 0):
-    xrange = range
+	xrange = range
 from functools import partial
 import functools
 import struct
 import logging
-from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE,\
-    createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException
+from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, \
+	createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException, SyncObjConsumer
 
 logging.basicConfig(format = u'[%(asctime)s %(filename)s:%(lineno)d %(levelname)s]  %(message)s', level = logging.DEBUG)
 
@@ -38,7 +38,8 @@ class TestObj(SyncObj):
 				 password = None,
 				 dynamicMembershipChange = False,
 				 useFork = True,
-				 testBindAddr = False):
+				 testBindAddr = False,
+				 consumers = None):
 
 		cfg = SyncObjConf(autoTick=False, appendEntriesUseBatch=False)
 		cfg.appendEntriesPeriod = 0.1
@@ -90,7 +91,7 @@ class TestObj(SyncObj):
 			cfg.maxBindRetries = 1
 			cfg.autoTick = True
 
-		super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs, cfg)
+		super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs, cfg, consumers)
 		self.__counter = 0
 		self.__data = {}
 
@@ -1344,3 +1345,85 @@ def test_unpickle():
 
 	python3_pickle_data = pickle.loads(python3_pickle)
 	assert data == python3_pickle_data, 'Failed to unpickle data pickled by python3 pickle'
+
+
+class TestConsumer1(SyncObjConsumer):
+	def __init__(self):
+		super(TestConsumer1, self).__init__()
+		self.__counter = 0
+
+	@replicated
+	def add(self, value):
+		self.__counter += value
+
+	@replicated
+	def set(self, value):
+		self.__counter = value
+
+	def get(self):
+		return self.__counter
+
+class TestConsumer2(SyncObjConsumer):
+	def __init__(self):
+		super(TestConsumer2, self).__init__()
+		self.__values = {}
+
+	@replicated
+	def set(self, key, value):
+		self.__values[key] = value
+
+	def get(self, key):
+		return self.__values.get(key)
+
+def test_consumers():
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr(), getNextAddr()]
+
+	c11 = TestConsumer1()
+	c12 = TestConsumer1()
+	c13 = TestConsumer2()
+
+	c21 = TestConsumer1()
+	c22 = TestConsumer1()
+	c23 = TestConsumer2()
+
+	c31 = TestConsumer1()
+	c32 = TestConsumer1()
+	c33 = TestConsumer2()
+
+	o1 = TestObj(a[0], [a[1], a[2]], consumers=[c11, c12, c13])
+	o2 = TestObj(a[1], [a[0], a[2]], consumers=[c21, c22, c23])
+	o3 = TestObj(a[2], [a[0], a[1]], consumers=[c31, c32, c33])
+	objs = [o1, o2]
+
+	assert not o1._isReady()
+	assert not o2._isReady()
+
+	doTicks(objs, 10.0, stopFunc=lambda: o1._isReady() and o2._isReady())
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+	assert o1._isReady()
+	assert o2._isReady()
+
+	c11.set(42)
+	c11.add(10)
+	c12.add(15)
+	c13.set('testKey', 'testValue')
+	doTicks(objs, 10.0, stopFunc=lambda: c21.get() == 52 and c22.get() == 15 and c23.get('testKey') == 'testValue')
+
+	assert c21.get() == 52
+	assert c22.get() == 15
+	assert c23.get('testKey') == 'testValue'
+
+	o1.forceLogCompaction()
+	o2.forceLogCompaction()
+	doTicks(objs, 0.5)
+	objs = [o1, o2, o3]
+
+	doTicks(objs, 10.0, stopFunc=lambda: c31.get() == 52 and c32.get() == 15 and c33.get('testKey') == 'testValue')
+
+	assert c31.get() == 52
+	assert c32.get() == 15
+	assert c33.get('testKey') == 'testValue'
