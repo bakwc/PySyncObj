@@ -1186,15 +1186,35 @@ class SyncObj(object):
                 self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
                 self.__raftMatchIndex[nodeAddr] = 0
 
+
+class AsyncResult(object):
+    def __init__(self):
+        self.result = None
+        self.error = None
+        self.event = threading.Event()
+
+    def onResult(self, res, err):
+        self.result = res
+        self.error = err
+        self.event.set()
+
+
 def replicated(func):
     """Replicated decorator. Use it to mark your class members that modifies
     a class state. Function will be called asynchronously. Function accepts
-    callback parameter: callback(result, failReason), failReason - `FAIL_REASON <#pysyncobj.FAIL_REASON>`_.
+    flowing additional parameters (optional):
+        'callback': callback(result, failReason), failReason - `FAIL_REASON <#pysyncobj.FAIL_REASON>`_.
+        'sync': True - to block execution and wait for result, False - async call. If callback is passed,
+            'sync' option is ignored.
+        'timeout': if 'sync' is enabled, and no result is available for 'timeout' seconds -
+            SyncObjException will be raised.
+    These parameters are reserved and should not be used in kwargs of your replicated method.
 
     :param func: arbitrary class member
     :type func: function
     """
     def newFunc(self, *args, **kwargs):
+
         if kwargs.pop('_doApply', False):
             return func(self, *args, **kwargs)
         else:
@@ -1214,14 +1234,31 @@ def replicated(func):
                 cmd = (funcID, args)
             else:
                 cmd = funcID
+            sync = kwargs.pop('sync', False)
+            if callback is not None:
+                sync = False
 
+            if sync:
+                asyncResult = AsyncResult()
+                callback = asyncResult.onResult
+
+            timeout = kwargs.pop('timeout', None)
             applier(pickle.dumps(cmd), callback, _COMMAND_TYPE.REGULAR)
+
+            if sync:
+                res = asyncResult.event.wait(timeout)
+                if not res:
+                    raise SyncObjException('Timeout')
+                if not asyncResult.error == 0:
+                    raise SyncObjException(asyncResult.error)
+                return asyncResult.result
+
     func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
     func_dict['replicated'] = True
     return newFunc
 
 def replicated_sync(func, timeout = None):
-    """Same as replicated, but synchronous.
+    """Same as replicated, but synchronous by default.
 
     :param func: aribtrary class member
     :type func: function
@@ -1230,25 +1267,12 @@ def replicated_sync(func, timeout = None):
     """
 
     def newFunc(self, *args, **kwargs):
-        class local:
-            result = None
-            error = None
-            event = threading.Event()
-        def rep_cb(res, err):
-            local.result = res
-            local.error = err
-            local.event.set()
         if kwargs.get('_doApply', False):
             return replicated(func)(self, *args, **kwargs)
         else:
-            kwargs["callback"] = rep_cb
-            replicated(func)(self, *args, **kwargs)
-            res = local.event.wait(timeout = timeout)
-            if not res:
-                raise SyncObjException('Timeout')
-            if not local.error == 0:
-                raise SyncObjException(local.error)
-            return local.result
+            kwargs.setdefault('timeout', timeout)
+            kwargs.setdefault('sync', True)
+            return replicated(func)(self, *args, **kwargs)
     func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
     func_dict['replicated'] = True
     return newFunc
