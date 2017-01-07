@@ -1,3 +1,8 @@
+import threading
+import weakref
+import time
+import socket
+import os
 from syncobj import SyncObjConsumer, replicated
 
 
@@ -188,3 +193,93 @@ class ReplSet(SyncObjConsumer):
 
     def __contains__(self, item):
         return item in self.__data
+
+
+class _LockManagerImpl(SyncObjConsumer):
+    def __init__(self, autoUnlockTime):
+        super(_LockManagerImpl, self).__init__()
+        self.__locks = {}
+        self.__autoUnlockTime = autoUnlockTime
+
+    @replicated
+    def acquire(self, lockPath, clientID, currentTime):
+        existingLock = self.__locks.get(lockPath, None)
+        # Auto-unlock old lock
+        if existingLock is not None:
+            if currentTime - existingLock[1] > self.__autoUnlockTime:
+                existingLock = None
+        # Acquire lock if possible
+        if existingLock is None or existingLock[0] == clientID:
+            self.__locks[lockPath] = (clientID, currentTime)
+            return True
+        # Lock already acquired by someone else
+        return False
+
+    @replicated
+    def prolongate(self, clientID, currentTime):
+        for lockPath in self.__locks.keys():
+            lockClientID, lockTime = self.__locks[lockPath]
+
+            if currentTime - lockTime > self.__autoUnlockTime:
+                del self.__locks[lockPath]
+                continue
+
+            if lockClientID == clientID:
+                self.__locks[lockPath] = (clientID, currentTime)
+
+    @replicated
+    def release(self, lockPath, clientID):
+        existingLock = self.__locks.get(lockPath, None)
+        if existingLock is not None and existingLock[0] == clientID:
+            del self.__locks[lockPath]
+
+    def isAcquired(self, lockPath, clientID, currentTime):
+        existingLock = self.__locks.get(lockPath, None)
+        if existingLock is not None:
+            if existingLock[0] == clientID:
+                if currentTime - existingLock[1] < self.__autoUnlockTime:
+                    return True
+        return False
+
+
+class LockManager(object):
+
+    def __init__(self, autoUnlockTime, selfID = None):
+        self.__lockImpl = _LockManagerImpl(autoUnlockTime)
+        if selfID is None:
+            selfID = '%s:%d:%d' % (socket.gethostname(), os.getpid(), id(self))
+        self.__selfID = selfID
+        self.__autoUnlockTime = autoUnlockTime
+        self.__mainThread = threading.current_thread()
+        self.__initialised = threading.Event()
+        self.__thread = threading.Thread(target=LockManager._autoAcquireThread, args=(weakref.proxy(self),))
+        self.__thread.start()
+        while not self.__initialised.is_set():
+            pass
+
+    def _consumer(self):
+        return self.__lockImpl
+
+    def _autoAcquireThread(self):
+        self.__initialised.set()
+        try:
+            while True:
+                if not self.__mainThread.is_alive():
+                    break
+                time.sleep(float(self.__autoUnlockTime) / 4.0)
+                syncObj = self.__lockImpl._syncObj
+                if syncObj is None:
+                    continue
+                if syncObj._getLeader() is not None:
+                    self.__lockImpl.prolongate(self.__selfID, time.time())
+        except ReferenceError:
+            pass
+
+    def tryAcquireLock(self, path, callback=None, sync=False, timeout=None):
+        return self.__lockImpl.acquire(path, self.__selfID, time.time(), callback=callback, sync=sync, timeout=timeout)
+
+    def isAcquired(self, path):
+        return self.__lockImpl.isAcquired(path, self.__selfID, time.time())
+
+    def release(self, path, callback=None, sync=False, timeout=None):
+        self.__lockImpl.release(path, self.__selfID, callback=callback, sync=sync, timeout=timeout)
