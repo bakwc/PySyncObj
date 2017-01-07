@@ -1427,3 +1427,7 @@ def test_consumers():
 	assert c31.get() == 52
 	assert c32.get() == 15
 	assert c33.get('testKey') == 'testValue'
+
+	o1.destroy()
+	o2.destroy()
+	o3.destroy()
