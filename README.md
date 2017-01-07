@@ -80,6 +80,26 @@ class MyCounter(SyncObj):
 ```
 And thats all! Now you can call `incCounter` on `serverA`, and check counter value on `serverB` - they will be synchronized. You can look at [examples](https://github.com/bakwc/PySyncObj/tree/master/examples) and [test_syncobj.py](https://github.com/bakwc/PySyncObj/blob/master/test_syncobj.py) for more use-cases or read [API documentation](http://pysyncobj.readthedocs.io).
 
+## Batteries
+If you just need some distributed data structures - try built-in "batteries". Here is a few examples:
+### Counter & Dict
+```python
+from syncobj import SyncObj
+from syncobj.batteries import ReplCounter, ReplDict
+
+counter1 = ReplCounter()
+counter2 = ReplCounter()
+dict1 = ReplDict()
+syncObj = SyncObj('serverA:4321', ['serverB:4321', 'serverC:4321'], consumers=[counter1, counter2, dict1])
+
+counter1.set(42, sync=True) # set initial value to 42, 'sync' means that operation is blocking
+counter1.add(10, sync=True) # add 10 to counter value
+counter2.inc(sync=True) # increment counter value by one
+dict1.set('testKey1', 'testValue1', sync=True)
+dict1['testKey2'] = 'testValue2' # this is basically the same as previous, but asynchronous (non-blocking)
+print(counter1, counter2, dict1['testKey1'], dict1.get('testKey2'))
+```
+
 ## Performance
 ![15K rps on 3 nodes; 14K rps on 7 nodes;](http://pastexen.com/i/Ge3lnrM1OY.png "RPS vs Cluster Size")
 ![22K rps on 10 byte requests; 5K rps on 20Kb requests;](http://pastexen.com/i/0RIsrKxJsV.png "RPS vs Request Size")
