@@ -99,6 +99,17 @@ dict1.set('testKey1', 'testValue1', sync=True)
 dict1['testKey2'] = 'testValue2' # this is basically the same as previous, but asynchronous (non-blocking)
 print(counter1, counter2, dict1['testKey1'], dict1.get('testKey2'))
 ```
+### Lock
+```python
+from syncobj import SyncObj
+from syncobj.batteries import ReplLockManager
+
+lockManager = ReplLockManager(timeout=75) # Lock will be released if connection dropped for more than 75 seconds
+syncObj = SyncObj('serverA:4321', ['serverB:4321', 'serverC:4321'], consumers=[lockManager])
+if lockManager.tryAcquire('testLockName', sync=True):
+  # do some actions
+  lockManager.release('testLockName')
+```
 
 ## Performance
 ![15K rps on 3 nodes; 14K rps on 7 nodes;](http://pastexen.com/i/Ge3lnrM1OY.png "RPS vs Cluster Size")
