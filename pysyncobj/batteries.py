@@ -195,9 +195,9 @@ class ReplSet(SyncObjConsumer):
         return item in self.__data
 
 
-class _LockManagerImpl(SyncObjConsumer):
+class _ReplLockManagerImpl(SyncObjConsumer):
     def __init__(self, autoUnlockTime):
-        super(_LockManagerImpl, self).__init__()
+        super(_ReplLockManagerImpl, self).__init__()
         self.__locks = {}
         self.__autoUnlockTime = autoUnlockTime
 
@@ -242,17 +242,19 @@ class _LockManagerImpl(SyncObjConsumer):
         return False
 
 
-class LockManager(object):
+class ReplLockManager(object):
 
     def __init__(self, autoUnlockTime, selfID = None):
-        self.__lockImpl = _LockManagerImpl(autoUnlockTime)
+        self.__lockImpl = _ReplLockManagerImpl(autoUnlockTime)
         if selfID is None:
             selfID = '%s:%d:%d' % (socket.gethostname(), os.getpid(), id(self))
         self.__selfID = selfID
         self.__autoUnlockTime = autoUnlockTime
         self.__mainThread = threading.current_thread()
         self.__initialised = threading.Event()
-        self.__thread = threading.Thread(target=LockManager._autoAcquireThread, args=(weakref.proxy(self),))
+        self.__destroying = False
+        self.__lastProlongateTime = 0
+        self.__thread = threading.Thread(target=ReplLockManager._autoAcquireThread, args=(weakref.proxy(self),))
         self.__thread.start()
         while not self.__initialised.is_set():
             pass
@@ -260,17 +262,25 @@ class LockManager(object):
     def _consumer(self):
         return self.__lockImpl
 
+    def destroy(self):
+        self.__destroying = True
+
     def _autoAcquireThread(self):
         self.__initialised.set()
         try:
             while True:
                 if not self.__mainThread.is_alive():
                     break
-                time.sleep(float(self.__autoUnlockTime) / 4.0)
+                if self.__destroying:
+                    break
+                time.sleep(0.1)
+                if time.time() - self.__lastProlongateTime < float(self.__autoUnlockTime) / 4.0:
+                    continue
                 syncObj = self.__lockImpl._syncObj
                 if syncObj is None:
                     continue
                 if syncObj._getLeader() is not None:
+                    self.__lastProlongateTime = time.time()
                     self.__lockImpl.prolongate(self.__selfID, time.time())
         except ReferenceError:
             pass

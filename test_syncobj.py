@@ -14,6 +14,7 @@ import struct
 import logging
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, \
 	createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException, SyncObjConsumer
+from pysyncobj.batteries import ReplDict, ReplLockManager
 
 logging.basicConfig(format = u'[%(asctime)s %(filename)s:%(lineno)d %(levelname)s]  %(message)s', level = logging.DEBUG)
 
@@ -160,6 +161,14 @@ def doTicks(objects, timeToTick, interval = 0.05, stopFunc = None):
 		threads.append(t)
 	for t in threads:
 		t.join()
+
+def doAutoTicks(interval = 0.05, stopFunc = None):
+	deadline = time.time() + interval
+	while not stopFunc():
+		time.sleep(0.02)
+		t2 = time.time()
+		if t2 >= deadline:
+			break
 
 _g_nextAddress = 6000 + 60 * (int(time.time()) % 600)
 
@@ -1431,3 +1440,48 @@ def test_consumers():
 	o1.destroy()
 	o2.destroy()
 	o3.destroy()
+
+
+def test_batteriesCommon():
+
+	d1 = ReplDict()
+	l1 = ReplLockManager(autoUnlockTime=30.0)
+
+	d2 = ReplDict()
+	l2 = ReplLockManager(autoUnlockTime=30.0)
+
+	a = [getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.AUTO_TICK_1, consumers=[d1, l1])
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.AUTO_TICK_1, consumers=[d2, l2])
+
+	doAutoTicks(10.0, stopFunc=lambda: o1.isReady() and o2.isReady())
+
+	assert o1.isReady() and o2.isReady()
+
+	d1.set('testKey', 'testValue', sync=True)
+	doAutoTicks(3.0, stopFunc=lambda: d2.get('testKey') == 'testValue')
+
+	assert d2['testKey'] == 'testValue'
+
+	d2.pop('testKey', sync=True)
+	doAutoTicks(3.0, stopFunc=lambda: d1.get('testKey') == None)
+
+	assert d1.get('testKey') == None
+
+	assert l1.tryAcquireLock('test.lock1', sync=True) == True
+	assert l2.tryAcquireLock('test.lock1', sync=True) == False
+
+	l1.release('test.lock1', sync=True)
+	assert l2.tryAcquireLock('test.lock1', sync=True) == True
+
+	assert d1.setdefault('keyA', 'valueA', sync=True) == 'valueA'
+	assert d2.setdefault('keyA', 'valueB', sync=True) == 'valueA'
+	d2.pop('keyA', sync=True)
+	assert d2.setdefault('keyA', 'valueB', sync=True) == 'valueB'
+
+	o1.destroy()
+	o2.destroy()
+
+	l1.destroy()
+	l2.destroy()
