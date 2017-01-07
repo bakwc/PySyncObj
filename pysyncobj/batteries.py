@@ -77,6 +77,9 @@ class ReplList(SyncObjConsumer):
     def get(self, position):
         return self.__data[position]
 
+    def __getitem__(self, position):
+        return self.__data[position]
+
     def __len__(self):
         return len(self.__data)
 
@@ -114,6 +117,10 @@ class ReplDict(SyncObjConsumer):
     def pop(self, key, default=None):
         return self.__data.pop(key, default)
 
+    @replicated
+    def clear(self):
+        self.__data.clear()
+
     def __getitem__(self, item):
         return self.__data[item]
 
@@ -138,3 +145,46 @@ class ReplDict(SyncObjConsumer):
     def rawData(self):
         return self.__data
 
+
+class ReplSet(SyncObjConsumer):
+    def __init__(self):
+        super(ReplSet, self).__init__()
+        self.__data = set()
+
+    @replicated
+    def reset(self, newData):
+        assert isinstance(newData, set)
+        self.__data = newData
+
+    @replicated
+    def add(self, item):
+        self.__data.add(item)
+
+    @replicated
+    def remove(self, item):
+        self.__data.remove(item)
+
+    @replicated
+    def discard(self, item):
+        self.__data.discard(item)
+
+    @replicated
+    def pop(self):
+        self.__data.pop()
+
+    @replicated
+    def clear(self):
+        self.__data.clear()
+
+    @replicated
+    def update(self, other):
+        self.__data.update(other)
+
+    def rawData(self):
+        return self.__data
+
+    def __len__(self):
+        return len(self.__data)
+
+    def __contains__(self, item):
+        return item in self.__data
