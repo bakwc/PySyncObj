@@ -238,7 +238,7 @@ class SyncObj(object):
         if self.__selfNodeAddr is not None:
             self.__server.unbind()
         for consumer in self.__consumers:
-            consumer._syncObj = None
+            consumer._destroy()
         self.__raftLog._destroy()
 
     def __initInTickThread(self):
