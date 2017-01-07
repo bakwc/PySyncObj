@@ -285,7 +285,7 @@ class ReplLockManager(object):
         except ReferenceError:
             pass
 
-    def tryAcquireLock(self, path, callback=None, sync=False, timeout=None):
+    def tryAcquire(self, path, callback=None, sync=False, timeout=None):
         return self.__lockImpl.acquire(path, self.__selfID, time.time(), callback=callback, sync=sync, timeout=timeout)
 
     def isAcquired(self, path):

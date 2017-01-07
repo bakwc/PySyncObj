@@ -1469,12 +1469,12 @@ def test_batteriesCommon():
 
 	assert d1.get('testKey') == None
 
-	assert l1.tryAcquireLock('test.lock1', sync=True) == True
-	assert l2.tryAcquireLock('test.lock1', sync=True) == False
+	assert l1.tryAcquire('test.lock1', sync=True) == True
+	assert l2.tryAcquire('test.lock1', sync=True) == False
 	assert l2.isAcquired('test.lock1') == False
 
 	l1.release('test.lock1', sync=True)
-	assert l2.tryAcquireLock('test.lock1', sync=True) == True
+	assert l2.tryAcquire('test.lock1', sync=True) == True
 
 	assert d1.setdefault('keyA', 'valueA', sync=True) == 'valueA'
 	assert d2.setdefault('keyA', 'valueB', sync=True) == 'valueA'
