@@ -82,7 +82,7 @@ class MyCounter(SyncObj):
 And thats all! Now you can call `incCounter` on `serverA`, and check counter value on `serverB` - they will be synchronized.
 
 ## Batteries
-If you just need some distributed data structures - try built-in "batteries". Here is a few examples:
+If you just need some distributed data structures - try built-in "batteries". Few examples:
 ### Counter & Dict
 ```python
 from syncobj import SyncObj
