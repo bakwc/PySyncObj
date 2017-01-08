@@ -31,7 +31,12 @@ class Utility(object):
             self.__connection.sendRandKey = message
             self.__connection.send(self.__data)
             return
-        self.__result = message
+        if isinstance(message, str):
+            self.__result = message
+        elif isinstance(message, dict):
+            self.__result = '\n'.join('%s: %s' % (k, v) for k, v in message.items())
+        else:
+            self.__result = str(message)
         self.__connection.disconnect()
 
     def __onDisconnected(self):

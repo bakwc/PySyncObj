@@ -771,11 +771,7 @@ class SyncObj(object):
     def __onUtilityMessage(self, conn, message):
 
         if message[0] == 'status':
-            status = self.getStatus()
-            data = ''
-            for i in status:
-                data += i[0] + ':' + str(i[1]) + '\n'
-            conn.send(data)
+            conn.send(self.getStatus())
             return True
         elif message[0] == 'add':
             self.addNodeToCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='ADD', node=message[1]))
