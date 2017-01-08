@@ -111,7 +111,7 @@ if lockManager.tryAcquire('testLockName', sync=True):
   # do some actions
   lockManager.release('testLockName')
 ```
-You can look at [batteries implementation](https://github.com/bakwc/PySyncObj/blob/batteries/pysyncobj/batteries.py), [examples](https://github.com/bakwc/PySyncObj/tree/master/examples) and [unit-tests](https://github.com/bakwc/PySyncObj/blob/master/test_syncobj.py) for more use-cases. Also there is an [API documentation](http://pysyncobj.readthedocs.io). Feel free to create proposals and/or pull requests with new batteries, features, etc. Join our [gitter chat](https://gitter.im/bakwc/PySyncObj) if you have any questions.
+You can look at [batteries implementation](https://github.com/bakwc/PySyncObj/blob/master/pysyncobj/batteries.py), [examples](https://github.com/bakwc/PySyncObj/tree/master/examples) and [unit-tests](https://github.com/bakwc/PySyncObj/blob/master/test_syncobj.py) for more use-cases. Also there is an [API documentation](http://pysyncobj.readthedocs.io). Feel free to create proposals and/or pull requests with new batteries, features, etc. Join our [gitter chat](https://gitter.im/bakwc/PySyncObj) if you have any questions.
 
 
 ## Performance
