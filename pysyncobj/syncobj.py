@@ -769,18 +769,21 @@ class SyncObj(object):
         conn.send(cmdResult + ' ' + cmd + ' ' + node)
 
     def __onUtilityMessage(self, conn, message):
-
-        if message[0] == 'status':
-            conn.send(self.getStatus())
-            return True
-        elif message[0] == 'add':
-            self.addNodeToCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='ADD', node=message[1]))
-            return True
-        elif message[0] == 'remove':
-            if message[1] == self.__selfNodeAddr:
-                conn.send('FAIL REMOVE ' + message[1])
-            else:
-                self.removeNodeFromCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='REMOVE', node=message[1]))
+        try:
+            if message[0] == 'status':
+                conn.send(self.getStatus())
+                return True
+            elif message[0] == 'add':
+                self.addNodeToCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='ADD', node=message[1]))
+                return True
+            elif message[0] == 'remove':
+                if message[1] == self.__selfNodeAddr:
+                    conn.send('FAIL REMOVE ' + message[1])
+                else:
+                    self.removeNodeFromCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='REMOVE', node=message[1]))
+                return True
+        except Exception as e:
+            conn.send(str(e))
             return True
 
         return False
