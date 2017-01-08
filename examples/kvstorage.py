@@ -3,12 +3,13 @@ from __future__ import print_function
 
 import sys
 sys.path.append("../")
-from pysyncobj import SyncObj, replicated
+from pysyncobj import SyncObj, SyncObjConf, replicated
 
 
 class KVStorage(SyncObj):
     def __init__(self, selfAddress, partnerAddrs):
-        super(KVStorage, self).__init__(selfAddress, partnerAddrs)
+        cfg = SyncObjConf(dynamicMembershipChange = True)
+        super(KVStorage, self).__init__(selfAddress, partnerAddrs, cfg)
         self.__data = {}
 
     @replicated

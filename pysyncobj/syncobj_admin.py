@@ -15,7 +15,11 @@ class Utility(object):
 
         if self.__getData(args):
             self.__poller = createPoller('auto')
-            self.__connection = TcpConnection(self.__poller, onDisconnected=self.__onDisconnected, onMessageReceived=self.__onMessageReceived, onConnected=self.__onConnected)
+            self.__connection = TcpConnection(self.__poller,
+                                              onDisconnected=self.__onDisconnected,
+                                              onMessageReceived=self.__onMessageReceived,
+                                              onConnected=self.__onConnected,
+                                              timeout=900.0)
             if self.__password is not None:
                 self.__connection.encryptor = getEncryptor(self.__password)
             self.__isConnected = self.__connection.connect(self.__host, self.__port)
@@ -34,13 +38,15 @@ class Utility(object):
         if isinstance(message, str):
             self.__result = message
         elif isinstance(message, dict):
-            self.__result = '\n'.join('%s: %s' % (k, v) for k, v in message.items())
+            self.__result = '\n'.join('%s: %s' % (k, v) for k, v in sorted(message.items()))
         else:
             self.__result = str(message)
         self.__connection.disconnect()
 
     def __onDisconnected(self):
         self.__isConnected = False
+        if self.__result is None:
+            self.__result = 'connection lost'
 
     def __onConnected(self):
 

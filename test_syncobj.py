@@ -1246,8 +1246,8 @@ def test_syncobjAdminStatus():
 	assert 'log_len' in status2
 
 	trueRes = {
-		o1 : '\n'.join('%s: %s' % (k, v) for k, v in status1.items()),
-		o2 : '\n'.join('%s: %s' % (k, v) for k, v in status2.items()),
+		o1 : '\n'.join('%s: %s' % (k, v) for k, v in sorted(status1.items())),
+		o2 : '\n'.join('%s: %s' % (k, v) for k, v in sorted(status2.items())),
 	}
 
 	currRes = {
