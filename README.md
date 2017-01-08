@@ -24,7 +24,7 @@ PySyncObj is a python library for building fault-tolerant distributed systems. I
 
 - It use [raft protocol](http://raft.github.io/) for leader election and log replication.
 - It supports log compaction. It use fork for copy-on-write while serializing data on disk.
-- It supports [dynamic membership changes ](https://github.com/bakwc/PySyncObj/wiki/Dynamic-membership-change) (cluster reconfiguration).
+- It supports dynamic membership changes cluster reconfiguration. You can do it with [syncobj_admin](https://github.com/bakwc/PySyncObj/wiki/syncobj_admin) utility or [directly from your code](https://github.com/bakwc/PySyncObj/wiki/Dynamic-membership-change).
 - It supports in-memory and on-disk serialization. You can use in-memory mode for small data and on-disk for big one.
 - It has encryption - you can set password and use it in external network.
 - It supports python2 and python3 on linux, macos and windows. No dependencies required (only optional one, eg. cryptography).
