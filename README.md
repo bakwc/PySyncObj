@@ -85,8 +85,8 @@ And thats all! Now you can call `incCounter` on `serverA`, and check counter val
 If you just need some distributed data structures - try built-in "batteries". Few examples:
 ### Counter & Dict
 ```python
-from syncobj import SyncObj
-from syncobj.batteries import ReplCounter, ReplDict
+from pysyncobj import SyncObj
+from pysyncobj.batteries import ReplCounter, ReplDict
 
 counter1 = ReplCounter()
 counter2 = ReplCounter()
@@ -102,8 +102,8 @@ print(counter1, counter2, dict1['testKey1'], dict1.get('testKey2'))
 ```
 ### Lock
 ```python
-from syncobj import SyncObj
-from syncobj.batteries import ReplLockManager
+from pysyncobj import SyncObj
+from pysyncobj.batteries import ReplLockManager
 
 lockManager = ReplLockManager(timeout=75) # Lock will be released if connection dropped for more than 75 seconds
 syncObj = SyncObj('serverA:4321', ['serverB:4321', 'serverC:4321'], consumers=[lockManager])
