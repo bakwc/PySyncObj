@@ -175,7 +175,7 @@ class ReplSet(SyncObjConsumer):
 
     @replicated
     def pop(self):
-        self.__data.pop()
+        return self.__data.pop()
 
     @replicated
     def clear(self):

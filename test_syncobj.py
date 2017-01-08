@@ -14,7 +14,7 @@ import struct
 import logging
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, \
 	createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException, SyncObjConsumer
-from pysyncobj.batteries import ReplCounter, ReplList, ReplDict, ReplLockManager
+from pysyncobj.batteries import ReplCounter, ReplList, ReplDict, ReplSet, ReplLockManager
 
 logging.basicConfig(format = u'[%(asctime)s %(filename)s:%(lineno)d %(levelname)s]  %(message)s', level = logging.DEBUG)
 
@@ -1586,3 +1586,30 @@ def test_ReplDict():
 
 	d.clear(_doApply=True)
 	assert len(d) == 0
+
+def test_ReplSet():
+	s = ReplSet()
+	s.reset({1, 4}, _doApply=True)
+	assert s.rawData() == {1, 4}
+
+	s.add(10, _doApply=True)
+	assert s.rawData() == {1, 4, 10}
+
+	s.remove(1, _doApply=True)
+	s.discard(10, _doApply=True)
+	assert s.rawData() == {4}
+
+	assert s.pop(_doApply=True) == 4
+
+	s.add(48, _doApply=True)
+	s.update({9, 2, 3}, _doApply=True)
+
+	assert s.rawData() == {9, 2, 3, 48}
+
+	assert len(s) == 4
+	assert 9 in s
+	assert 42 not in s
+
+	s.clear(_doApply=True)
+	assert len(s) == 0
+	assert 9 not in s
