@@ -1242,16 +1242,13 @@ def test_syncobjAdminStatus():
 	status1 = o1._getStatus()
 	status2 = o2._getStatus()
 
+	assert 'version' in status1
+	assert 'log_len' in status2
+
 	trueRes = {
-		o1 : '',
-		o2 : ''
+		o1 : '\n'.join('%s: %s' % (k, v) for k, v in status1.items()),
+		o2 : '\n'.join('%s: %s' % (k, v) for k, v in status2.items()),
 	}
-
-
-	for i in status1:
-		trueRes[o1] += i[0] + ':' + str(i[1]) + '\n'
-	for i in status2:
-		trueRes[o2] += i[0] + ':' + str(i[1]) + '\n'
 
 	currRes = {
 	}
