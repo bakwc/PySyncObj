@@ -105,6 +105,15 @@ class SyncObj(object):
             self.__encryptor = None
 
         consumers = consumers or []
+        newConsumers = []
+        for c in consumers:
+            if not isinstance(c, SyncObjConsumer) and getattr(c, '_consumer', None):
+                c = c._consumer()
+            if not isinstance(c, SyncObjConsumer):
+                raise SyncObjException('Consumers must be inherited from SyncObjConsumer')
+            newConsumers.append(c)
+        consumers = newConsumers
+
         self.__consumers = consumers
 
         self.__selfNodeAddr = selfNodeAddr

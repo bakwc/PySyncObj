@@ -34,6 +34,7 @@ PySyncObj is a python library for building fault-tolerant distributed systems. I
 ## Content
  * [Install](#install)
  * [Basic Usage](#usage)
+ * ["Batteries"](#batteries)
  * [API Documentation](http://pysyncobj.readthedocs.io)
  * [Performance](#performance)
 
@@ -78,7 +79,40 @@ class MyCounter(SyncObj):
 	def getCounter(self):
 		return self.__counter
 ```
-And thats all! Now you can call `incCounter` on `serverA`, and check counter value on `serverB` - they will be synchronized. You can look at [examples](https://github.com/bakwc/PySyncObj/tree/master/examples) and [test_syncobj.py](https://github.com/bakwc/PySyncObj/blob/master/test_syncobj.py) for more use-cases or read [API documentation](http://pysyncobj.readthedocs.io).
+And thats all! Now you can call `incCounter` on `serverA`, and check counter value on `serverB` - they will be synchronized.
+
+## Batteries
+If you just need some distributed data structures - try built-in "batteries". Here is a few examples:
+### Counter & Dict
+```python
+from syncobj import SyncObj
+from syncobj.batteries import ReplCounter, ReplDict
+
+counter1 = ReplCounter()
+counter2 = ReplCounter()
+dict1 = ReplDict()
+syncObj = SyncObj('serverA:4321', ['serverB:4321', 'serverC:4321'], consumers=[counter1, counter2, dict1])
+
+counter1.set(42, sync=True) # set initial value to 42, 'sync' means that operation is blocking
+counter1.add(10, sync=True) # add 10 to counter value
+counter2.inc(sync=True) # increment counter value by one
+dict1.set('testKey1', 'testValue1', sync=True)
+dict1['testKey2'] = 'testValue2' # this is basically the same as previous, but asynchronous (non-blocking)
+print(counter1, counter2, dict1['testKey1'], dict1.get('testKey2'))
+```
+### Lock
+```python
+from syncobj import SyncObj
+from syncobj.batteries import ReplLockManager
+
+lockManager = ReplLockManager(timeout=75) # Lock will be released if connection dropped for more than 75 seconds
+syncObj = SyncObj('serverA:4321', ['serverB:4321', 'serverC:4321'], consumers=[lockManager])
+if lockManager.tryAcquire('testLockName', sync=True):
+  # do some actions
+  lockManager.release('testLockName')
+```
+You can look at [batteries implementation](https://github.com/bakwc/PySyncObj/blob/batteries/pysyncobj/batteries.py), [examples](https://github.com/bakwc/PySyncObj/tree/master/examples) and [unit-tests](https://github.com/bakwc/PySyncObj/blob/master/test_syncobj.py) for more use-cases. Also there is an [API documentation](http://pysyncobj.readthedocs.io). Feel free to create proposals and/or pull requests with new batteries, features, etc. Join our [gitter chat](https://gitter.im/bakwc/PySyncObj) if you have any questions.
+
 
 ## Performance
 ![15K rps on 3 nodes; 14K rps on 7 nodes;](http://pastexen.com/i/Ge3lnrM1OY.png "RPS vs Cluster Size")
