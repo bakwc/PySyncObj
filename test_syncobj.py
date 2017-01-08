@@ -14,7 +14,7 @@ import struct
 import logging
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, \
 	createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException, SyncObjConsumer
-from pysyncobj.batteries import ReplDict, ReplLockManager
+from pysyncobj.batteries import ReplCounter, ReplList, ReplDict, ReplLockManager
 
 logging.basicConfig(format = u'[%(asctime)s %(filename)s:%(lineno)d %(levelname)s]  %(message)s', level = logging.DEBUG)
 
@@ -1486,3 +1486,103 @@ def test_batteriesCommon():
 
 	l1.destroy()
 	l2.destroy()
+
+def test_ReplCounter():
+	c = ReplCounter()
+	c.set(42, _doApply=True)
+	assert c.get() == 42
+	c.add(10, _doApply=True)
+	assert c.get() == 52
+	c.sub(20, _doApply=True)
+	assert c.get() == 32
+	c.inc(_doApply=True)
+	assert c.get() == 33
+
+def test_ReplList():
+	l = ReplList()
+	l.reset([1, 2, 3], _doApply=True)
+	assert l.rawData() == [1, 2, 3]
+	l.set(1, 10, _doApply=True)
+	assert l.rawData() == [1, 10, 3]
+	l.append(42, _doApply=True)
+	assert l.rawData() == [1, 10, 3, 42]
+	l.extend([5, 6], _doApply=True)
+	assert l.rawData() == [1, 10, 3, 42, 5, 6]
+	l.insert(2, 66, _doApply=True)
+	assert l.rawData() == [1, 10, 66, 3, 42, 5, 6]
+	l.remove(66, _doApply=True)
+	assert l.rawData() == [1, 10, 3, 42, 5, 6]
+	l.pop(1, _doApply=True)
+	assert l.rawData() == [1, 3, 42, 5, 6]
+	l.sort(reverse=True, _doApply=True)
+	assert l.rawData() == [42, 6, 5, 3, 1]
+	assert l.index(6) == 1
+	assert l.count(42) == 1
+	assert l.get(2) == 5
+	assert l[4] == 1
+	assert len(l) == 5
+
+def test_ReplDict():
+	d = ReplDict()
+
+	d.reset({
+		1: 1,
+		2: 22,
+	}, _doApply=True)
+	assert d.rawData() == {
+		1: 1,
+		2: 22,
+	}
+
+	d.__setitem__(1, 10, _doApply=True)
+	assert d.rawData() == {
+		1: 10,
+		2: 22,
+	}
+
+	d.set(1, 20, _doApply=True)
+	assert d.rawData() == {
+		1: 20,
+		2: 22,
+	}
+
+	assert d.setdefault(1, 50, _doApply=True) == 20
+	assert d.setdefault(3, 50, _doApply=True) == 50
+
+	d.update({
+		5: 5,
+		6: 7,
+	}, _doApply=True)
+
+	assert d.rawData() == {
+		1: 20,
+		2: 22,
+		3: 50,
+		5: 5,
+		6: 7,
+	}
+
+	assert d.pop(3, _doApply=True) == 50
+	assert d.pop(6, _doApply=True) == 7
+	assert d.pop(6, _doApply=True) == None
+	assert d.pop(6, 0, _doApply=True) == 0
+
+	assert d.rawData() == {
+		1: 20,
+		2: 22,
+		5: 5,
+	}
+
+	assert d[1] == 20
+	assert d.get(2) == 22
+	assert d.get(22) == None
+	assert d.get(22, 10) == 10
+	assert len(d) == 3
+	assert 2 in d
+	assert 22 not in d
+	assert sorted(d.keys()) == [1, 2, 5]
+	assert sorted(d.values()) == [5, 20, 22]
+	assert d.items() == d.rawData().items()
+
+	d.clear(_doApply=True)
+	assert len(d) == 0

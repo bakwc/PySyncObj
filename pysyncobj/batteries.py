@@ -73,8 +73,8 @@ class ReplList(SyncObjConsumer):
     def sort(self, reverse=False):
         self.__data.sort(reverse=reverse)
 
-    def index(self, element, start=None, stop=None):
-        return self.__data.index(element, start, stop)
+    def index(self, element):
+        return self.__data.index(element)
 
     def count(self, element):
         return self.__data.count(element)
