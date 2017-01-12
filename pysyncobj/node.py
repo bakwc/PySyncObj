@@ -25,8 +25,8 @@ class Node(object):
         self.__conn = None
 
         if self.__shouldConnect:
-            self.__ip = globalDnsResolver().resolve(nodeAddr.split(':')[0])
-            self.__port = int(nodeAddr.split(':')[1])
+            self.__ip = globalDnsResolver().resolve(nodeAddr.rsplit(':', 1)[0])
+            self.__port = int(nodeAddr.rsplit(':', 1)[1])
             self.__conn = TcpConnection(poller=syncObj._poller,
                                         onConnected=self.__onConnected,
                                         onMessageReceived=self.__onMessageReceived,

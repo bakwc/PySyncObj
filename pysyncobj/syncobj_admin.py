@@ -66,7 +66,7 @@ class Utility(object):
         if not self.__checkCorrectAdress(data.connection):
             self.__result = 'invalid adress to connect'
             return False
-        self.__host, self.__port = data.connection.split(':')
+        self.__host, self.__port = data.connection.rsplit(':', 1)
         self.__port = int(self.__port)
 
         self.__password = data.password
@@ -93,7 +93,7 @@ class Utility(object):
     def __checkCorrectAdress(self, adress):
 
         try:
-            host, port = adress.split(':')
+            host, port = adress.rsplit(':', 1)
             port = int(port)
             assert (port > 0 and port < 65536)
             return True
