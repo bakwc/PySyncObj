@@ -157,7 +157,7 @@ class SyncObj(object):
 
         if selfNodeAddr is not None:
             bindAddr = self.__conf.bindAddress or selfNodeAddr
-            host, port = bindAddr.split(':')
+            host, port = bindAddr.rsplit(':', 1)
             self.__server = TcpServer(self._poller, host, port, onNewConnection=self.__onNewConnection,
                                       sendBufferSize=self.__conf.sendBufferSize,
                                       recvBufferSize=self.__conf.recvBufferSize,
