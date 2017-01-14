@@ -28,7 +28,8 @@ class DnsCachingResolver(object):
 
     def __doResolve(self, hostname):
         try:
-            ips = socket.gethostbyname_ex(hostname)[2]
+            addrs = socket.getaddrinfo(hostname, None)
+            ips = list(set([addr[4][0] for addr in addrs]))
         except socket.gaierror:
             logging.warning('failed to resolve host %s', hostname)
             ips = []
