@@ -13,6 +13,18 @@ class CONNECTION_STATE:
     CONNECTING = 1
     CONNECTED = 2
 
+def _getAddrType(addr):
+    try:
+        socket.inet_aton(addr)
+        return socket.AF_INET
+    except socket.error:
+        pass
+    try:
+        socket.inet_pton(socket.AF_INET6, addr)
+        return socket.AF_INET6
+    except socket.error:
+        pass
+    raise Exception('unknown address type')
 
 class TcpConnection(object):
 
@@ -56,7 +68,7 @@ class TcpConnection(object):
     def connect(self, host, port):
         self.__state = CONNECTION_STATE.DISCONNECTED
         self.__fileno = None
-        self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.__socket = socket.socket(_getAddrType(host), socket.SOCK_STREAM)
         self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self.__sendBufferSize)
         self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.__recvBufferSize)
         self.__socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)

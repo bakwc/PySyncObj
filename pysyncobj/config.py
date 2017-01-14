@@ -64,6 +64,12 @@ class SyncObjConf(object):
         #: Eg. with routers, nat, port forwarding, etc.
         self.bindAddress = kwargs.get('bindAddress', None)
 
+        #: Preferred address type. Default - ipv4.
+        #: None - no preferences, select random available.
+        #: ipv4 - prefer ipv4 address type, if not available us ipv6.
+        #: ipv6 - prefer ipv6 address type, if not available us ipv4.
+        self.preferredAddrType = kwargs.get('preferredAddrType', 'ipv4')
+
         #: Size of send buffer for sockets.
         self.sendBufferSize = kwargs.get('sendBufferSize', 2 ** 16)
 
@@ -162,3 +168,4 @@ class SyncObjConf(object):
         assert (self.deserializer is None) == (self.serializer is None)
         if self.serializer is not None:
             assert self.fullDumpFile is not None
+        assert self.preferredAddrType in ('ipv4', 'ipv6', None)

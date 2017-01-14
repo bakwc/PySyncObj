@@ -145,6 +145,7 @@ class SyncObj(object):
 
         self.__startTime = time.time()
         globalDnsResolver().setTimeouts(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
+        globalDnsResolver().setPreferredAddrFamily(self.__conf.preferredAddrType)
         self.__serializer = Serializer(self.__conf.fullDumpFile,
                                        self.__conf.logCompactionBatchSize,
                                        self.__conf.useFork,
@@ -158,6 +159,7 @@ class SyncObj(object):
         if selfNodeAddr is not None:
             bindAddr = self.__conf.bindAddress or selfNodeAddr
             host, port = bindAddr.rsplit(':', 1)
+            host = globalDnsResolver().resolve(host)
             self.__server = TcpServer(self._poller, host, port, onNewConnection=self.__onNewConnection,
                                       sendBufferSize=self.__conf.sendBufferSize,
                                       recvBufferSize=self.__conf.recvBufferSize,
