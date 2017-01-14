@@ -172,12 +172,14 @@ def doAutoTicks(interval = 0.05, stopFunc = None):
 
 _g_nextAddress = 6000 + 60 * (int(time.time()) % 600)
 
-def getNextAddr(ipv6 = False):
+def getNextAddr(ipv6 = False, isLocalhost = False):
 	global _g_nextAddress
 	_g_nextAddress += 1
 	if ipv6:
+		return '::1:%d' % _g_nextAddress
+	if isLocalhost:
 		return 'localhost:%d' % _g_nextAddress
-	return '::1:%d' % _g_nextAddress
+	return '127.0.0.1:%d' % _g_nextAddress
 
 def test_syncTwoObjects():
 
@@ -1617,7 +1619,7 @@ def test_ipv6():
 
 	random.seed(42)
 
-	a = [getNextAddr(), getNextAddr()]
+	a = [getNextAddr(ipv6=True), getNextAddr(ipv6=True)]
 
 	o1 = TestObj(a[0], [a[1]])
 	o2 = TestObj(a[1], [a[0]])
@@ -1630,6 +1632,45 @@ def test_ipv6():
 
 	assert o1._isReady()
 	assert o2._isReady()
+
+	assert o1._getLeader() in a
+	assert o1._getLeader() == o2._getLeader()
+	assert o1._isReady()
+	assert o2._isReady()
+
+	o1.addValue(150)
+	o2.addValue(200)
+
+	doTicks(objs, 10.0, stopFunc=lambda: o1.getCounter() == 350 and o2.getCounter() == 350)
+
+	assert o1._isReady()
+	assert o2._isReady()
+
+	assert o1.getCounter() == 350
+	assert o2.getCounter() == 350
+
+	o1._destroy()
+	o2._destroy()
+
+def test_localhost():
+
+	random.seed(42)
+
+	a = [getNextAddr(isLocalhost=True), getNextAddr(isLocalhost=True)]
+
+	o1 = TestObj(a[0], [a[1]])
+	o2 = TestObj(a[1], [a[0]])
+	objs = [o1, o2]
+
+	assert not o1._isReady()
+	assert not o2._isReady()
+
+	doTicks(objs, 3.0, stopFunc=lambda: o1._isReady() and o2._isReady())
+
+	o1.waitBinded()
+	o2.waitBinded()
+
+	o1._printStatus()
 
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()

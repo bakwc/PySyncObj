@@ -9,6 +9,7 @@ class DnsCachingResolver(object):
         self.__cache = {}
         self.__cacheTime = cacheTime
         self.__failCacheTime = failCacheTime
+        self.__preferedAddrFamily = socket.AF_INET
 
     def setTimeouts(self, cacheTime, failCacheTime):
         self.__cacheTime = cacheTime
@@ -26,10 +27,25 @@ class DnsCachingResolver(object):
             self.__cache[hostname] = (currTime, ips)
         return None if not ips else random.choice(ips)
 
+    def setPreferredAddrFamily(self, preferredAddrFamily):
+        if preferredAddrFamily is None:
+            self.__preferredAddrFamily = None
+        elif preferredAddrFamily == 'ipv4':
+            self.__preferredAddrFamily = socket.AF_INET
+        elif preferredAddrFamily == 'ipv6':
+            self.__preferredAddrFamily = socket.AF_INET
+        else:
+            self.__preferedAddrFamily = preferredAddrFamily
+
     def __doResolve(self, hostname):
         try:
             addrs = socket.getaddrinfo(hostname, None)
-            ips = list(set([addr[4][0] for addr in addrs]))
+            ips = []
+            if self.__preferedAddrFamily is not None:
+                ips = list(set([addr[4][0] for addr in addrs\
+                                if addr[0] == self.__preferredAddrFamily]))
+            if not ips:
+                ips = list(set([addr[4][0] for addr in addrs]))
         except socket.gaierror:
             logging.warning('failed to resolve host %s', hostname)
             ips = []
