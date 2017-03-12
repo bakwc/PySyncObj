@@ -644,9 +644,11 @@ class SyncObj(object):
                 if transmission is not None:
                     if transmission == 'start':
                         self.__recvTransmission = message['data']
+                        self.__sendNextNodeIdx(nodeAddr, success=False, reset=False)
                         return
                     elif transmission == 'process':
                         self.__recvTransmission += message['data']
+                        self.__sendNextNodeIdx(nodeAddr, success=False, reset=False)
                         return
                     elif transmission == 'finish':
                         self.__recvTransmission += message['data']
