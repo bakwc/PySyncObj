@@ -131,6 +131,7 @@ class SyncObj(object):
         self.__raftCommitIndex = 1
         self.__raftLastApplied = 1
         self.__raftNextIndex = {}
+        self.__lastResponseTime = {}
         self.__raftMatchIndex = {}
         self.__lastSerializedTime = time.time()
         self.__lastSerializedEntry = None
@@ -442,7 +443,7 @@ class SyncObj(object):
             if self.__raftElectionDeadline < time.time() and self.__connectedToAnyone():
                 self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
                 self.__raftLeader = None
-                self.__raftState = _RAFT_STATE.CANDIDATE
+                self.__setState(_RAFT_STATE.CANDIDATE)
                 self.__raftCurrentTerm += 1
                 self.__votedFor = self._getSelfNodeAddr()
                 self.__votesCount = 1
@@ -469,6 +470,14 @@ class SyncObj(object):
                 else:
                     break
             self.__leaderCommitIndex = self.__raftCommitIndex
+            deadline = time.time() - self.__conf.leaderFallbackTimeout
+            count = 1
+            for node in self.__nodes:
+                if self.__lastResponseTime[node.getAddress()] > deadline:
+                    count += 1
+            if count <= (len(self.__nodes) + 1) / 2:
+                self.__setState(_RAFT_STATE.FOLLOWER)
+                self.__raftLeader = None
 
         needSendAppendEntries = False
 
@@ -593,7 +602,7 @@ class SyncObj(object):
             if message['term'] > self.__raftCurrentTerm:
                 self.__raftCurrentTerm = message['term']
                 self.__votedFor = None
-                self.__raftState = _RAFT_STATE.FOLLOWER
+                self.__setState(_RAFT_STATE.FOLLOWER)
                 self.__raftLeader = None
 
             if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
@@ -624,7 +633,7 @@ class SyncObj(object):
             if message['term'] > self.__raftCurrentTerm:
                 self.__raftCurrentTerm = message['term']
                 self.__votedFor = None
-            self.__raftState = _RAFT_STATE.FOLLOWER
+            self.__setState(_RAFT_STATE.FOLLOWER)
             newEntries = message.get('entries', [])
             serialized = message.get('serialized', None)
             self.__leaderCommitIndex = leaderCommitIndex = message['commit_index']
@@ -725,6 +734,7 @@ class SyncObj(object):
                     self.__raftNextIndex[nodeAddr] = nextNodeIdx
                 if success:
                     self.__raftMatchIndex[nodeAddr] = currentNodeIdx
+                self.__lastResponseTime[nodeAddr] = time.time()
 
     def __callErrCallback(self, err, callback):
         if callback is None:
@@ -863,9 +873,23 @@ class SyncObj(object):
         return result[:i + 1]
 
     def _isLeader(self):
+        """ Check if current node has a leader state.
+        WARNING: there could be multiple leaders at the same time!
+
+        :return: True if leader, False otherwise
+        :rtype: bool
+        """
         return self.__raftState == _RAFT_STATE.LEADER
 
     def _getLeader(self):
+        """ Returns last known leader.
+
+        WARNING: this information could be outdated, eg. there could be another leader selected!
+        WARNING: there could be multiple leaders at the same time!
+
+        :return: Address of the last known leader node.
+        :rtype: str
+        """
         return self.__raftLeader
 
     def isReady(self):
@@ -901,12 +925,14 @@ class SyncObj(object):
 
     def __onBecomeLeader(self):
         self.__raftLeader = self.__selfNodeAddr
-        self.__raftState = _RAFT_STATE.LEADER
+        self.__setState(_RAFT_STATE.LEADER)
 
+        self.__lastResponseTime.clear()
         for node in self.__nodes + self.__readonlyNodes:
             nodeAddr = node.getAddress()
             self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
             self.__raftMatchIndex[nodeAddr] = 0
+            self.__lastResponseTime[node.getAddress()] = time.time()
 
         # No-op command after leader election.
         idx, term = self.__getCurrentLogIndex() + 1, self.__raftCurrentTerm
@@ -916,6 +942,13 @@ class SyncObj(object):
             self.__sendAppendEntries()
 
         self.__sendAppendEntries()
+
+    def __setState(self, newState):
+        oldState = self.__raftState
+        self.__raftState = newState
+        callback = self.__conf.onStateChanged
+        if callback is not None and oldState != newState:
+            callback(oldState, newState)
 
     def __onLeaderChanged(self):
         for id in sorted(self.__commandsWaitingReply):
@@ -1068,6 +1101,8 @@ class SyncObj(object):
             self.__nodes.append(Node(self, newNode, shouldConnect))
             self.__raftNextIndex[newNode] = self.__getCurrentLogIndex() + 1
             self.__raftMatchIndex[newNode] = 0
+            if self._isLeader():
+                self.__lastResponseTime[newNode] = time.time()
             return True
         else:
             oldNode = requestNode
