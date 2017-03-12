@@ -1079,7 +1079,7 @@ class SyncObj(object):
                 if self.__nodes[i].getAddress() == oldNode:
                     self.__nodes[i]._destroy()
                     self.__nodes.pop(i)
-                    self.__otherNodesAddrs.pop(i)
+                    self.__otherNodesAddrs.remove(oldNode)
                     del self.__raftNextIndex[oldNode]
                     del self.__raftMatchIndex[oldNode]
                     return True
