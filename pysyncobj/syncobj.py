@@ -15,6 +15,7 @@ try:
         return v.iteritems()
 except ImportError:  # python3
     import queue as Queue
+    import asyncio
     is_py3 = True
     xrange = range
 
@@ -1196,18 +1197,47 @@ class SyncObj(object):
                 self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
                 self.__raftMatchIndex[nodeAddr] = 0
 
+if is_py3:
+    class Event_ts(asyncio.Event):
+        def set(self):
+            self._loop.call_soon_threadsafe(super().set)
 
 class AsyncResult(object):
     def __init__(self):
         self.result = None
         self.error = None
-        self.event = threading.Event()
+        if is_py3:
+            pass
+        else:
+            self.event = threading.Event()
 
     def onResult(self, res, err):
         self.result = res
         self.error = err
         self.event.set()
 
+def _getDecoratorParams(self, func, args, kwargs):
+    if isinstance(self, SyncObj):
+        applier = self._applyCommand
+        funcID = self._methodToID[func.__name__]
+    elif isinstance(self, SyncObjConsumer):
+        funcID = self._syncObj._methodToID[(id(self), func.__name__)]
+        applier = self._syncObj._applyCommand
+    else:
+        raise SyncObjException("Class should be inherited from SyncObj or SyncObjConsumer")
+
+    callback = kwargs.pop('callback', None)
+    if kwargs:
+        cmd = (funcID, args, kwargs)
+    elif args and not kwargs:
+        cmd = (funcID, args)
+    else:
+        cmd = funcID
+    sync = kwargs.pop('sync', False)
+    if callback is not None:
+        sync = False
+
+    return applier, cmd, sync, callback
 
 def replicated(func):
     """Replicated decorator. Use it to mark your class members that modifies
@@ -1223,31 +1253,31 @@ def replicated(func):
     :param func: arbitrary class member
     :type func: function
     """
-    def newFunc(self, *args, **kwargs):
 
-        if kwargs.pop('_doApply', False):
-            return func(self, *args, **kwargs)
-        else:
-            if isinstance(self, SyncObj):
-                applier = self._applyCommand
-                funcID = self._methodToID[func.__name__]
-            elif isinstance(self, SyncObjConsumer):
-                funcID = self._syncObj._methodToID[(id(self), func.__name__)]
-                applier = self._syncObj._applyCommand
-            else:
-                raise SyncObjException("Class should be inherited from SyncObj or SyncObjConsumer")
+    if is_py3:
+        async def newFunc(self, *args, **kwargs):
+            if kwargs.pop('_doApply', False):
+                return func(self, *args, **kwargs)
+            applier, cmd, sync, callback = _getDecoratorParams(self, func, args, kwargs)
+            if sync:
+                asyncResult = AsyncResult()
+                callback = asyncResult.onResult
 
-            callback = kwargs.pop('callback', None)
-            if kwargs:
-                cmd = (funcID, args, kwargs)
-            elif args and not kwargs:
-                cmd = (funcID, args)
-            else:
-                cmd = funcID
-            sync = kwargs.pop('sync', False)
-            if callback is not None:
-                sync = False
+            timeout = kwargs.pop('timeout', None)
+            applier(pickle.dumps(cmd), callback, _COMMAND_TYPE.REGULAR)
 
+            if sync:
+                res = await asyncResult.event.wait(timeout)
+                if not res:
+                    raise SyncObjException('Timeout')
+                if not asyncResult.error == 0:
+                    raise SyncObjException(asyncResult.error)
+                return asyncResult.result
+    else:
+        def newFunc(self, *args, **kwargs):
+            if kwargs.pop('_doApply', False):
+                return func(self, *args, **kwargs)
+            applier, cmd, sync, callback = _getDecoratorParams(self, func, args, kwargs)
             if sync:
                 asyncResult = AsyncResult()
                 callback = asyncResult.onResult
