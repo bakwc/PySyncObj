@@ -736,6 +736,8 @@ class SyncObj(object):
                     self.__raftNextIndex[nodeAddr] = nextNodeIdx
                 if success:
                     self.__raftMatchIndex[nodeAddr] = currentNodeIdx
+
+                print(' === prev resp time:', round(time.time() - self.__lastResponseTime.get(nodeAddr, 0), 2))
                 self.__lastResponseTime[nodeAddr] = time.time()
 
     def __callErrCallback(self, err, callback):
