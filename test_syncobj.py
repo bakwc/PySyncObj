@@ -29,6 +29,7 @@ class TEST_TYPE:
 	JOURNAL_1 = 4
 	AUTO_TICK_1 = 5
 	WAIT_BIND = 6
+	LARGE_COMMAND = 7
 
 class TestObj(SyncObj):
 
@@ -49,7 +50,6 @@ class TestObj(SyncObj):
 		cfg.appendEntriesPeriod = 0.1
 		cfg.raftMinTimeout = 0.5
 		cfg.raftMaxTimeout = 1.0
-		cfg.connectionTimeout = 15.0
 		cfg.dynamicMembershipChange = dynamicMembershipChange
 		cfg.onStateChanged = onStateChanged
 		if leaderFallbackTimeout is not None:
@@ -75,6 +75,15 @@ class TestObj(SyncObj):
 			cfg.logCompactionMinEntries = 99999
 			cfg.logCompactionMinTime = 99999
 			cfg.fullDumpFile = dumpFile
+
+		if testType == TEST_TYPE.LARGE_COMMAND:
+			cfg.connectionTimeout = 15.0
+			cfg.logCompactionMinEntries = 99999
+			cfg.logCompactionMinTime = 99999
+			cfg.fullDumpFile = dumpFile
+			cfg.raftMinTimeout = 1.5
+			cfg.raftMaxTimeout = 2.5
+			#cfg.appendEntriesBatchSizeBytes = 2 ** 13
 
 		if testType == TEST_TYPE.RAND_1:
 			cfg.autoTickPeriod = 0.05
@@ -1090,8 +1099,8 @@ def test_largeCommands():
 
 	a = [getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin', leaderFallbackTimeout=60.0)
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin', leaderFallbackTimeout=60.0)
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.LARGE_COMMAND, dumpFile ='dump1.bin', leaderFallbackTimeout=60.0)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.LARGE_COMMAND, dumpFile ='dump2.bin', leaderFallbackTimeout=60.0)
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
@@ -1126,8 +1135,8 @@ def test_largeCommands():
 
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin', leaderFallbackTimeout=60.0)
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin', leaderFallbackTimeout=60.0)
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.LARGE_COMMAND, dumpFile = 'dump1.bin', leaderFallbackTimeout=60.0)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.LARGE_COMMAND, dumpFile = 'dump2.bin', leaderFallbackTimeout=60.0)
 	objs = [o1, o2]
 	# Wait for disk load, election and replication
 
