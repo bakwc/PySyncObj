@@ -1122,8 +1122,6 @@ def test_largeCommands():
 	assert o1.getValue('test') == testRandStr
 	assert o2.getValue('big') == bigStr
 
-	return
-
 	o1._forceLogCompaction()
 	o2._forceLogCompaction()
 
