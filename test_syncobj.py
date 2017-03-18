@@ -13,8 +13,9 @@ import functools
 import struct
 import logging
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, \
-	createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException, SyncObjConsumer
+	createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException, SyncObjConsumer, _RAFT_STATE
 from pysyncobj.batteries import ReplCounter, ReplList, ReplDict, ReplSet, ReplLockManager
+from collections import defaultdict
 
 logging.basicConfig(format = u'[%(asctime)s %(filename)s:%(lineno)d %(levelname)s]  %(message)s', level = logging.DEBUG)
 
@@ -40,13 +41,18 @@ class TestObj(SyncObj):
 				 dynamicMembershipChange = False,
 				 useFork = True,
 				 testBindAddr = False,
-				 consumers = None):
+				 consumers = None,
+				 onStateChanged = None,
+				 leaderFallbackTimeout = None):
 
 		cfg = SyncObjConf(autoTick=False, appendEntriesUseBatch=False)
 		cfg.appendEntriesPeriod = 0.1
 		cfg.raftMinTimeout = 0.5
 		cfg.raftMaxTimeout = 1.0
 		cfg.dynamicMembershipChange = dynamicMembershipChange
+		cfg.onStateChanged = onStateChanged
+		if leaderFallbackTimeout is not None:
+			cfg.leaderFallbackTimeout = leaderFallbackTimeout
 
 		if testBindAddr:
 			cfg.bindAddress = selfNodeAddr
@@ -255,9 +261,11 @@ def test_syncThreeObjectsLeaderFail():
 
 	a = [getNextAddr(), getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1], a[2]], testBindAddr=True)
-	o2 = TestObj(a[1], [a[2], a[0]], testBindAddr=True)
-	o3 = TestObj(a[2], [a[0], a[1]], testBindAddr=True)
+	states = defaultdict(list)
+
+	o1 = TestObj(a[0], [a[1], a[2]], testBindAddr=True, onStateChanged=lambda old, new: states[a[0]].append(new))
+	o2 = TestObj(a[1], [a[2], a[0]], testBindAddr=True, onStateChanged=lambda old, new: states[a[1]].append(new))
+	o3 = TestObj(a[2], [a[0], a[1]], testBindAddr=True, onStateChanged=lambda old, new: states[a[2]].append(new))
 	objs = [o1, o2, o3]
 
 	assert not o1._isReady()
@@ -273,6 +281,8 @@ def test_syncThreeObjectsLeaderFail():
 	assert o1._getLeader() in a
 	assert o1._getLeader() == o2._getLeader()
 	assert o1._getLeader() == o3._getLeader()
+
+	assert _RAFT_STATE.LEADER in states[o1._getLeader()]
 
 	o1.addValue(150)
 	o2.addValue(200)
@@ -294,6 +304,8 @@ def test_syncThreeObjectsLeaderFail():
 	assert newObjs[0]._getLeader() != prevLeader
 	assert newObjs[0]._getLeader() in a
 	assert newObjs[0]._getLeader() == newObjs[1]._getLeader()
+
+	assert _RAFT_STATE.LEADER in states[newObjs[0]._getLeader()]
 
 	newObjs[1].addValue(50)
 
@@ -1690,3 +1702,29 @@ def test_localhost():
 
 	o1._destroy()
 	o2._destroy()
+
+def test_leaderFallback():
+
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]], leaderFallbackTimeout=30.0)
+	o2 = TestObj(a[1], [a[0]], leaderFallbackTimeout=30.0)
+	objs = [o1, o2]
+
+	assert not o1._isReady()
+	assert not o2._isReady()
+
+	doTicks(objs, 5.0, stopFunc=lambda: o1._isReady() and o2._isReady())
+
+	o1._SyncObj__conf.leaderFallbackTimeout = 3.0
+	o2._SyncObj__conf.leaderFallbackTimeout = 3.0
+
+	doTicks([o for o in objs if o._isLeader()], 2.0)
+
+	assert o1._isLeader() or o2._isLeader()
+
+	doTicks([o for o in objs if o._isLeader()], 2.0)
+
+	assert not o1._isLeader() and not o2._isLeader()
