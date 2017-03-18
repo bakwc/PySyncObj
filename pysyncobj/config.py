@@ -39,16 +39,21 @@ class SyncObjConf(object):
         self.raftMaxTimeout = kwargs.get('raftMaxTimeout', 1.4)
 
         #: Interval of sending append_entries (ping) command.
-        #: Should be less then raftMinTimeout.
+        #: Should be less than raftMinTimeout.
         self.appendEntriesPeriod = kwargs.get('appendEntriesPeriod', 0.1)
 
         #: When no data received for connectionTimeout - connection considered dead.
-        #: Should be more then raftMaxTimeout.
+        #: Should be more than raftMaxTimeout.
         self.connectionTimeout = kwargs.get('connectionTimeout', 3.5)
 
         #: Interval between connection attempts.
         #: Will try to connect to offline nodes each connectionRetryTime.
         self.connectionRetryTime = kwargs.get('connectionRetryTime', 5.0)
+
+        #: When leader has no response from the majority of the cluster
+        #: for leaderFallbackTimeout - it will fallback to follower state.
+        #: Should be more than appendEntriesPeriod.
+        self.leaderFallbackTimeout = kwargs.get('leaderFallbackTimeout', 30.0)
 
         #: Send multiple entries in a single command.
         #: Enabled (default) - improve overall performance (requests per second)
@@ -121,6 +126,11 @@ class SyncObjConf(object):
         #: This callback will be called as soon as SyncObj sync all data from leader.
         self.onReady = kwargs.get('onReady', None)
 
+        #: This callback will be called for every change of SyncObj state.
+        #: Arguments: onStateChanged(oldState, newState).
+        #: WARNING: there could be multiple leaders at the same time!
+        self.onStateChanged = kwargs.get('onStateChanged', None)
+
         #: If enabled - cluster configuration could be changed dynamically.
         self.dynamicMembershipChange = kwargs.get('dynamicMembershipChange', False)
 
@@ -154,6 +164,7 @@ class SyncObjConf(object):
         assert self.raftMinTimeout > self.appendEntriesPeriod * 3
         assert self.raftMaxTimeout > self.raftMinTimeout
         assert self.appendEntriesPeriod > 0
+        assert self.leaderFallbackTimeout > self.appendEntriesPeriod
         assert self.connectionTimeout >= self.raftMaxTimeout
         assert self.connectionRetryTime >= 0
         assert self.appendEntriesBatchSizeBytes > 0
