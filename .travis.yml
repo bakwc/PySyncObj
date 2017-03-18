@@ -12,6 +12,6 @@ install:
   - if [[ $TRAVIS_PYTHON_VERSION == 2.7 ]]; then pip install cryptography coverage coveralls; fi
 script:
   - if [[ $TRAVIS_PYTHON_VERSION == 2.7 ]]; then coverage run --source pysyncobj -m py.test -v -l test_syncobj.py; fi
-  - if [[ $TRAVIS_PYTHON_VERSION != 2.7 ]]; then py.test -v -l test_syncobj.py; fi
+  - if [[ $TRAVIS_PYTHON_VERSION != 2.7 ]]; then py.test -v -l test_syncobj.py -k large -s; fi
 after_success:
   - if [[ $TRAVIS_PYTHON_VERSION == 2.7 ]]; then coveralls -v; fi
