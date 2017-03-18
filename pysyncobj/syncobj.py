@@ -172,7 +172,7 @@ class SyncObj(object):
 
         methods = [m for m in dir(self) if callable(getattr(self, m)) and getattr(getattr(self, m), 'replicated', False)]
         currMethodID = 0
-        for method in sorted(methods):
+        for method in sorted(methods, key=lambda x: (getattr(getattr(self, x), 'ver'), x)):
             self._methodToID[method] = currMethodID
             self._idToMethod[currMethodID] = getattr(self, method)
             currMethodID += 1
@@ -180,7 +180,7 @@ class SyncObj(object):
         for consumer in consumers:
             consumerID = id(consumer)
             consumerMethods = [m for m in dir(consumer) if callable(getattr(consumer, m)) and getattr(getattr(consumer, m), 'replicated', False)]
-            for method in sorted(consumerMethods):
+            for method in sorted(consumerMethods, key=lambda x: (getattr(getattr(consumer, x), 'ver'), x)):
                 self._methodToID[(consumerID, method)] = currMethodID
                 self._idToMethod[currMethodID] = getattr(consumer, method)
                 currMethodID += 1
@@ -1246,7 +1246,7 @@ class AsyncResult(object):
         self.event.set()
 
 
-def replicated(func):
+def replicated(*decArgs, **decKwargs):
     """Replicated decorator. Use it to mark your class members that modifies
     a class state. Function will be called asynchronously. Function accepts
     flowing additional parameters (optional):
@@ -1259,67 +1259,88 @@ def replicated(func):
 
     :param func: arbitrary class member
     :type func: function
+    :param ver: (optional) - code version (for zero deployment)
+    :type ver: int
     """
-    def newFunc(self, *args, **kwargs):
+    def replicatedImpl(func):
+        def newFunc(self, *args, **kwargs):
 
-        if kwargs.pop('_doApply', False):
-            return func(self, *args, **kwargs)
-        else:
-            if isinstance(self, SyncObj):
-                applier = self._applyCommand
-                funcID = self._methodToID[func.__name__]
-            elif isinstance(self, SyncObjConsumer):
-                funcID = self._syncObj._methodToID[(id(self), func.__name__)]
-                applier = self._syncObj._applyCommand
+            if kwargs.pop('_doApply', False):
+                return func(self, *args, **kwargs)
             else:
-                raise SyncObjException("Class should be inherited from SyncObj or SyncObjConsumer")
+                if isinstance(self, SyncObj):
+                    applier = self._applyCommand
+                    funcID = self._methodToID[func.__name__]
+                elif isinstance(self, SyncObjConsumer):
+                    funcID = self._syncObj._methodToID[(id(self), func.__name__)]
+                    applier = self._syncObj._applyCommand
+                else:
+                    raise SyncObjException("Class should be inherited from SyncObj or SyncObjConsumer")
 
-            callback = kwargs.pop('callback', None)
-            if kwargs:
-                cmd = (funcID, args, kwargs)
-            elif args and not kwargs:
-                cmd = (funcID, args)
+                callback = kwargs.pop('callback', None)
+                if kwargs:
+                    cmd = (funcID, args, kwargs)
+                elif args and not kwargs:
+                    cmd = (funcID, args)
+                else:
+                    cmd = funcID
+                sync = kwargs.pop('sync', False)
+                if callback is not None:
+                    sync = False
+
+                if sync:
+                    asyncResult = AsyncResult()
+                    callback = asyncResult.onResult
+
+                timeout = kwargs.pop('timeout', None)
+                applier(pickle.dumps(cmd), callback, _COMMAND_TYPE.REGULAR)
+
+                if sync:
+                    res = asyncResult.event.wait(timeout)
+                    if not res:
+                        raise SyncObjException('Timeout')
+                    if not asyncResult.error == 0:
+                        raise SyncObjException(asyncResult.error)
+                    return asyncResult.result
+
+        func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
+        func_dict['replicated'] = True
+        func_dict['ver'] = int(decKwargs.get('ver', 0))
+        return newFunc
+    if len(decArgs) == 1 and len(decKwargs) == 0 and callable(decArgs[0]):
+        return replicatedImpl(decArgs[0])
+
+    # func_dict = replicatedImpl.__dict__ if is_py3 else replicatedImpl.func_dict
+    # func_dict['replicated'] = True
+    # func_dict['ver'] = int(decKwargs.get('ver', 0))
+    return replicatedImpl
+
+def replicated_sync(*decArgs, **decKwargs):
+    def replicated_sync_impl(func, timeout = None):
+        """Same as replicated, but synchronous by default.
+
+        :param func: aribtrary class member
+        :type func: function
+        :param timeout: time to wait (seconds). Default: None
+        :type timeout: float or None
+        """
+
+        def newFunc(self, *args, **kwargs):
+            if kwargs.get('_doApply', False):
+                return replicated(func)(self, *args, **kwargs)
             else:
-                cmd = funcID
-            sync = kwargs.pop('sync', False)
-            if callback is not None:
-                sync = False
+                kwargs.setdefault('timeout', timeout)
+                kwargs.setdefault('sync', True)
+                return replicated(func)(self, *args, **kwargs)
+        func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
+        func_dict['replicated'] = True
+        func_dict['ver'] = int(decKwargs.get('ver', 0))
+        return newFunc
 
-            if sync:
-                asyncResult = AsyncResult()
-                callback = asyncResult.onResult
+    if len(decArgs) == 1 and len(decKwargs) == 0 and callable(decArgs[0]):
+        return replicated_sync_impl(decArgs[0])
 
-            timeout = kwargs.pop('timeout', None)
-            applier(pickle.dumps(cmd), callback, _COMMAND_TYPE.REGULAR)
-
-            if sync:
-                res = asyncResult.event.wait(timeout)
-                if not res:
-                    raise SyncObjException('Timeout')
-                if not asyncResult.error == 0:
-                    raise SyncObjException(asyncResult.error)
-                return asyncResult.result
-
-    func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
-    func_dict['replicated'] = True
-    return newFunc
-
-def replicated_sync(func, timeout = None):
-    """Same as replicated, but synchronous by default.
-
-    :param func: aribtrary class member
-    :type func: function
-    :param timeout: time to wait (seconds). Default: None
-    :type timeout: float or None
-    """
-
-    def newFunc(self, *args, **kwargs):
-        if kwargs.get('_doApply', False):
-            return replicated(func)(self, *args, **kwargs)
-        else:
-            kwargs.setdefault('timeout', timeout)
-            kwargs.setdefault('sync', True)
-            return replicated(func)(self, *args, **kwargs)
-    func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
-    func_dict['replicated'] = True
-    return newFunc
+    # func_dict = replicated_sync_impl.__dict__ if is_py3 else replicated_sync_impl.func_dict
+    # func_dict['replicated'] = True
+    # func_dict['ver'] = int(decKwargs.get('ver', 0))
+    return replicated_sync_impl
