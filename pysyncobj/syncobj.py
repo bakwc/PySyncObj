@@ -476,7 +476,7 @@ class SyncObj(object):
                 if self.__lastResponseTime[node.getAddress()] > deadline:
                     count += 1
             if count <= (len(self.__nodes) + 1) / 2:
-                print ' === FALLBACK TO FOLLOWER, deadline'
+                print(' === FALLBACK TO FOLLOWER, deadline')
                 self.__setState(_RAFT_STATE.FOLLOWER)
                 self.__raftLeader = None
 
