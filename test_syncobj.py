@@ -49,6 +49,7 @@ class TestObj(SyncObj):
 		cfg.appendEntriesPeriod = 0.1
 		cfg.raftMinTimeout = 0.5
 		cfg.raftMaxTimeout = 1.0
+		cfg.connectionTimeout = 15.0
 		cfg.dynamicMembershipChange = dynamicMembershipChange
 		cfg.onStateChanged = onStateChanged
 		if leaderFallbackTimeout is not None:
