@@ -928,6 +928,7 @@ class SyncObj(object):
         self.__raftLog.deleteEntriesTo(diff)
 
     def __onBecomeLeader(self):
+        print(' === onBecomeLeader', self.__selfNodeAddr)
         self.__raftLeader = self.__selfNodeAddr
         self.__setState(_RAFT_STATE.LEADER)
 
