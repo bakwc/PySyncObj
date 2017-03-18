@@ -53,7 +53,7 @@ class SyncObjConf(object):
         #: When leader has no response from the majority of the cluster
         #: for leaderFallbackTimeout - it will fallback to follower state.
         #: Should be more than appendEntriesPeriod.
-        self.leaderFallbackTimeout = kwargs.get('leaderFallbackTimeout', 5.0)
+        self.leaderFallbackTimeout = kwargs.get('leaderFallbackTimeout', 30.0)
 
         #: Send multiple entries in a single command.
         #: Enabled (default) - improve overall performance (requests per second)
