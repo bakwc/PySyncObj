@@ -20,15 +20,16 @@
 [docs-image]: https://readthedocs.org/projects/pysyncobj/badge/?version=latest
 [docs]: http://pysyncobj.readthedocs.io/en/latest/
 
-PySyncObj is a python library for building fault-tolerant distributed systems. It provides the ability to replicate your application data between multiple servers.
+PySyncObj is a python library for building fault-tolerant distributed systems. It provides the ability to replicate your application data between multiple servers. It has following features:
 
-- It use [raft protocol](http://raft.github.io/) for leader election and log replication.
-- It supports log compaction. It use fork for copy-on-write while serializing data on disk.
-- It supports dynamic membership changes cluster reconfiguration. You can do it with [syncobj_admin](https://github.com/bakwc/PySyncObj/wiki/syncobj_admin) utility or [directly from your code](https://github.com/bakwc/PySyncObj/wiki/Dynamic-membership-change).
-- It supports in-memory and on-disk serialization. You can use in-memory mode for small data and on-disk for big one.
-- It has encryption - you can set password and use it in external network.
-- It supports python2 and python3 on linux, macos and windows. No dependencies required (only optional one, eg. cryptography).
-- Configurable event loop - it can works in separate thread with it's own event loop - or you can call onTick function inside your own one.
+- [raft protocol](http://raft.github.io/) for leader election and log replication
+- Log compaction - it use fork for copy-on-write while serializing data on disk
+- Dynamic membership changes - you can do it with [syncobj_admin](https://github.com/bakwc/PySyncObj/wiki/syncobj_admin) utility or [directly from your code](https://github.com/bakwc/PySyncObj/wiki/Dynamic-membership-change)
+- [Zero downtime deploy](https://github.com/bakwc/PySyncObj/wiki/Zero-downtime-deploy) - no need to stop cluster to update nodes
+- In-memory and on-disk serialization - you can use in-memory mode for small data and on-disk for big one
+- Encryption - you can set password and use it in external network
+- Python2 and Python3 on linux, macos and windows - no dependencies required (only optional one, eg. cryptography)
+- Configurable event loop - it can works in separate thread with it's own event loop - or you can call onTick function inside your own one
 - Convenient interface - you can easily transform arbitrary class into a replicated one (see example below).
 
 ## Content
