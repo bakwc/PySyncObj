@@ -1,6 +1,7 @@
 import time
 import random
 import os
+import sys
 import threading
 import weakref
 import collections
@@ -175,9 +176,12 @@ class SyncObj(object):
         self._idToMethod = {}
         self._idToConsumer = {}
 
-        methods = [m for m in dir(self) if callable(getattr(self, m)) and getattr(getattr(self, m), 'replicated', False)]
+        methods = [m for m in dir(self) if callable(getattr(self, m)) and \
+                   getattr(getattr(self, m), 'replicated', False) and \
+                   m != getattr(getattr(self, m), 'origName')]
         currMethodID = 0
         self.__selfCodeVersion = 0
+        self.__currentVersionFuncNames = {}
         for method in sorted(methods, key=lambda x: (getattr(getattr(self, x), 'ver'), x)):
             self.__selfCodeVersion = max(self.__selfCodeVersion, getattr(getattr(self, method), 'ver'))
             self._methodToID[method] = currMethodID
@@ -193,6 +197,7 @@ class SyncObj(object):
                 self._idToMethod[currMethodID] = getattr(consumer, method)
                 currMethodID += 1
             consumer._syncObj = self
+        self.__onSetCodeVersion(0)
 
         self.__thread = None
         self.__mainThread = None
@@ -339,6 +344,38 @@ class SyncObj(object):
 
     def _removeNodeFromCluster(self, nodeName, callback=None):
         self.removeNodeFromCluster(nodeName, callback)
+
+    def __onSetCodeVersion(self, newVersion):
+        methods = [m for m in dir(self) if callable(getattr(self, m)) and\
+                   getattr(getattr(self, m), 'replicated', False) and \
+                   m != getattr(getattr(self, m), 'origName')]
+
+        self.__currentVersionFuncNames = {}
+
+        funcVersions = collections.defaultdict(set)
+        for method in methods:
+            ver = getattr(getattr(self, method), 'ver')
+            origFuncName = getattr(getattr(self, method), 'origName')
+            funcVersions[origFuncName].add(ver)
+
+        for consumer in self.__consumers:
+            consumerID = id(consumer)
+            consumerMethods = [m for m in dir(consumer) if callable(getattr(consumer, m)) and \
+                               getattr(getattr(consumer, m), 'replicated', False)]
+            for method in consumerMethods:
+                ver = getattr(getattr(self, method), 'ver')
+                origFuncName = getattr(getattr(self, method), 'origName')
+                funcVersions[(consumerID, origFuncName)].add(ver)
+
+        for funcName, versions in iteritems(funcVersions):
+            versions = sorted(list(versions))
+            for v in versions:
+                if v > newVersion:
+                    break
+                self.__currentVersionFuncNames[funcName] = funcName + '_v' + str(v)
+
+    def _getFuncName(self, funcName):
+        return self.__currentVersionFuncNames[funcName]
 
     def _applyCommand(self, command, callback, commandType = None):
         try:
@@ -623,6 +660,7 @@ class SyncObj(object):
             oldVer = self.__enabledCodeVersion
             self.__enabledCodeVersion = ver
             callback = self.__conf.onCodeVersionChanged
+            self.__onSetCodeVersion(ver)
             if callback is not None:
                 callback(oldVer, ver)
             return
@@ -1263,6 +1301,7 @@ class SyncObj(object):
             if self.__conf.dynamicMembershipChange:
                 self.__otherNodesAddrs = [node for node in data[3] if node != self.__selfNodeAddr]
                 self.__updateClusterConfiguration()
+            self.__onSetCodeVersion(0)
         except:
             logging.exception('failed to load full dump')
 
@@ -1324,9 +1363,12 @@ def replicated(*decArgs, **decKwargs):
             else:
                 if isinstance(self, SyncObj):
                     applier = self._applyCommand
-                    funcID = self._methodToID[func.__name__]
+                    funcName = self._getFuncName(func.__name__)
+                    funcID = self._methodToID[funcName]
                 elif isinstance(self, SyncObjConsumer):
-                    funcID = self._syncObj._methodToID[(id(self), func.__name__)]
+                    consumerId = id(self)
+                    funcName = self._syncObj._getFuncName((consumerId, func.__name__))
+                    funcID = self._syncObj._methodToID[(consumerId, funcName)]
                     applier = self._syncObj._applyCommand
                 else:
                     raise SyncObjException("Class should be inherited from SyncObj or SyncObjConsumer")
@@ -1360,13 +1402,17 @@ def replicated(*decArgs, **decKwargs):
         func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
         func_dict['replicated'] = True
         func_dict['ver'] = int(decKwargs.get('ver', 0))
+        func_dict['origName'] = func.__name__
+
+        callframe = sys._getframe(1 if decKwargs else 2)
+        namespace = callframe.f_locals
+        newFuncName = func.__name__ + '_v' + str(func_dict['ver'])
+        namespace[newFuncName] = newFunc
+
         return newFunc
     if len(decArgs) == 1 and len(decKwargs) == 0 and callable(decArgs[0]):
         return replicatedImpl(decArgs[0])
 
-    # func_dict = replicatedImpl.__dict__ if is_py3 else replicatedImpl.func_dict
-    # func_dict['replicated'] = True
-    # func_dict['ver'] = int(decKwargs.get('ver', 0))
     return replicatedImpl
 
 def replicated_sync(*decArgs, **decKwargs):
@@ -1389,12 +1435,16 @@ def replicated_sync(*decArgs, **decKwargs):
         func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
         func_dict['replicated'] = True
         func_dict['ver'] = int(decKwargs.get('ver', 0))
+        func_dict['origName'] = func.__name__
+
+        callframe = sys._getframe(1 if decKwargs else 2)
+        namespace = callframe.f_locals
+        newFuncName = func.__name__ + '_v' + str(func_dict['ver'])
+        namespace[newFuncName] = newFunc
+
         return newFunc
 
     if len(decArgs) == 1 and len(decKwargs) == 0 and callable(decArgs[0]):
         return replicated_sync_impl(decArgs[0])
 
-    # func_dict = replicated_sync_impl.__dict__ if is_py3 else replicated_sync_impl.func_dict
-    # func_dict['replicated'] = True
-    # func_dict['ver'] = int(decKwargs.get('ver', 0))
     return replicated_sync_impl

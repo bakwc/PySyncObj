@@ -117,7 +117,7 @@ class TestObj(SyncObj):
 		self.__counter += value
 		return self.__counter
 
-	@replicated(ver=2)
+	@replicated
 	def addKeyValue(self, key, value):
 		self.__data[key] = value
 
