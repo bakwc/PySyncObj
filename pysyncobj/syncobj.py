@@ -363,8 +363,8 @@ class SyncObj(object):
             consumerMethods = [m for m in dir(consumer) if callable(getattr(consumer, m)) and \
                                getattr(getattr(consumer, m), 'replicated', False)]
             for method in consumerMethods:
-                ver = getattr(getattr(self, method), 'ver')
-                origFuncName = getattr(getattr(self, method), 'origName')
+                ver = getattr(getattr(consumer, method), 'ver')
+                origFuncName = getattr(getattr(consumer, method), 'origName')
                 funcVersions[(consumerID, origFuncName)].add(ver)
 
         for funcName, versions in iteritems(funcVersions):
@@ -372,7 +372,8 @@ class SyncObj(object):
             for v in versions:
                 if v > newVersion:
                     break
-                self.__currentVersionFuncNames[funcName] = funcName + '_v' + str(v)
+                realFuncName = funcName[1] if isinstance(funcName, tuple) else funcName
+                self.__currentVersionFuncNames[funcName] = realFuncName + '_v' + str(v)
 
     def _getFuncName(self, funcName):
         return self.__currentVersionFuncNames[funcName]
