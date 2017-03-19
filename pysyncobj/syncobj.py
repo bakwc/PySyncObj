@@ -45,6 +45,7 @@ class _COMMAND_TYPE:
     REGULAR = 0
     NO_OP = 1
     MEMBERSHIP = 2
+    VERSION = 3
 
 _bchr = functools.partial(struct.pack, 'B')
 
@@ -54,6 +55,10 @@ class SyncObjException(Exception):
         Exception.__init__(self, *args, **kwargs)
         self.errorCode = errorCode
 
+class SyncObjExceptionWrongVer(SyncObjException):
+    def __init__(self, ver):
+        SyncObjException.__init__(self, 'wrongVer')
+        self.ver = ver
 
 class SyncObjConsumer(object):
     def __init__(self):
@@ -172,7 +177,9 @@ class SyncObj(object):
 
         methods = [m for m in dir(self) if callable(getattr(self, m)) and getattr(getattr(self, m), 'replicated', False)]
         currMethodID = 0
+        self.__selfCodeVersion = 0
         for method in sorted(methods, key=lambda x: (getattr(getattr(self, x), 'ver'), x)):
+            self.__selfCodeVersion = max(self.__selfCodeVersion, getattr(getattr(self, method), 'ver'))
             self._methodToID[method] = currMethodID
             self._idToMethod[currMethodID] = getattr(self, method)
             currMethodID += 1
@@ -181,6 +188,7 @@ class SyncObj(object):
             consumerID = id(consumer)
             consumerMethods = [m for m in dir(consumer) if callable(getattr(consumer, m)) and getattr(getattr(consumer, m), 'replicated', False)]
             for method in sorted(consumerMethods, key=lambda x: (getattr(getattr(consumer, x), 'ver'), x)):
+                self.__selfCodeVersion = max(self.__selfCodeVersion, getattr(getattr(self, method), 'ver'))
                 self._methodToID[(consumerID, method)] = currMethodID
                 self._idToMethod[currMethodID] = getattr(consumer, method)
                 currMethodID += 1
@@ -208,6 +216,8 @@ class SyncObj(object):
         self.__properies = set()
         for key in self.__dict__:
             self.__properies.add(key)
+
+        self.__enabledCodeVersion = 0
 
         if self.__conf.autoTick:
             self.__mainThread = threading.current_thread()
@@ -275,6 +285,25 @@ class SyncObj(object):
                 self.__bindedEvent.set()
                 raise SyncObjException('BindError')
             logging.exception('failed to perform initialization')
+
+    def getCodeVersion(self):
+        return self.__enabledCodeVersion
+
+    def setCodeVersion(self, newVersion, callback = None):
+        """Switch to a new code version on all cluster nodes. You
+        should ensure that cluster nodes are updated, otherwise they
+        won't be able to apply commands.
+
+        :param newVersion: new code version
+        :type int
+        :param callback: will be called on cussess or fail
+        :type callback: function(`FAIL_REASON <#pysyncobj.FAIL_REASON>`_, None)
+        """
+        if newVersion > self.__selfCodeVersion:
+            raise Exception('wrong version, current version is %d, requested version is %d' % (self.__selfCodeVersion, newVersion))
+        if newVersion < self.__enabledCodeVersion:
+            raise Exception('wrong version, enabled version is %d, requested version is %d' % (self.__enabledCodeVersion, newVersion))
+        self._applyCommand(pickle.dumps(newVersion), callback, _COMMAND_TYPE.VERSION)
 
     def addNodeToCluster(self, nodeName, callback = None):
         """Add single node to cluster (dynamic membership changes). Async.
@@ -485,16 +514,22 @@ class SyncObj(object):
             count = self.__raftCommitIndex - self.__raftLastApplied
             entries = self.__getEntries(self.__raftLastApplied + 1, count)
             for entry in entries:
-                currentTermID = entry[2]
-                subscribers = self.__commandsWaitingCommit.pop(entry[1], [])
-                res = self.__doApplyCommand(entry[0])
-                for subscribeTermID, callback in subscribers:
-                    if subscribeTermID == currentTermID:
-                        callback(res, FAIL_REASON.SUCCESS)
-                    else:
-                        callback(None, FAIL_REASON.DISCARDED)
+                try:
+                    currentTermID = entry[2]
+                    subscribers = self.__commandsWaitingCommit.pop(entry[1], [])
+                    res = self.__doApplyCommand(entry[0])
+                    for subscribeTermID, callback in subscribers:
+                        if subscribeTermID == currentTermID:
+                            callback(res, FAIL_REASON.SUCCESS)
+                        else:
+                            callback(None, FAIL_REASON.DISCARDED)
 
-                self.__raftLastApplied += 1
+                    self.__raftLastApplied += 1
+                except SyncObjExceptionWrongVer as e:
+                    logging.error('request to switch to unsupported code version (self version: %d, requested version: %d)' %
+                        (self.__selfCodeVersion, e.ver))
+
+
             if not self.__conf.appendEntriesUseBatch:
                 needSendAppendEntries = True
 
@@ -578,6 +613,16 @@ class SyncObj(object):
     def __doApplyCommand(self, command):
         commandType = ord(command[:1])
         # Skip no-op and membership change commands
+        if commandType == _COMMAND_TYPE.VERSION:
+            ver = pickle.loads(command[1:])
+            if self.__selfCodeVersion < ver:
+                raise SyncObjExceptionWrongVer(ver)
+            oldVer = self.__enabledCodeVersion
+            self.__enabledCodeVersion = ver
+            callback = self.__conf.onCodeVersionChanged
+            if callback is not None:
+                callback(oldVer, ver)
+            return
         if commandType != _COMMAND_TYPE.REGULAR:
             return
         command = pickle.loads(command[1:])
@@ -1077,6 +1122,9 @@ class SyncObj(object):
             return False
 
         return self.__doChangeCluster(request)
+
+    def __setCodeVersion(self, newVersion):
+        self.__enabledCodeVersion = newVersion
 
     def __doChangeCluster(self, request, reverse = False):
         requestType = request[0]
