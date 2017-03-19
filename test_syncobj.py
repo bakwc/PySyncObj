@@ -1738,3 +1738,74 @@ def test_leaderFallback():
 	doTicks([o for o in objs if o._isLeader()], 2.0)
 
 	assert not o1._isLeader() and not o2._isLeader()
+
+class ZeroDeployConsumerAlpha(SyncObjConsumer):
+	@replicated(ver=1)
+	def someMethod(self):
+		pass
+	@replicated
+	def methodTwo(self):
+		pass
+
+class ZeroDeployConsumerBravo(SyncObjConsumer):
+	@replicated
+	def alphaMethod(self):
+		pass
+	@replicated(ver=3)
+	def methodTwo(self):
+		pass
+
+class ZeroDeployTestObj(SyncObj):
+	def __init__(self, selfAddr, otherAddrs, consumers):
+		cfg = SyncObjConf(autoTick=False)
+		super(ZeroDeployTestObj, self).__init__(selfAddr, otherAddrs, cfg, consumers=consumers)
+
+	@replicated
+	def someMethod(self):
+		pass
+
+	@replicated
+	def otherMethod(self):
+		pass
+
+	@replicated(ver=1)
+	def thirdMethod(self):
+		pass
+
+	@replicated(ver=2)
+	def lastMethod(self):
+		pass
+
+	@replicated(ver=3)
+	def lastMethod(self):
+		pass
+
+def test_zeroDeployVersions():
+	random.seed(42)
+
+	a = [getNextAddr()]
+
+	cAlpha = ZeroDeployConsumerAlpha()
+	cBravo = ZeroDeployConsumerBravo()
+
+	o1 = ZeroDeployTestObj(a[0], [], [cAlpha, cBravo])
+
+	assert hasattr(o1, 'otherMethod_v0') == True
+	assert hasattr(o1, 'lastMethod_v2') == True
+	assert hasattr(o1, 'lastMethod_v3') == True
+	assert hasattr(o1, 'lastMethod_v4') == False
+	assert hasattr(cAlpha, 'methodTwo_v0') == True
+	assert hasattr(cBravo, 'methodTwo_v3') == True
+
+	assert o1._methodToID['lastMethod_v2'] > o1._methodToID['otherMethod_v0']
+	assert o1._methodToID['lastMethod_v3'] > o1._methodToID['lastMethod_v2']
+	assert o1._methodToID['lastMethod_v3'] > o1._methodToID['someMethod_v0']
+	assert o1._methodToID['thirdMethod_v1'] > o1._methodToID['someMethod_v0']
+
+	assert o1._methodToID['lastMethod_v2'] > o1._methodToID[(id(cAlpha), 'methodTwo_v0')]
+	assert o1._methodToID[id(cBravo), 'methodTwo_v3'] > o1._methodToID['lastMethod_v2']
+
+
+	assert 'someMethod' not in o1._methodToID
+	assert 'thirdMethod' not in o1._methodToID
+	assert 'lastMethod' not in o1._methodToID

@@ -182,21 +182,31 @@ class SyncObj(object):
         currMethodID = 0
         self.__selfCodeVersion = 0
         self.__currentVersionFuncNames = {}
-        for method in sorted(methods, key=lambda x: (getattr(getattr(self, x), 'ver'), x)):
-            self.__selfCodeVersion = max(self.__selfCodeVersion, getattr(getattr(self, method), 'ver'))
-            self._methodToID[method] = currMethodID
-            self._idToMethod[currMethodID] = getattr(self, method)
+
+        methodsToEnumerate = []
+
+        for method in methods:
+            ver = getattr(getattr(self, method), 'ver')
+            methodsToEnumerate.append((ver, 0, method, self))
+
+        for consumerNum, consumer in enumerate(consumers):
+            consumerMethods = [m for m in dir(consumer) if callable(getattr(consumer, m)) and\
+                               getattr(getattr(consumer, m), 'replicated', False) and \
+                               m != getattr(getattr(consumer, m), 'origName')]
+            for method in consumerMethods:
+                ver = getattr(getattr(consumer, method), 'ver')
+                methodsToEnumerate.append((ver, consumerNum + 1, method, consumer))
+            consumer._syncObj = self
+
+        for ver, _, method, obj in sorted(methodsToEnumerate):
+            self.__selfCodeVersion = max(self.__selfCodeVersion, ver)
+            if obj is self:
+                self._methodToID[method] = currMethodID
+            else:
+                self._methodToID[(id(obj), method)] = currMethodID
+            self._idToMethod[currMethodID] = getattr(obj, method)
             currMethodID += 1
 
-        for consumer in consumers:
-            consumerID = id(consumer)
-            consumerMethods = [m for m in dir(consumer) if callable(getattr(consumer, m)) and getattr(getattr(consumer, m), 'replicated', False)]
-            for method in sorted(consumerMethods, key=lambda x: (getattr(getattr(consumer, x), 'ver'), x)):
-                self.__selfCodeVersion = max(self.__selfCodeVersion, getattr(getattr(consumer, method), 'ver'))
-                self._methodToID[(consumerID, method)] = currMethodID
-                self._idToMethod[currMethodID] = getattr(consumer, method)
-                currMethodID += 1
-            consumer._syncObj = self
         self.__onSetCodeVersion(0)
 
         self.__thread = None
