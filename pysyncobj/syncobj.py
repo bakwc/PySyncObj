@@ -884,7 +884,7 @@ class SyncObj(object):
                     self.removeNodeFromCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='REMOVE', node=message[1]))
                 return True
             elif message[0] == 'set_version':
-                self.setCodeVersion(message[1])
+                self.setCodeVersion(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='SET_VERSION', node=str(message[1])))
                 return True
         except Exception as e:
             conn.send(str(e))
