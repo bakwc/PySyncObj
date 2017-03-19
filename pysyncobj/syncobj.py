@@ -188,7 +188,7 @@ class SyncObj(object):
             consumerID = id(consumer)
             consumerMethods = [m for m in dir(consumer) if callable(getattr(consumer, m)) and getattr(getattr(consumer, m), 'replicated', False)]
             for method in sorted(consumerMethods, key=lambda x: (getattr(getattr(consumer, x), 'ver'), x)):
-                self.__selfCodeVersion = max(self.__selfCodeVersion, getattr(getattr(self, method), 'ver'))
+                self.__selfCodeVersion = max(self.__selfCodeVersion, getattr(getattr(consumer, method), 'ver'))
                 self._methodToID[(consumerID, method)] = currMethodID
                 self._idToMethod[currMethodID] = getattr(consumer, method)
                 currMethodID += 1
