@@ -299,6 +299,7 @@ class SyncObj(object):
         :param callback: will be called on cussess or fail
         :type callback: function(`FAIL_REASON <#pysyncobj.FAIL_REASON>`_, None)
         """
+        assert isinstance(newVersion, int)
         if newVersion > self.__selfCodeVersion:
             raise Exception('wrong version, current version is %d, requested version is %d' % (self.__selfCodeVersion, newVersion))
         if newVersion < self.__enabledCodeVersion:
@@ -589,6 +590,8 @@ class SyncObj(object):
             status['match_idx_server_'+k] = v
         status['leader_commit_idx'] = self.__leaderCommitIndex
         status['uptime'] = int(time.time() - self.__startTime)
+        status['self_code_version'] = self.__selfCodeVersion
+        status['enabled_code_version'] = self.__enabledCodeVersion
         return status
 
     def _getStatus(self):
@@ -840,6 +843,9 @@ class SyncObj(object):
                     conn.send('FAIL REMOVE ' + message[1])
                 else:
                     self.removeNodeFromCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='REMOVE', node=message[1]))
+                return True
+            elif message[0] == 'set_version':
+                self.setCodeVersion(message[1])
                 return True
         except Exception as e:
             conn.send(str(e))
