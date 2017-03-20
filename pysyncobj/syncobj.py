@@ -1,6 +1,7 @@
 import time
 import random
 import os
+import sys
 import threading
 import weakref
 import collections
@@ -45,6 +46,7 @@ class _COMMAND_TYPE:
     REGULAR = 0
     NO_OP = 1
     MEMBERSHIP = 2
+    VERSION = 3
 
 _bchr = functools.partial(struct.pack, 'B')
 
@@ -54,6 +56,10 @@ class SyncObjException(Exception):
         Exception.__init__(self, *args, **kwargs)
         self.errorCode = errorCode
 
+class SyncObjExceptionWrongVer(SyncObjException):
+    def __init__(self, ver):
+        SyncObjException.__init__(self, 'wrongVer')
+        self.ver = ver
 
 class SyncObjConsumer(object):
     def __init__(self):
@@ -170,21 +176,38 @@ class SyncObj(object):
         self._idToMethod = {}
         self._idToConsumer = {}
 
-        methods = [m for m in dir(self) if callable(getattr(self, m)) and getattr(getattr(self, m), 'replicated', False)]
+        methods = [m for m in dir(self) if callable(getattr(self, m)) and \
+                   getattr(getattr(self, m), 'replicated', False) and \
+                   m != getattr(getattr(self, m), 'origName')]
         currMethodID = 0
-        for method in sorted(methods):
-            self._methodToID[method] = currMethodID
-            self._idToMethod[currMethodID] = getattr(self, method)
+        self.__selfCodeVersion = 0
+        self.__currentVersionFuncNames = {}
+
+        methodsToEnumerate = []
+
+        for method in methods:
+            ver = getattr(getattr(self, method), 'ver')
+            methodsToEnumerate.append((ver, 0, method, self))
+
+        for consumerNum, consumer in enumerate(consumers):
+            consumerMethods = [m for m in dir(consumer) if callable(getattr(consumer, m)) and\
+                               getattr(getattr(consumer, m), 'replicated', False) and \
+                               m != getattr(getattr(consumer, m), 'origName')]
+            for method in consumerMethods:
+                ver = getattr(getattr(consumer, method), 'ver')
+                methodsToEnumerate.append((ver, consumerNum + 1, method, consumer))
+            consumer._syncObj = self
+
+        for ver, _, method, obj in sorted(methodsToEnumerate):
+            self.__selfCodeVersion = max(self.__selfCodeVersion, ver)
+            if obj is self:
+                self._methodToID[method] = currMethodID
+            else:
+                self._methodToID[(id(obj), method)] = currMethodID
+            self._idToMethod[currMethodID] = getattr(obj, method)
             currMethodID += 1
 
-        for consumer in consumers:
-            consumerID = id(consumer)
-            consumerMethods = [m for m in dir(consumer) if callable(getattr(consumer, m)) and getattr(getattr(consumer, m), 'replicated', False)]
-            for method in sorted(consumerMethods):
-                self._methodToID[(consumerID, method)] = currMethodID
-                self._idToMethod[currMethodID] = getattr(consumer, method)
-                currMethodID += 1
-            consumer._syncObj = self
+        self.__onSetCodeVersion(0)
 
         self.__thread = None
         self.__mainThread = None
@@ -208,6 +231,8 @@ class SyncObj(object):
         self.__properies = set()
         for key in self.__dict__:
             self.__properies.add(key)
+
+        self.__enabledCodeVersion = 0
 
         if self.__conf.autoTick:
             self.__mainThread = threading.current_thread()
@@ -276,6 +301,26 @@ class SyncObj(object):
                 raise SyncObjException('BindError')
             logging.exception('failed to perform initialization')
 
+    def getCodeVersion(self):
+        return self.__enabledCodeVersion
+
+    def setCodeVersion(self, newVersion, callback = None):
+        """Switch to a new code version on all cluster nodes. You
+        should ensure that cluster nodes are updated, otherwise they
+        won't be able to apply commands.
+
+        :param newVersion: new code version
+        :type int
+        :param callback: will be called on cussess or fail
+        :type callback: function(`FAIL_REASON <#pysyncobj.FAIL_REASON>`_, None)
+        """
+        assert isinstance(newVersion, int)
+        if newVersion > self.__selfCodeVersion:
+            raise Exception('wrong version, current version is %d, requested version is %d' % (self.__selfCodeVersion, newVersion))
+        if newVersion < self.__enabledCodeVersion:
+            raise Exception('wrong version, enabled version is %d, requested version is %d' % (self.__enabledCodeVersion, newVersion))
+        self._applyCommand(pickle.dumps(newVersion), callback, _COMMAND_TYPE.VERSION)
+
     def addNodeToCluster(self, nodeName, callback = None):
         """Add single node to cluster (dynamic membership changes). Async.
         You should wait until node successfully added before adding
@@ -309,6 +354,39 @@ class SyncObj(object):
 
     def _removeNodeFromCluster(self, nodeName, callback=None):
         self.removeNodeFromCluster(nodeName, callback)
+
+    def __onSetCodeVersion(self, newVersion):
+        methods = [m for m in dir(self) if callable(getattr(self, m)) and\
+                   getattr(getattr(self, m), 'replicated', False) and \
+                   m != getattr(getattr(self, m), 'origName')]
+
+        self.__currentVersionFuncNames = {}
+
+        funcVersions = collections.defaultdict(set)
+        for method in methods:
+            ver = getattr(getattr(self, method), 'ver')
+            origFuncName = getattr(getattr(self, method), 'origName')
+            funcVersions[origFuncName].add(ver)
+
+        for consumer in self.__consumers:
+            consumerID = id(consumer)
+            consumerMethods = [m for m in dir(consumer) if callable(getattr(consumer, m)) and \
+                               getattr(getattr(consumer, m), 'replicated', False)]
+            for method in consumerMethods:
+                ver = getattr(getattr(consumer, method), 'ver')
+                origFuncName = getattr(getattr(consumer, method), 'origName')
+                funcVersions[(consumerID, origFuncName)].add(ver)
+
+        for funcName, versions in iteritems(funcVersions):
+            versions = sorted(list(versions))
+            for v in versions:
+                if v > newVersion:
+                    break
+                realFuncName = funcName[1] if isinstance(funcName, tuple) else funcName
+                self.__currentVersionFuncNames[funcName] = realFuncName + '_v' + str(v)
+
+    def _getFuncName(self, funcName):
+        return self.__currentVersionFuncNames[funcName]
 
     def _applyCommand(self, command, callback, commandType = None):
         try:
@@ -485,16 +563,22 @@ class SyncObj(object):
             count = self.__raftCommitIndex - self.__raftLastApplied
             entries = self.__getEntries(self.__raftLastApplied + 1, count)
             for entry in entries:
-                currentTermID = entry[2]
-                subscribers = self.__commandsWaitingCommit.pop(entry[1], [])
-                res = self.__doApplyCommand(entry[0])
-                for subscribeTermID, callback in subscribers:
-                    if subscribeTermID == currentTermID:
-                        callback(res, FAIL_REASON.SUCCESS)
-                    else:
-                        callback(None, FAIL_REASON.DISCARDED)
+                try:
+                    currentTermID = entry[2]
+                    subscribers = self.__commandsWaitingCommit.pop(entry[1], [])
+                    res = self.__doApplyCommand(entry[0])
+                    for subscribeTermID, callback in subscribers:
+                        if subscribeTermID == currentTermID:
+                            callback(res, FAIL_REASON.SUCCESS)
+                        else:
+                            callback(None, FAIL_REASON.DISCARDED)
 
-                self.__raftLastApplied += 1
+                    self.__raftLastApplied += 1
+                except SyncObjExceptionWrongVer as e:
+                    logging.error('request to switch to unsupported code version (self version: %d, requested version: %d)' %
+                        (self.__selfCodeVersion, e.ver))
+
+
             if not self.__conf.appendEntriesUseBatch:
                 needSendAppendEntries = True
 
@@ -554,6 +638,8 @@ class SyncObj(object):
             status['match_idx_server_'+k] = v
         status['leader_commit_idx'] = self.__leaderCommitIndex
         status['uptime'] = int(time.time() - self.__startTime)
+        status['self_code_version'] = self.__selfCodeVersion
+        status['enabled_code_version'] = self.__enabledCodeVersion
         return status
 
     def _getStatus(self):
@@ -578,6 +664,17 @@ class SyncObj(object):
     def __doApplyCommand(self, command):
         commandType = ord(command[:1])
         # Skip no-op and membership change commands
+        if commandType == _COMMAND_TYPE.VERSION:
+            ver = pickle.loads(command[1:])
+            if self.__selfCodeVersion < ver:
+                raise SyncObjExceptionWrongVer(ver)
+            oldVer = self.__enabledCodeVersion
+            self.__enabledCodeVersion = ver
+            callback = self.__conf.onCodeVersionChanged
+            self.__onSetCodeVersion(ver)
+            if callback is not None:
+                callback(oldVer, ver)
+            return
         if commandType != _COMMAND_TYPE.REGULAR:
             return
         command = pickle.loads(command[1:])
@@ -795,6 +892,9 @@ class SyncObj(object):
                     conn.send('FAIL REMOVE ' + message[1])
                 else:
                     self.removeNodeFromCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='REMOVE', node=message[1]))
+                return True
+            elif message[0] == 'set_version':
+                self.setCodeVersion(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='SET_VERSION', node=str(message[1])))
                 return True
         except Exception as e:
             conn.send(str(e))
@@ -1078,6 +1178,9 @@ class SyncObj(object):
 
         return self.__doChangeCluster(request)
 
+    def __setCodeVersion(self, newVersion):
+        self.__enabledCodeVersion = newVersion
+
     def __doChangeCluster(self, request, reverse = False):
         requestType = request[0]
         requestNode = request[1]
@@ -1209,6 +1312,7 @@ class SyncObj(object):
             if self.__conf.dynamicMembershipChange:
                 self.__otherNodesAddrs = [node for node in data[3] if node != self.__selfNodeAddr]
                 self.__updateClusterConfiguration()
+            self.__onSetCodeVersion(0)
         except:
             logging.exception('failed to load full dump')
 
@@ -1246,7 +1350,7 @@ class AsyncResult(object):
         self.event.set()
 
 
-def replicated(func):
+def replicated(*decArgs, **decKwargs):
     """Replicated decorator. Use it to mark your class members that modifies
     a class state. Function will be called asynchronously. Function accepts
     flowing additional parameters (optional):
@@ -1259,67 +1363,99 @@ def replicated(func):
 
     :param func: arbitrary class member
     :type func: function
+    :param ver: (optional) - code version (for zero deployment)
+    :type ver: int
     """
-    def newFunc(self, *args, **kwargs):
+    def replicatedImpl(func):
+        def newFunc(self, *args, **kwargs):
 
-        if kwargs.pop('_doApply', False):
-            return func(self, *args, **kwargs)
-        else:
-            if isinstance(self, SyncObj):
-                applier = self._applyCommand
-                funcID = self._methodToID[func.__name__]
-            elif isinstance(self, SyncObjConsumer):
-                funcID = self._syncObj._methodToID[(id(self), func.__name__)]
-                applier = self._syncObj._applyCommand
+            if kwargs.pop('_doApply', False):
+                return func(self, *args, **kwargs)
             else:
-                raise SyncObjException("Class should be inherited from SyncObj or SyncObjConsumer")
+                if isinstance(self, SyncObj):
+                    applier = self._applyCommand
+                    funcName = self._getFuncName(func.__name__)
+                    funcID = self._methodToID[funcName]
+                elif isinstance(self, SyncObjConsumer):
+                    consumerId = id(self)
+                    funcName = self._syncObj._getFuncName((consumerId, func.__name__))
+                    funcID = self._syncObj._methodToID[(consumerId, funcName)]
+                    applier = self._syncObj._applyCommand
+                else:
+                    raise SyncObjException("Class should be inherited from SyncObj or SyncObjConsumer")
 
-            callback = kwargs.pop('callback', None)
-            if kwargs:
-                cmd = (funcID, args, kwargs)
-            elif args and not kwargs:
-                cmd = (funcID, args)
+                callback = kwargs.pop('callback', None)
+                if kwargs:
+                    cmd = (funcID, args, kwargs)
+                elif args and not kwargs:
+                    cmd = (funcID, args)
+                else:
+                    cmd = funcID
+                sync = kwargs.pop('sync', False)
+                if callback is not None:
+                    sync = False
+
+                if sync:
+                    asyncResult = AsyncResult()
+                    callback = asyncResult.onResult
+
+                timeout = kwargs.pop('timeout', None)
+                applier(pickle.dumps(cmd), callback, _COMMAND_TYPE.REGULAR)
+
+                if sync:
+                    res = asyncResult.event.wait(timeout)
+                    if not res:
+                        raise SyncObjException('Timeout')
+                    if not asyncResult.error == 0:
+                        raise SyncObjException(asyncResult.error)
+                    return asyncResult.result
+
+        func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
+        func_dict['replicated'] = True
+        func_dict['ver'] = int(decKwargs.get('ver', 0))
+        func_dict['origName'] = func.__name__
+
+        callframe = sys._getframe(1 if decKwargs else 2)
+        namespace = callframe.f_locals
+        newFuncName = func.__name__ + '_v' + str(func_dict['ver'])
+        namespace[newFuncName] = newFunc
+
+        return newFunc
+    if len(decArgs) == 1 and len(decKwargs) == 0 and callable(decArgs[0]):
+        return replicatedImpl(decArgs[0])
+
+    return replicatedImpl
+
+def replicated_sync(*decArgs, **decKwargs):
+    def replicated_sync_impl(func, timeout = None):
+        """Same as replicated, but synchronous by default.
+
+        :param func: aribtrary class member
+        :type func: function
+        :param timeout: time to wait (seconds). Default: None
+        :type timeout: float or None
+        """
+
+        def newFunc(self, *args, **kwargs):
+            if kwargs.get('_doApply', False):
+                return replicated(func)(self, *args, **kwargs)
             else:
-                cmd = funcID
-            sync = kwargs.pop('sync', False)
-            if callback is not None:
-                sync = False
+                kwargs.setdefault('timeout', timeout)
+                kwargs.setdefault('sync', True)
+                return replicated(func)(self, *args, **kwargs)
+        func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
+        func_dict['replicated'] = True
+        func_dict['ver'] = int(decKwargs.get('ver', 0))
+        func_dict['origName'] = func.__name__
 
-            if sync:
-                asyncResult = AsyncResult()
-                callback = asyncResult.onResult
+        callframe = sys._getframe(1 if decKwargs else 2)
+        namespace = callframe.f_locals
+        newFuncName = func.__name__ + '_v' + str(func_dict['ver'])
+        namespace[newFuncName] = newFunc
 
-            timeout = kwargs.pop('timeout', None)
-            applier(pickle.dumps(cmd), callback, _COMMAND_TYPE.REGULAR)
+        return newFunc
 
-            if sync:
-                res = asyncResult.event.wait(timeout)
-                if not res:
-                    raise SyncObjException('Timeout')
-                if not asyncResult.error == 0:
-                    raise SyncObjException(asyncResult.error)
-                return asyncResult.result
+    if len(decArgs) == 1 and len(decKwargs) == 0 and callable(decArgs[0]):
+        return replicated_sync_impl(decArgs[0])
 
-    func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
-    func_dict['replicated'] = True
-    return newFunc
-
-def replicated_sync(func, timeout = None):
-    """Same as replicated, but synchronous by default.
-
-    :param func: aribtrary class member
-    :type func: function
-    :param timeout: time to wait (seconds). Default: None
-    :type timeout: float or None
-    """
-
-    def newFunc(self, *args, **kwargs):
-        if kwargs.get('_doApply', False):
-            return replicated(func)(self, *args, **kwargs)
-        else:
-            kwargs.setdefault('timeout', timeout)
-            kwargs.setdefault('sync', True)
-            return replicated(func)(self, *args, **kwargs)
-    func_dict = newFunc.__dict__ if is_py3 else newFunc.func_dict
-    func_dict['replicated'] = True
-    return newFunc
+    return replicated_sync_impl

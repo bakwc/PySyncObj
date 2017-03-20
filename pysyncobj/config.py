@@ -158,6 +158,10 @@ class SyncObjConf(object):
         #: Should return data - internal stuff that was passed to serialize.
         self.deserializer = kwargs.get('deserializer', None)
 
+        #: This callback will be called when cluster is switched to new version.
+        #: onCodeVersionChanged(oldVer, newVer)
+        self.onCodeVersionChanged = kwargs.get('onCodeVersionChanged', None)
+
     def validate(self):
         assert self.autoTickPeriod > 0
         assert self.commandsQueueSize >= 0

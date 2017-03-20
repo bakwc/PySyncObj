@@ -70,20 +70,27 @@ class Utility(object):
         self.__port = int(self.__port)
 
         self.__password = data.password
-        if data.status and data.add is None and data.remove is None:
+        if data.status:
             self.__data = ['status']
             return True
-        elif data.add is not None and data.remove is None and not data.status:
+        elif data.add:
             if not self.__checkCorrectAdress(data.add):
                 self.__result = 'invalid adress to command add'
                 return False
             self.__data = ['add', data.add]
             return True
-        elif data.remove is not None and data.add is None and not data.status:
+        elif data.remove:
             if not self.__checkCorrectAdress(data.remove):
                 self.__result = 'invalid adress to command remove'
                 return False
             self.__data = ['remove', data.remove]
+            return True
+        elif data.version is not None:
+            try:
+                ver = int(data.version)
+            except ValueError:
+                return False
+            self.__data = ['set_version', ver]
             return True
         else:
             self.__result = 'invalid command'
@@ -109,6 +116,7 @@ class Parser(object):
         self.__parser.add_argument('-status', action='store_true', help='send command \'status\'')
         self.__parser.add_argument('-add', action='store', dest='add', help='send command \'add\'')
         self.__parser.add_argument('-remove', action='store', dest='remove', help='send command \'remove\'')
+        self.__parser.add_argument('-set_version', action='store', dest='version', help='set cluster code version')
 
     def parse(self, args):
         return self.__parser.parse_args(args)
