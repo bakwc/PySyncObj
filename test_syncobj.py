@@ -126,6 +126,10 @@ class TestObj(SyncObj):
 		self.__counter += value
 		return self.__counter
 
+	@replicated(ver=1)
+	def testMethod(self):
+		pass
+
 	def getCounter(self):
 		return self.__counter
 
@@ -1344,6 +1348,47 @@ def test_syncobjAdminAddRemove():
 
 	o1._destroy()
 	o2._destroy()
+
+def test_syncobjAdminSetVersion():
+
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr(), getNextAddr()]
+
+	o1 = TestObj(a[0], [a[1]], dynamicMembershipChange=True)
+	o2 = TestObj(a[1], [a[0]], dynamicMembershipChange=True)
+
+	assert not o1._isReady()
+	assert not o2._isReady()
+
+	doTicks([o1, o2], 10.0, stopFunc= lambda : o1._isReady() and o2._isReady())
+
+	assert o1._isReady()
+	assert o2._isReady()
+
+	assert o1.getCodeVersion() == 0
+	assert o2.getCodeVersion() == 0
+
+	trueRes = 'SUCCESS SET_VERSION 1'
+
+	currRes = {}
+
+	args = {
+		o1 : ['-conn', a[0], '-set_version', '1'],
+	}
+
+	doSyncObjAdminTicks([o1, o2], args, 10.0, currRes, stopFunc=lambda :currRes.get(o1) is not None)
+
+	assert currRes[o1] == trueRes
+
+	doTicks([o1, o2], 10.0, stopFunc=lambda: o1.getCodeVersion() == 1 and o2.getCodeVersion() == 1)
+
+	assert o1.getCodeVersion() == 1
+	assert o2.getCodeVersion() == 1
+
+	o1._destroy()
+	o2._destroy()
+
 
 def test_syncobjWaitBinded():
 	random.seed(42)
