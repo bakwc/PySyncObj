@@ -126,9 +126,13 @@ class TestObj(SyncObj):
 		self.__counter += value
 		return self.__counter
 
+	@replicated
+	def testMethod(self):
+		self.__data['testKey'] = 'valueVer1'
+
 	@replicated(ver=1)
 	def testMethod(self):
-		pass
+		self.__data['testKey'] = 'valueVer2'
 
 	def getCounter(self):
 		return self.__counter
@@ -1369,6 +1373,14 @@ def test_syncobjAdminSetVersion():
 	assert o1.getCodeVersion() == 0
 	assert o2.getCodeVersion() == 0
 
+	o2.testMethod()
+
+	doTicks([o1, o2], 10.0, stopFunc=lambda: o1.getValue('testKey') == 'valueVer1' and \
+											 o2.getValue('testKey') == 'valueVer1')
+
+	assert o1.getValue('testKey') == 'valueVer1'
+	assert o2.getValue('testKey') == 'valueVer1'
+
 	trueRes = 'SUCCESS SET_VERSION 1'
 
 	currRes = {}
@@ -1385,6 +1397,14 @@ def test_syncobjAdminSetVersion():
 
 	assert o1.getCodeVersion() == 1
 	assert o2.getCodeVersion() == 1
+
+	o2.testMethod()
+
+	doTicks([o1, o2], 10.0, stopFunc=lambda: o1.getValue('testKey') == 'valueVer2' and \
+											 o2.getValue('testKey') == 'valueVer2')
+
+	assert o1.getValue('testKey') == 'valueVer2'
+	assert o2.getValue('testKey') == 'valueVer2'
 
 	o1._destroy()
 	o2._destroy()
