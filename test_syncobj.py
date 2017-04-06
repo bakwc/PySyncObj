@@ -457,6 +457,12 @@ def test_checkCallbacksSimple():
 def removeFiles(files):
 	for f in (files):
 		if os.path.isfile(f):
+			for i in xrange(0, 15):
+				try:
+					os.remove(f)
+					break
+				except:
+					time.sleep(1.0)
 			os.remove(f)
 
 def checkDumpToFile(useFork):
