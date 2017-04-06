@@ -459,11 +459,15 @@ def removeFiles(files):
 		if os.path.isfile(f):
 			for i in xrange(0, 15):
 				try:
-					os.remove(f)
-					break
+					if os.path.isfile(f):
+						os.remove(f)
+						break
+					else:
+						break
 				except:
 					time.sleep(1.0)
-			os.remove(f)
+			if os.path.isfile(f):
+				os.remove(f)
 
 def checkDumpToFile(useFork):
 	removeFiles(['dump1.bin', 'dump2.bin'])
