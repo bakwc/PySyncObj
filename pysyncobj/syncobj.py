@@ -26,7 +26,13 @@ import pysyncobj.pickle as pickle
 
 from .dns_resolver import globalDnsResolver
 from .poller import createPoller
-from .pipe_notifier import PipeNotifier
+
+try:
+    from .pipe_notifier import PipeNotifier
+    PIPE_NOTIFIER_ENABLED = True
+except ImportError:
+    PIPE_NOTIFIER_ENABLED = False
+
 from .serializer import Serializer, SERIALIZER_STATE
 from .tcp_server import TcpServer
 from .node import Node, NODE_STATUS
@@ -215,7 +221,7 @@ class SyncObj(object):
         self.__bindedEvent = threading.Event()
         self.__bindRetries = 0
         self.__commandsQueue = FastQueue(self.__conf.commandsQueueSize)
-        if not self.__conf.appendEntriesUseBatch:
+        if not self.__conf.appendEntriesUseBatch and PIPE_NOTIFIER_ENABLED:
             self.__pipeNotifier = PipeNotifier(self._poller)
 
         self.__nodes = []
@@ -394,7 +400,7 @@ class SyncObj(object):
                 self.__commandsQueue.put_nowait((command, callback))
             else:
                 self.__commandsQueue.put_nowait((_bchr(commandType) + command, callback))
-            if not self.__conf.appendEntriesUseBatch:
+            if not self.__conf.appendEntriesUseBatch and PIPE_NOTIFIER_ENABLED:
                 self.__pipeNotifier.notify()
         except Queue.Full:
             self.__callErrCallback(FAIL_REASON.QUEUE_FULL, callback)
