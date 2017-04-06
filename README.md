@@ -1,9 +1,12 @@
 # PySyncObj
 
-[ ![Build Status] [travis-image] ] [travis] [ ![Coverage Status] [coverage-image] ] [coverage] [ ![Release] [release-image] ] [releases] [ ![License] [license-image] ] [license] [ ![gitter] [gitter-image] ] [gitter] [ ![docs] [docs-image] ] [docs]
+[ ![Build Status] [travis-image] ] [travis] ![Windows Build Status] [appveyor-image] ] [appveyor] [ ![Coverage Status] [coverage-image] ] [coverage] [ ![Release] [release-image] ] [releases] [ ![License] [license-image] ] [license] [ ![gitter] [gitter-image] ] [gitter] [ ![docs] [docs-image] ] [docs]
 
 [travis-image]: https://travis-ci.org/bakwc/PySyncObj.svg?branch=master
 [travis]: https://travis-ci.org/bakwc/PySyncObj
+
+[appveyor-image]: https://ci.appveyor.com/api/projects/status/github/bakwc/pysyncobj?branch=master&svg=true
+[appveyor]: https://ci.appveyor.com/project/bakwc/pysyncobj
 
 [coverage-image]: https://coveralls.io/repos/github/bakwc/PySyncObj/badge.svg?branch=master
 [coverage]: https://coveralls.io/github/bakwc/PySyncObj?branch=master
