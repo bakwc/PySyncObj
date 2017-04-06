@@ -1,0 +1,17 @@
+environment:
+
+  matrix:
+
+    - PYTHON: "C:\\Python27"
+
+
+  install:
+
+    - "%PYTHON%\\python.exe -m pip install pytest"
+
+  build: off
+
+  test_script:
+
+    - "%PYTHON%\\python.exe -m pytest -v -l test_syncobj.py"
+
