@@ -456,10 +456,8 @@ def test_checkCallbacksSimple():
 
 def removeFiles(files):
 	for f in (files):
-		try:
+		if os.path.isfile(f):
 			os.remove(f)
-		except:
-			pass
 
 def checkDumpToFile(useFork):
 	removeFiles(['dump1.bin', 'dump2.bin'])
