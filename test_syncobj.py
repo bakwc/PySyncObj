@@ -1469,6 +1469,7 @@ def test_syncobjWaitBinded():
 	o2.destroy()
 	o3.destroy()
 
+@pytest.mark.skipif(os.name == 'nt', reason='temporary disabled for windows')
 def test_unpickle():
 	data = {'foo': 'bar', 'command': b'\xfa', 'entries': [b'\xfb', b'\xfc']}
 	python2_cpickle = b'\x80\x02}q\x01(U\x03fooq\x02U\x03barq\x03U\x07commandq\x04U\x01\xfaU\x07entriesq\x05]q\x06(U\x01\xfbU\x01\xfceu.'
