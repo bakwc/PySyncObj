@@ -1449,7 +1449,7 @@ def test_syncobjAdminSetVersion():
 	o1._destroy()
 	o2._destroy()
 
-
+@pytest.mark.skipif(os.name == 'nt', reason='temporary disabled for windows')
 def test_syncobjWaitBinded():
 	random.seed(42)
 
