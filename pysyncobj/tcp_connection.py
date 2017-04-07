@@ -4,6 +4,7 @@ import zlib
 import struct
 
 import pysyncobj.pickle as pickle
+import pysyncobj.win_inet_pton
 
 from .poller import POLL_EVENT_TYPE
 
