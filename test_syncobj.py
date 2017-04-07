@@ -1461,12 +1461,13 @@ def test_syncobjWaitBinded():
 	o1.waitBinded()
 	o2.waitBinded()
 
-	o1.destroy()
-	o2.destroy()
-
 	o3 = TestObj(a[1], [a[0]], testType=TEST_TYPE.WAIT_BIND)
 	with pytest.raises(SyncObjException):
 		o3.waitBinded()
+
+	o1.destroy()
+	o2.destroy()
+	o3.destroy()
 
 def test_unpickle():
 	data = {'foo': 'bar', 'command': b'\xfa', 'entries': [b'\xfb', b'\xfc']}
