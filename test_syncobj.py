@@ -1744,6 +1744,7 @@ def test_ReplSet():
 	assert len(s) == 0
 	assert 9 not in s
 
+@pytest.mark.skipif(os.name == 'nt', reason='temporary disabled for windows')
 def test_ipv6():
 
 	random.seed(42)
