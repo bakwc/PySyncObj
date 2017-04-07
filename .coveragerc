@@ -7,3 +7,7 @@ exclude_lines =
     raise NotImplementedError
 
 show_missing = 1
+
+[run]
+omit =
+    pysyncobj/win_inet_pton.py
