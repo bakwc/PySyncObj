@@ -205,6 +205,21 @@ def getNextAddr(ipv6 = False, isLocalhost = False):
 		return 'localhost:%d' % _g_nextAddress
 	return '127.0.0.1:%d' % _g_nextAddress
 
+_g_nextDumpFile = 1
+_g_nextJournalFile = 1
+
+def getNextDumpFile():
+	global _g_nextDumpFile
+	fname = 'dump%d.bin' % _g_nextDumpFile
+	_g_nextDumpFile += 1
+	return fname
+
+def getNextJournalFile():
+	global _g_nextJournalFile
+	fname = 'journal%d.bin' % _g_nextJournalFile
+	_g_nextJournalFile += 1
+	return fname
+
 def test_syncTwoObjects():
 
 	random.seed(42)
@@ -466,18 +481,18 @@ def removeFiles(files):
 						break
 				except:
 					time.sleep(1.0)
-			if os.path.isfile(f):
-				os.remove(f)
 
 def checkDumpToFile(useFork):
-	removeFiles(['dump1.bin', 'dump2.bin'])
+
+	dumpFiles = [getNextDumpFile(), getNextDumpFile()]
+	removeFiles(dumpFiles)
 
 	random.seed(42)
 
 	a = [getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin', useFork = useFork)
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin', useFork = useFork)
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = dumpFiles[0], useFork = useFork)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = dumpFiles[1], useFork = useFork)
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
@@ -501,8 +516,8 @@ def checkDumpToFile(useFork):
 	o2._destroy()
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin', useFork = useFork)
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin', useFork = useFork)
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = dumpFiles[0], useFork = useFork)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = dumpFiles[1], useFork = useFork)
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 	assert o1._isReady()
@@ -517,7 +532,7 @@ def checkDumpToFile(useFork):
 	o1._destroy()
 	o2._destroy()
 
-	removeFiles(['dump1.bin', 'dump2.bin'])
+	removeFiles(dumpFiles)
 
 def test_checkDumpToFile():
 	if hasattr(os, 'fork'):
@@ -530,14 +545,15 @@ def getRandStr():
 
 
 def test_checkBigStorage():
-	removeFiles(['dump1.bin', 'dump2.bin'])
+	dumpFiles = [getNextDumpFile(), getNextDumpFile()]
+	removeFiles(dumpFiles)
 
 	random.seed(42)
 
 	a = [getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = dumpFiles[0])
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = dumpFiles[1])
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
@@ -567,8 +583,8 @@ def test_checkBigStorage():
 
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = 'dump2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.COMPACTION_2, dumpFile = dumpFiles[0])
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.COMPACTION_2, dumpFile = dumpFiles[1])
 	objs = [o1, o2]
 	# Wait for disk load, election and replication
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
@@ -582,7 +598,7 @@ def test_checkBigStorage():
 	o1._destroy()
 	o2._destroy()
 
-	removeFiles(['dump1.bin', 'dump2.bin'])
+	removeFiles(dumpFiles)
 
 
 def test_encryptionCorrectPassword():
@@ -677,15 +693,16 @@ def _checkSameLeader2(objs):
 
 def test_randomTest1():
 
-	removeFiles(['journal1.bin', 'journal2.bin', 'journal3.bin'])
+	journalFiles = [getNextJournalFile(), getNextJournalFile(), getNextJournalFile()]
+	removeFiles(journalFiles)
 
 	random.seed(12)
 
 	a = [getNextAddr(), getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1], a[2]], TEST_TYPE.RAND_1, journalFile='journal1.bin')
-	o2 = TestObj(a[1], [a[2], a[0]], TEST_TYPE.RAND_1, journalFile='journal2.bin')
-	o3 = TestObj(a[2], [a[0], a[1]], TEST_TYPE.RAND_1, journalFile='journal3.bin')
+	o1 = TestObj(a[0], [a[1], a[2]], TEST_TYPE.RAND_1, journalFile=journalFiles[0])
+	o2 = TestObj(a[1], [a[2], a[0]], TEST_TYPE.RAND_1, journalFile=journalFiles[1])
+	o3 = TestObj(a[2], [a[0], a[1]], TEST_TYPE.RAND_1, journalFile=journalFiles[2])
 	objs = [o1, o2, o3]
 
 	st = time.time()
@@ -728,9 +745,9 @@ def test_randomTest1():
 	del o3
 	time.sleep(0.1)
 
-	o1 = TestObj(a[0], [a[1], a[2]], TEST_TYPE.RAND_1, journalFile='journal1.bin')
-	o2 = TestObj(a[1], [a[2], a[0]], TEST_TYPE.RAND_1, journalFile='journal2.bin')
-	o3 = TestObj(a[2], [a[0], a[1]], TEST_TYPE.RAND_1, journalFile='journal3.bin')
+	o1 = TestObj(a[0], [a[1], a[2]], TEST_TYPE.RAND_1, journalFile=journalFiles[0])
+	o2 = TestObj(a[1], [a[2], a[0]], TEST_TYPE.RAND_1, journalFile=journalFiles[1])
+	o3 = TestObj(a[2], [a[0], a[1]], TEST_TYPE.RAND_1, journalFile=journalFiles[2])
 	objs = [o1, o2, o3]
 
 	st = time.time()
@@ -747,7 +764,7 @@ def test_randomTest1():
 		print(time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter(), counter)
 		raise AssertionError('Values not equal')
 
-	removeFiles(['journal1.bin', 'journal2.bin', 'journal3.bin'])
+	removeFiles(journalFiles)
 
 
 # Ensure that raftLog after serialization is the same as in serialized data
@@ -777,15 +794,16 @@ def test_logCompactionRegressionTest1():
 
 
 def test_logCompactionRegressionTest2():
-	removeFiles(['dump1.bin', 'dump2.bin', 'dump3.bin'])
+	dumpFiles = [getNextDumpFile(), getNextDumpFile(), getNextDumpFile()]
+	removeFiles(dumpFiles)
 
 	random.seed(12)
 
 	a = [getNextAddr(), getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1], a[2]], dumpFile = 'dump1.bin')
-	o2 = TestObj(a[1], [a[2], a[0]], dumpFile = 'dump2.bin')
-	o3 = TestObj(a[2], [a[0], a[1]], dumpFile = 'dump3.bin')
+	o1 = TestObj(a[0], [a[1], a[2]], dumpFile = dumpFiles[0])
+	o2 = TestObj(a[1], [a[2], a[0]], dumpFile = dumpFiles[1])
+	o3 = TestObj(a[2], [a[0], a[1]], dumpFile = dumpFiles[2])
 	objs = [o1, o2]
 
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
@@ -813,7 +831,7 @@ def test_logCompactionRegressionTest2():
 	o2._forceLogCompaction()
 	doTicks(objs, 0.5)
 
-	o3 = TestObj(a[2], [a[0], a[1]], dumpFile='dump3.bin')
+	o3 = TestObj(a[2], [a[0], a[1]], dumpFile=dumpFiles[2])
 	objs = [o1, o2, o3]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
 
@@ -825,7 +843,7 @@ def test_logCompactionRegressionTest2():
 	o2._destroy()
 	o3._destroy()
 
-	removeFiles(['dump1.bin', 'dump2.bin', 'dump3.bin'])
+	removeFiles(dumpFiles)
 
 
 def __checkParnerNodeExists(obj, nodeName, shouldExist = True):
@@ -849,12 +867,13 @@ def __checkParnerNodeExists(obj, nodeName, shouldExist = True):
 	return True
 
 def test_doChangeClusterUT1():
-	removeFiles(['dump1.bin'])
+	dumpFiles = [getNextDumpFile()]
+	removeFiles(dumpFiles)
 
 	baseAddr = getNextAddr()
 	oterAddr = getNextAddr()
 
-	o1 = TestObj(baseAddr, ['localhost:1235', oterAddr], dumpFile='dump1.bin', dynamicMembershipChange=True)
+	o1 = TestObj(baseAddr, ['localhost:1235', oterAddr], dumpFile=dumpFiles[0], dynamicMembershipChange=True)
 	__checkParnerNodeExists(o1, 'localhost:1238', False)
 	__checkParnerNodeExists(o1, 'localhost:1239', False)
 	__checkParnerNodeExists(o1, 'localhost:1235', True)
@@ -917,6 +936,8 @@ def test_doChangeClusterUT1():
 	__checkParnerNodeExists(o2, 'localhost:1235', False)
 	o2._destroy()
 
+	removeFiles(dumpFiles)
+
 
 def test_doChangeClusterUT2():
 	a = [getNextAddr(), getNextAddr(), getNextAddr(), getNextAddr()]
@@ -957,14 +978,19 @@ def test_doChangeClusterUT2():
 	o4._destroy()
 
 def test_journalTest1():
-	removeFiles(['dump1.bin', 'dump2.bin', 'journal1.bin', 'journal2.bin'])
+
+	dumpFiles = [getNextDumpFile(), getNextDumpFile()]
+	journalFiles = [getNextJournalFile(), getNextJournalFile()]
+	removeFiles(dumpFiles)
+	removeFiles(journalFiles)
+
 
 	random.seed(42)
 
 	a = [getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump1.bin', journalFile='journal1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump2.bin', journalFile='journal2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile = dumpFiles[0], journalFile=journalFiles[0])
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile = dumpFiles[1], journalFile=journalFiles[1])
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
@@ -983,8 +1009,8 @@ def test_journalTest1():
 	o2._destroy()
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump1.bin', journalFile='journal1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile = 'dump2.bin', journalFile='journal2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile = dumpFiles[0], journalFile=journalFiles[0])
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile = dumpFiles[1], journalFile=journalFiles[1])
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady() and\
 									   o1.getCounter() == 350 and o2.getCounter() == 350)
@@ -1022,8 +1048,8 @@ def test_journalTest1():
 	o2._destroy()
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile='dump1.bin', journalFile='journal1.bin')
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile='dump2.bin', journalFile='journal2.bin')
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile=dumpFiles[0], journalFile=journalFiles[0])
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile=dumpFiles[1], journalFile=journalFiles[1])
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady() and \
 									   o1.getCounter() == 900 and o2.getCounter() == 900)
@@ -1039,35 +1065,40 @@ def test_journalTest1():
 	o1._destroy()
 	o2._destroy()
 
-	removeFiles(['dump1.bin', 'dump2.bin', 'journal1.bin', 'journal2.bin'])
+	removeFiles(dumpFiles)
+	removeFiles(journalFiles)
 
 def test_journalTest2():
-	removeFiles(['journal.bin'])
-	journal = createJournal('journal.bin')
+
+	journalFiles = [getNextJournalFile()]
+	removeFiles(journalFiles)
+
+	removeFiles(journalFiles)
+	journal = createJournal(journalFiles[0])
 	journal.add(b'cmd1', 1, 0)
 	journal.add(b'cmd2', 2, 0)
 	journal.add(b'cmd3', 3, 0)
 	journal._destroy()
 
-	journal = createJournal('journal.bin')
+	journal = createJournal(journalFiles[0])
 	assert len(journal) == 3
 	assert journal[0] == (b'cmd1', 1, 0)
 	assert journal[-1] == (b'cmd3', 3, 0)
 	journal.deleteEntriesFrom(2)
 	journal._destroy()
 
-	journal = createJournal('journal.bin')
+	journal = createJournal(journalFiles[0])
 	assert len(journal) == 2
 	assert journal[0] == (b'cmd1', 1, 0)
 	assert journal[-1] == (b'cmd2', 2, 0)
 	journal.deleteEntriesTo(1)
 	journal._destroy()
 
-	journal = createJournal('journal.bin')
+	journal = createJournal(journalFiles[0])
 	assert len(journal) == 1
 	assert journal[0] == (b'cmd2', 2, 0)
 	journal._destroy()
-	removeFiles(['journal.bin'])
+	removeFiles(journalFiles)
 
 def test_autoTick1():
 	random.seed(42)
@@ -1109,14 +1140,15 @@ def test_autoTick1():
 
 
 def test_largeCommands():
-	removeFiles(['dump1.bin', 'dump2.bin'])
+	dumpFiles = [getNextDumpFile(), getNextDumpFile()]
+	removeFiles(dumpFiles)
 
 	random.seed(42)
 
 	a = [getNextAddr(), getNextAddr()]
 
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.LARGE_COMMAND, dumpFile ='dump1.bin', leaderFallbackTimeout=60.0)
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.LARGE_COMMAND, dumpFile ='dump2.bin', leaderFallbackTimeout=60.0)
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.LARGE_COMMAND, dumpFile = dumpFiles[0], leaderFallbackTimeout=60.0)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.LARGE_COMMAND, dumpFile = dumpFiles[0], leaderFallbackTimeout=60.0)
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
@@ -1151,8 +1183,8 @@ def test_largeCommands():
 
 
 	a = [getNextAddr(), getNextAddr()]
-	o1 = TestObj(a[0], [a[1]], TEST_TYPE.LARGE_COMMAND, dumpFile = 'dump1.bin', leaderFallbackTimeout=60.0)
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.LARGE_COMMAND, dumpFile = 'dump2.bin', leaderFallbackTimeout=60.0)
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.LARGE_COMMAND, dumpFile = dumpFiles[0], leaderFallbackTimeout=60.0)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.LARGE_COMMAND, dumpFile = dumpFiles[1], leaderFallbackTimeout=60.0)
 	objs = [o1, o2]
 	# Wait for disk load, election and replication
 
@@ -1173,7 +1205,7 @@ def test_largeCommands():
 	o1._destroy()
 	o2._destroy()
 
-	removeFiles(['dump1.bin', 'dump2.bin'])
+	removeFiles(dumpFiles)
 
 def test_readOnlyNodes():
 
