@@ -20,5 +20,3 @@ test_script:
   # the interpreter you're using - Appveyor does not do anything special
   # to put the Python evrsion you want to use on PATH.
   - "%PYTHON%\\python.exe -m pytest -v -l test_syncobj.py"
-
-after_test: off
