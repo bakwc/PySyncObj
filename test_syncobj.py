@@ -14,7 +14,7 @@ import struct
 import logging
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, \
 	createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException, SyncObjConsumer, _RAFT_STATE
-from pysyncobj.batteries import ReplCounter, ReplList, ReplDict, ReplSet, ReplLockManager
+from pysyncobj.batteries import ReplCounter, ReplList, ReplDict, ReplSet, ReplLockManager, ReplQueue, ReplPriorityQueue
 from collections import defaultdict
 
 logging.basicConfig(format = u'[%(asctime)s %(filename)s:%(lineno)d %(levelname)s]  %(message)s', level = logging.DEBUG)
@@ -1743,6 +1743,62 @@ def test_ReplSet():
 	s.clear(_doApply=True)
 	assert len(s) == 0
 	assert 9 not in s
+
+def test_ReplQueue():
+	q = ReplQueue()
+	q.put(42, _doApply=True)
+	q.put(33, _doApply=True)
+	q.put(14, _doApply=True)
+
+	assert q.get(_doApply=True) == 42
+
+	assert q.qsize() == 2
+	assert len(q) == 2
+
+	assert q.empty() == False
+
+	assert q.get(_doApply=True) == 33
+	assert q.get(-1, _doApply=True) == 14
+	assert q.get(_doApply=True) == None
+	assert q.get(-1, _doApply=True) == -1
+	assert q.empty()
+
+	q = ReplQueue(3)
+	q.put(42, _doApply=True)
+	q.put(33, _doApply=True)
+	assert q.full() == False
+	assert q.put(14, _doApply=True) == True
+	assert q.full() == True
+	assert q.put(19, _doApply=True) == False
+	assert q.get(_doApply=True) == 42
+
+def test_ReplPriorityQueue():
+	q = ReplPriorityQueue()
+	q.put(42, _doApply=True)
+	q.put(14, _doApply=True)
+	q.put(33, _doApply=True)
+
+	assert q.get(_doApply=True) == 14
+
+	assert q.qsize() == 2
+	assert len(q) == 2
+
+	assert q.empty() == False
+
+	assert q.get(_doApply=True) == 33
+	assert q.get(-1, _doApply=True) == 42
+	assert q.get(_doApply=True) == None
+	assert q.get(-1, _doApply=True) == -1
+	assert q.empty()
+
+	q = ReplPriorityQueue(3)
+	q.put(42, _doApply=True)
+	q.put(33, _doApply=True)
+	assert q.full() == False
+	assert q.put(14, _doApply=True) == True
+	assert q.full() == True
+	assert q.put(19, _doApply=True) == False
+	assert q.get(_doApply=True) == 14
 
 @pytest.mark.skipif(os.name == 'nt', reason='temporary disabled for windows')
 def test_ipv6():
