@@ -3,6 +3,8 @@ import weakref
 import time
 import socket
 import os
+import collections
+import heapq
 from .syncobj import SyncObjConsumer, replicated
 
 
@@ -193,6 +195,71 @@ class ReplSet(SyncObjConsumer):
 
     def __contains__(self, item):
         return item in self.__data
+
+
+class ReplQueue(SyncObjConsumer):
+    def __init__(self, maxsize=0):
+        super(ReplQueue, self).__init__()
+        self.__maxsize = maxsize
+        self.__data = collections.deque()
+
+    def qsize(self):
+        return len(self.__data)
+
+    def empty(self):
+        return len(self.__data) == 0
+
+    def __len__(self):
+        return len(self.__data)
+
+    def full(self):
+        return len(self.__data) == self.__maxsize
+
+    @replicated
+    def put(self, item):
+        if self.__maxsize and len(self.__data) >= self.__maxsize:
+            return False
+        self.__data.append(item)
+        return True
+
+    @replicated
+    def get(self, default=None):
+        try:
+            return self.__data.popleft()
+        except:
+            return default
+
+
+class ReplPriorityQueue(SyncObjConsumer):
+    def __init__(self, maxsize=0):
+        super(ReplPriorityQueue, self).__init__()
+        self.__maxsize = maxsize
+        self.__data = []
+
+    def qsize(self):
+        return len(self.__data)
+
+    def empty(self):
+        return len(self.__data) == 0
+
+    def __len__(self):
+        return len(self.__data)
+
+    def full(self):
+        return len(self.__data) == self.__maxsize
+
+    @replicated
+    def put(self, item):
+        if self.__maxsize and len(self.__data) >= self.__maxsize:
+            return False
+        heapq.heappush(self.__data, item)
+        return True
+
+    @replicated
+    def get(self, default=None):
+        if not self.__data:
+            return default
+        return heapq.heappop(self.__data)
 
 
 class _ReplLockManagerImpl(SyncObjConsumer):
