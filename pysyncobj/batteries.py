@@ -10,87 +10,143 @@ from .syncobj import SyncObjConsumer, replicated
 
 class ReplCounter(SyncObjConsumer):
     def __init__(self):
+        """
+        Simple distributed counter. You can set, add, sub and inc counter value.
+        """
         super(ReplCounter, self).__init__()
-        self.__counter = 0
+        self.__counter = int()
 
     @replicated
     def set(self, newValue):
+        """
+        Set new value to a counter.
+        :param newValue: new value
+        :return: new counter value
+        """
         self.__counter = newValue
         return self.__counter
 
     @replicated
     def add(self, value):
+        """
+        Adds value to a counter.
+        :param value: value to add
+        :return: new counter value
+        """
         self.__counter += value
         return self.__counter
 
     @replicated
     def sub(self, value):
+        """
+        Subtracts a value from counter.
+        :param value: value to subtract
+        :return: new counter value
+        """
         self.__counter -= value
         return self.__counter
 
     @replicated
     def inc(self):
+        """
+        Increments counter value by one.
+        :return: new counter value
+        """
         self.__counter += 1
         return self.__counter
 
     def get(self):
+        """
+        :return: current counter value
+        """
         return self.__counter
 
 
 class ReplList(SyncObjConsumer):
     def __init__(self):
+        """
+        Distributed list - it has an interface similar to a regular list.
+        """
         super(ReplList, self).__init__()
         self.__data = []
 
     @replicated
     def reset(self, newData):
+        """Replace list to a new one"""
         assert isinstance(newData, list)
         self.__data = newData
 
     @replicated
     def set(self, position, newValue):
+        """Update value at given position."""
         self.__data[position] = newValue
 
     @replicated
     def append(self, item):
+        """Append item to end"""
         self.__data.append(item)
 
     @replicated
     def extend(self, other):
+        """Extend list by appending elements from the iterable"""
         self.__data.extend(other)
 
     @replicated
     def insert(self, position, element):
+        """Insert object before position"""
         self.__data.insert(position, element)
 
     @replicated
     def remove(self, element):
+        """
+        Remove first occurrence of element.
+        Raises ValueError if the value is not present.
+        """
         self.__data.remove(element)
 
     @replicated
     def pop(self, position=None):
+        """
+        Remove and return item at position (default last).
+        Raises IndexError if list is empty or index is out of range.
+        """
         return self.__data.pop(position)
 
     @replicated
     def sort(self, reverse=False):
+        """Stable sort *IN PLACE*"""
         self.__data.sort(reverse=reverse)
 
     def index(self, element):
+        """
+        Return first position of element.
+        Raises ValueError if the value is not present.
+        """
         return self.__data.index(element)
 
     def count(self, element):
+        """ Return number of occurrences of element """
         return self.__data.count(element)
 
     def get(self, position):
+        """ Return value at given position"""
         return self.__data[position]
 
     def __getitem__(self, position):
+        """ Return value at given position"""
         return self.__data[position]
 
+    @replicated(ver=1)
+    def __setitem__(self, position, element):
+        """Update value at given position."""
+        self.__data[position] = element
+
     def __len__(self):
+        """Return the number of items of a sequence or collection."""
         return len(self.__data)
 
     def rawData(self):
+        """Return pointer to internal list - use it carefully"""
         return self.__data
 
 

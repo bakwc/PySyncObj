@@ -1651,6 +1651,8 @@ def test_ReplList():
 	assert l.get(2) == 5
 	assert l[4] == 1
 	assert len(l) == 5
+	l.__setitem__(0, 43, _doApply=True)
+	assert l[0] == 43
 
 def test_ReplDict():
 	d = ReplDict()
