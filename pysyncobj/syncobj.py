@@ -8,6 +8,8 @@ import collections
 import functools
 import struct
 import logging
+import copy
+import types
 try:
     import Queue
     is_py3 = False
@@ -1343,6 +1345,13 @@ class SyncObj(object):
                 self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
                 self.__raftMatchIndex[nodeAddr] = 0
 
+def __copy_func(f, name):
+    res = types.FunctionType(f.func_code, f.func_globals, name, f.func_defaults, f.func_closure)
+    if is_py3:
+        res.__dict__ = f.__dict__
+    else:
+        res.func_dict = f.func_dict
+    return res
 
 class AsyncResult(object):
     def __init__(self):
@@ -1424,9 +1433,10 @@ def replicated(*decArgs, **decKwargs):
         callframe = sys._getframe(1 if decKwargs else 2)
         namespace = callframe.f_locals
         newFuncName = func.__name__ + '_v' + str(func_dict['ver'])
-        namespace[newFuncName] = newFunc
-
+        namespace[newFuncName] = __copy_func(newFunc, newFuncName)
+        functools.update_wrapper(newFunc, func)
         return newFunc
+
     if len(decArgs) == 1 and len(decKwargs) == 0 and callable(decArgs[0]):
         return replicatedImpl(decArgs[0])
 
@@ -1436,7 +1446,7 @@ def replicated_sync(*decArgs, **decKwargs):
     def replicated_sync_impl(func, timeout = None):
         """Same as replicated, but synchronous by default.
 
-        :param func: aribtrary class member
+        :param func: arbitrary class member
         :type func: function
         :param timeout: time to wait (seconds). Default: None
         :type timeout: float or None
@@ -1457,8 +1467,8 @@ def replicated_sync(*decArgs, **decKwargs):
         callframe = sys._getframe(1 if decKwargs else 2)
         namespace = callframe.f_locals
         newFuncName = func.__name__ + '_v' + str(func_dict['ver'])
-        namespace[newFuncName] = newFunc
-
+        namespace[newFuncName] = __copy_func(newFunc, newFuncName)
+        functools.update_wrapper(newFunc, func)
         return newFunc
 
     if len(decArgs) == 1 and len(decKwargs) == 0 and callable(decArgs[0]):

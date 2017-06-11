@@ -12,6 +12,7 @@ Contents:
    :maxdepth: 2
 
    pysyncobj
+   batteries
 
 
 Indices and tables

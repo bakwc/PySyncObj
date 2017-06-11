@@ -20,6 +20,7 @@ class ReplCounter(SyncObjConsumer):
     def set(self, newValue):
         """
         Set new value to a counter.
+
         :param newValue: new value
         :return: new counter value
         """
@@ -30,6 +31,7 @@ class ReplCounter(SyncObjConsumer):
     def add(self, value):
         """
         Adds value to a counter.
+
         :param value: value to add
         :return: new counter value
         """
@@ -40,6 +42,7 @@ class ReplCounter(SyncObjConsumer):
     def sub(self, value):
         """
         Subtracts a value from counter.
+
         :param value: value to subtract
         :return: new counter value
         """
@@ -50,6 +53,7 @@ class ReplCounter(SyncObjConsumer):
     def inc(self):
         """
         Increments counter value by one.
+
         :return: new counter value
         """
         self.__counter += 1
