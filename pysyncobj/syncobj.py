@@ -1346,10 +1346,11 @@ class SyncObj(object):
                 self.__raftMatchIndex[nodeAddr] = 0
 
 def __copy_func(f, name):
-    res = types.FunctionType(f.func_code, f.func_globals, name, f.func_defaults, f.func_closure)
     if is_py3:
+        res = types.FunctionType(f.__code__, f.__globals__, name, f.__defaults__, f.__closure__)
         res.__dict__ = f.__dict__
     else:
+        res = types.FunctionType(f.func_code, f.func_globals, name, f.func_defaults, f.func_closure)
         res.func_dict = f.func_dict
     return res
 
