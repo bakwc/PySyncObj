@@ -302,6 +302,7 @@ class ReplQueue(SyncObjConsumer):
         """
         Replicated FIFO queue. Based on collections.deque.
         Has an interface similar to Queue.
+        
         :param maxsize: Max queue size.
         :type maxsize: int
         """
@@ -350,6 +351,7 @@ class ReplPriorityQueue(SyncObjConsumer):
         """
         Replicated priority queue. Based on heapq.
         Has an interface similar to Queue.
+
         :param maxsize: Max queue size.
         :type maxsize: int
         """
@@ -443,6 +445,7 @@ class ReplLockManager(object):
 
     def __init__(self, autoUnlockTime, selfID = None):
         """Replicated Lock Manager. Allow to acquire / release distributed locks.
+
         :param autoUnlockTime: lock will be released automatically
             if no response from holder for more than autoUnlockTime seconds
         :type autoUnlockTime: float
@@ -492,6 +495,7 @@ class ReplLockManager(object):
 
     def tryAcquire(self, lockID, callback=None, sync=False, timeout=None):
         """Attempt to acquire lock.
+
         :param lockID: unique lock identifier.
         :type lockID: str
         :param sync: True - to wait until lock is acquired or failed to acquire.
@@ -506,6 +510,7 @@ class ReplLockManager(object):
 
     def isAcquired(self, lockID):
         """Check if lock is acquired by ourselves.
+
         :param lockID: unique lock identifier.
         :type lockID: str
         :return True if lock is acquired by ourselves.
@@ -515,6 +520,7 @@ class ReplLockManager(object):
     def release(self, lockID, callback=None, sync=False, timeout=None):
         """
         Release previously-acquired lock.
+
         :param lockID:  unique lock identifier.
         :type lockID: str
         :param sync: True - to wait until lock is released or failed to release.
