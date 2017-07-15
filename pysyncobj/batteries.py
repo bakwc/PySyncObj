@@ -299,24 +299,37 @@ class ReplSet(SyncObjConsumer):
 
 class ReplQueue(SyncObjConsumer):
     def __init__(self, maxsize=0):
+        """
+        Replicated FIFO queue. Based on collections.deque.
+        Has an interface similar to Queue.
+        :param maxsize: Max queue size.
+        :type maxsize: int
+        """
         super(ReplQueue, self).__init__()
         self.__maxsize = maxsize
         self.__data = collections.deque()
 
     def qsize(self):
+        """Return size of queue"""
         return len(self.__data)
 
     def empty(self):
+        """True if queue is empty"""
         return len(self.__data) == 0
 
     def __len__(self):
+        """Return size of queue"""
         return len(self.__data)
 
     def full(self):
+        """True if queue is full"""
         return len(self.__data) == self.__maxsize
 
     @replicated
     def put(self, item):
+        """Put an item into the queue.
+        True - if item placed in queue.
+        False - if queue is full and item can not be placed."""
         if self.__maxsize and len(self.__data) >= self.__maxsize:
             return False
         self.__data.append(item)
@@ -324,6 +337,8 @@ class ReplQueue(SyncObjConsumer):
 
     @replicated
     def get(self, default=None):
+        """Extract item from queue.
+        Return default if queue is empty."""
         try:
             return self.__data.popleft()
         except:
@@ -332,24 +347,37 @@ class ReplQueue(SyncObjConsumer):
 
 class ReplPriorityQueue(SyncObjConsumer):
     def __init__(self, maxsize=0):
+        """
+        Replicated priority queue. Based on heapq.
+        Has an interface similar to Queue.
+        :param maxsize: Max queue size.
+        :type maxsize: int
+        """
         super(ReplPriorityQueue, self).__init__()
         self.__maxsize = maxsize
         self.__data = []
 
     def qsize(self):
+        """Return size of queue"""
         return len(self.__data)
 
     def empty(self):
+        """True if queue is empty"""
         return len(self.__data) == 0
 
     def __len__(self):
+        """Return size of queue"""
         return len(self.__data)
 
     def full(self):
+        """True if queue is full"""
         return len(self.__data) == self.__maxsize
 
     @replicated
     def put(self, item):
+        """Put an item into the queue. Items should be comparable, eg. tuples.
+        True - if item placed in queue.
+        False - if queue is full and item can not be placed."""
         if self.__maxsize and len(self.__data) >= self.__maxsize:
             return False
         heapq.heappush(self.__data, item)
@@ -357,6 +385,8 @@ class ReplPriorityQueue(SyncObjConsumer):
 
     @replicated
     def get(self, default=None):
+        """Extract the smallest item from queue.
+        Return default if queue is empty."""
         if not self.__data:
             return default
         return heapq.heappop(self.__data)
