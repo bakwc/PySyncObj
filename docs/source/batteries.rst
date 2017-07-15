@@ -25,3 +25,21 @@ ReplSet
 .. autoclass:: pysyncobj.batteries.ReplSet
     :members:
 
+ReplQueue
+---------
+
+.. autoclass:: pysyncobj.batteries.ReplQueue
+    :members:
+
+ReplPriorityQueue
+-----------------
+
+.. autoclass:: pysyncobj.batteries.ReplPriorityQueue
+    :members:
+
+ReplLockManager
+---------------
+
+.. autoclass:: pysyncobj.batteries.ReplLockManager
+    :members:
+

@@ -399,39 +399,39 @@ class _ReplLockManagerImpl(SyncObjConsumer):
         self.__autoUnlockTime = autoUnlockTime
 
     @replicated
-    def acquire(self, lockPath, clientID, currentTime):
-        existingLock = self.__locks.get(lockPath, None)
+    def acquire(self, lockID, clientID, currentTime):
+        existingLock = self.__locks.get(lockID, None)
         # Auto-unlock old lock
         if existingLock is not None:
             if currentTime - existingLock[1] > self.__autoUnlockTime:
                 existingLock = None
         # Acquire lock if possible
         if existingLock is None or existingLock[0] == clientID:
-            self.__locks[lockPath] = (clientID, currentTime)
+            self.__locks[lockID] = (clientID, currentTime)
             return True
         # Lock already acquired by someone else
         return False
 
     @replicated
     def prolongate(self, clientID, currentTime):
-        for lockPath in self.__locks.keys():
-            lockClientID, lockTime = self.__locks[lockPath]
+        for lockID in self.__locks.keys():
+            lockClientID, lockTime = self.__locks[lockID]
 
             if currentTime - lockTime > self.__autoUnlockTime:
-                del self.__locks[lockPath]
+                del self.__locks[lockID]
                 continue
 
             if lockClientID == clientID:
-                self.__locks[lockPath] = (clientID, currentTime)
+                self.__locks[lockID] = (clientID, currentTime)
 
     @replicated
-    def release(self, lockPath, clientID):
-        existingLock = self.__locks.get(lockPath, None)
+    def release(self, lockID, clientID):
+        existingLock = self.__locks.get(lockID, None)
         if existingLock is not None and existingLock[0] == clientID:
-            del self.__locks[lockPath]
+            del self.__locks[lockID]
 
-    def isAcquired(self, lockPath, clientID, currentTime):
-        existingLock = self.__locks.get(lockPath, None)
+    def isAcquired(self, lockID, clientID, currentTime):
+        existingLock = self.__locks.get(lockID, None)
         if existingLock is not None:
             if existingLock[0] == clientID:
                 if currentTime - existingLock[1] < self.__autoUnlockTime:
@@ -442,6 +442,13 @@ class _ReplLockManagerImpl(SyncObjConsumer):
 class ReplLockManager(object):
 
     def __init__(self, autoUnlockTime, selfID = None):
+        """Replicated Lock Manager. Allow to acquire / release distributed locks.
+        :param autoUnlockTime: lock will be released automatically
+            if no response from holder for more than autoUnlockTime seconds
+        :type autoUnlockTime: float
+        :param selfID: (optional) - unique id of current lock holder.
+        :type selfID: str
+        """
         self.__lockImpl = _ReplLockManagerImpl(autoUnlockTime)
         if selfID is None:
             selfID = '%s:%d:%d' % (socket.gethostname(), os.getpid(), id(self))
@@ -460,6 +467,7 @@ class ReplLockManager(object):
         return self.__lockImpl
 
     def destroy(self):
+        """Destroy should be called before destroying ReplLockManager"""
         self.__destroying = True
 
     def _autoAcquireThread(self):
@@ -482,11 +490,38 @@ class ReplLockManager(object):
         except ReferenceError:
             pass
 
-    def tryAcquire(self, path, callback=None, sync=False, timeout=None):
-        return self.__lockImpl.acquire(path, self.__selfID, time.time(), callback=callback, sync=sync, timeout=timeout)
+    def tryAcquire(self, lockID, callback=None, sync=False, timeout=None):
+        """Attempt to acquire lock.
+        :param lockID: unique lock identifier.
+        :type lockID: str
+        :param sync: True - to wait until lock is acquired or failed to acquire.
+        :type sync: bool
+        :param callback: if sync is False - callback will be called with operation result.
+        :type callback: func(opResult, error)
+        :param timeout: max operation time (default - unlimited)
+        :type timeout: float
+        :return True if acquired, False - somebody else already acquired lock
+        """
+        return self.__lockImpl.acquire(lockID, self.__selfID, time.time(), callback=callback, sync=sync, timeout=timeout)
 
-    def isAcquired(self, path):
-        return self.__lockImpl.isAcquired(path, self.__selfID, time.time())
+    def isAcquired(self, lockID):
+        """Check if lock is acquired by ourselves.
+        :param lockID: unique lock identifier.
+        :type lockID: str
+        :return True if lock is acquired by ourselves.
+         """
+        return self.__lockImpl.isAcquired(lockID, self.__selfID, time.time())
 
-    def release(self, path, callback=None, sync=False, timeout=None):
-        self.__lockImpl.release(path, self.__selfID, callback=callback, sync=sync, timeout=timeout)
+    def release(self, lockID, callback=None, sync=False, timeout=None):
+        """
+        Release previously-acquired lock.
+        :param lockID:  unique lock identifier.
+        :type lockID: str
+        :param sync: True - to wait until lock is released or failed to release.
+        :type sync: bool
+        :param callback: if sync is False - callback will be called with operation result.
+        :type callback: func(opResult, error)
+        :param timeout: max operation time (default - unlimited)
+        :type timeout: float
+        """
+        self.__lockImpl.release(lockID, self.__selfID, callback=callback, sync=sync, timeout=timeout)
