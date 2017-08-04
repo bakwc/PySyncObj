@@ -41,6 +41,7 @@ PySyncObj is a python library for building fault-tolerant distributed systems. I
  * ["Batteries"](#batteries)
  * [API Documentation](http://pysyncobj.readthedocs.io)
  * [Performance](#performance)
+ * [Publications](#publications)
 
 ## Install
 PySyncObj itself:
@@ -121,3 +122,7 @@ You can look at [batteries implementation](https://github.com/bakwc/PySyncObj/bl
 ## Performance
 ![15K rps on 3 nodes; 14K rps on 7 nodes;](http://pastexen.com/i/Ge3lnrM1OY.png "RPS vs Cluster Size")
 ![22K rps on 10 byte requests; 5K rps on 20Kb requests;](http://pastexen.com/i/0RIsrKxJsV.png "RPS vs Request Size")
+
+## Publications
+- [Adventures in fault tolerant alerting with Python](https://blog.hostedgraphite.com/2017/05/05/adventures-in-fault-tolerant-alerting-with-python/)
+- [Строим распределенную систему c PySyncObj](https://habrahabr.ru/company/wargaming/blog/301398/)
