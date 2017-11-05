@@ -1802,7 +1802,8 @@ def test_ReplPriorityQueue():
 	assert q.put(19, _doApply=True) == False
 	assert q.get(_doApply=True) == 14
 
-@pytest.mark.skipif(os.name == 'nt', reason='temporary disabled for windows')
+# https://github.com/travis-ci/travis-ci/issues/8695
+@pytest.mark.skipif(os.name == 'nt' or os.environ.get('TRAVIS') == 'true', reason='temporary disabled for windows')
 def test_ipv6():
 
 	random.seed(42)
