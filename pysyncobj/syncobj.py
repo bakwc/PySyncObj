@@ -1264,7 +1264,7 @@ class SyncObj(object):
             nodesCount = len(allNodes)
             selfIdx = allNodes.index(self.__selfNodeAddr)
             interval = self.__conf.logCompactionMinTime
-            periodStart = int(currTime) / interval * interval
+            periodStart = int(currTime / interval ) * interval
             nodeInterval = float(interval) / nodesCount
             nodeIntervalStart = periodStart + selfIdx * nodeInterval
             nodeIntervalEnd = nodeIntervalStart + 0.3 * nodeInterval
