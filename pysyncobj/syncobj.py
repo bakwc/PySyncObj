@@ -36,8 +36,8 @@ except ImportError:
     PIPE_NOTIFIER_ENABLED = False
 
 from .serializer import Serializer, SERIALIZER_STATE
-from .tcp_server import TcpServer
-from .node import Node, NODE_STATUS
+from .node import Node, TCPNode
+from .transport import Transport, TCPTransport, TransportNotReadyError
 from .journal import createJournal
 from .config import SyncObjConf, FAIL_REASON
 from .encryptor import HAS_CRYPTO, getEncryptor
@@ -90,18 +90,24 @@ class SyncObjConsumer(object):
 # https://github.com/bakwc/PySyncObj
 
 class SyncObj(object):
-    def __init__(self, selfNodeAddr, otherNodesAddrs, conf=None, consumers=None):
+    def __init__(self, selfNode, otherNodes, conf=None, consumers=None, nodeClass = TCPNode, transport = None, transportClass = TCPTransport):
         """
         Main SyncObj class, you should inherit your own class from it.
 
-        :param selfNodeAddr: address of the current node server, 'host:port'
-        :type selfNodeAddr: str
-        :param otherNodesAddrs: addresses of partner nodes, ['host1:port1', 'host2:port2', ...]
-        :type otherNodesAddrs: list of str
+        :param selfNode: object representing the self-node or address of the current node server 'host:port'
+        :type selfNode: Node or str
+        :param otherNodes: objects representing the other nodes or addresses of partner nodes ['host1:port1', 'host2:port2', ...]
+        :type otherNodes: iterable of Node or iterable of str
         :param conf: configuration object
         :type conf: SyncObjConf
         :param consumers: objects to be replicated
         :type consumers: list of SyncObjConsumer inherited objects
+        :param nodeClass: class used for representation of nodes
+        :type nodeClass: class
+        :param transport: transport object; if None, transportClass is used to initialise such an object
+        :type transport: Transport or None
+        :param transportClass: the Transport subclass to be used for transferring messages to and from other nodes
+        :type transportClass: class
         """
 
         if conf is None:
@@ -130,12 +136,21 @@ class SyncObj(object):
 
         self.__consumers = consumers
 
-        self.__selfNodeAddr = selfNodeAddr
-        self.__otherNodesAddrs = otherNodesAddrs
-        self.__unknownConnections = {}  # descr => _Connection
+        if not isinstance(selfNode, Node) and selfNode is not None:
+            selfNode = nodeClass(selfNode)
+        self.__selfNode = selfNode
+        self.__otherNodes = set() # set of Node
+        for otherNode in otherNodes:
+            if not isinstance(otherNode, Node):
+                otherNode = nodeClass(otherNode)
+            self.__otherNodes.add(otherNode)
+        self.__readonlyNodes = set() # set of Node
+        self.__connectedNodes = set() # set of Node
+        self.__nodeClass = nodeClass
+
         self.__raftState = _RAFT_STATE.FOLLOWER
         self.__raftCurrentTerm = 0
-        self.__votedFor = None
+        self.__votedForNodeId = None
         self.__votesCount = 0
         self.__raftLeader = None
         self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
@@ -157,6 +172,8 @@ class SyncObj(object):
         self.__destroying = False
         self.__recvTransmission = ''
 
+        self.__onTickCallbacks = []
+        self.__onTickCallbacksLock = threading.Lock()
 
         self.__startTime = time.time()
         globalDnsResolver().setTimeouts(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
@@ -167,18 +184,18 @@ class SyncObj(object):
                                        self.__conf.serializer,
                                        self.__conf.deserializer,
                                        self.__conf.serializeChecker)
-        self.__isInitialized = False
         self.__lastInitTryTime = 0
         self._poller = createPoller(self.__conf.pollerType)
 
-        if selfNodeAddr is not None:
-            bindAddr = self.__conf.bindAddress or selfNodeAddr
-            host, port = bindAddr.rsplit(':', 1)
-            host = globalDnsResolver().resolve(host)
-            self.__server = TcpServer(self._poller, host, port, onNewConnection=self.__onNewConnection,
-                                      sendBufferSize=self.__conf.sendBufferSize,
-                                      recvBufferSize=self.__conf.recvBufferSize,
-                                      connectionTimeout=self.__conf.connectionTimeout)
+        if transport is not None:
+            self.__transport = transport
+        else:
+            self.__transport = transportClass(self, self.__selfNode, self.__otherNodes)
+        self.__transport.setOnNodeConnectedCallback(self.__onNodeConnected)
+        self.__transport.setOnNodeDisconnectedCallback(self.__onNodeDisconnected)
+        self.__transport.setOnMessageReceivedCallback(self.__onMessageReceived)
+        self.__transport.setOnReadonlyNodeConnectedCallback(self.__onReadonlyNodeConnected)
+        self.__transport.setOnReadonlyNodeDisconnectedCallback(self.__onReadonlyNodeDisconnected)
 
         self._methodToID = {}
         self._idToMethod = {}
@@ -220,15 +237,11 @@ class SyncObj(object):
         self.__thread = None
         self.__mainThread = None
         self.__initialised = None
-        self.__bindedEvent = threading.Event()
-        self.__bindRetries = 0
         self.__commandsQueue = FastQueue(self.__conf.commandsQueueSize)
         if not self.__conf.appendEntriesUseBatch and PIPE_NOTIFIER_ENABLED:
             self.__pipeNotifier = PipeNotifier(self._poller)
+        self.__needLoadDumpFile = True
 
-        self.__nodes = []
-        self.__readonlyNodes = []
-        self.__readonlyNodesCounter = 0
         self.__lastReadonlyCheck = 0
         self.__newAppendEntriesTime = 0
 
@@ -251,7 +264,12 @@ class SyncObj(object):
             # while not self.__initialised.is_set():
             #     pass
         else:
-            self.__initInTickThread()
+            try:
+                while not self.__transport.ready:
+                    self.__transport.tryGetReady()
+            except TransportNotReadyError:
+                raise SyncObjException('BindError') # Backwards compatibility
+                logging.exception('failed to perform initialization')
 
     def destroy(self):
         """
@@ -262,52 +280,35 @@ class SyncObj(object):
         else:
             self._doDestroy()
 
+    def waitReady(self):
+        """
+        Waits until the transport is ready for operation.
+
+        :raises TransportNotReadyError: if the transport fails to get ready
+        """
+        self.__transport.waitReady()
+
     def waitBinded(self):
         """
         Waits until initialized (binded port).
         If success - just returns.
         If failed to initialized after conf.maxBindRetries - raise SyncObjException.
         """
-        self.__bindedEvent.wait()
-        if not self.__isInitialized:
+        try:
+            self.__transport.waitReady()
+        except TransportNotReadyError:
+            raise SyncObjException('BindError')
+        if not self.__transport.ready:
             raise SyncObjException('BindError')
 
     def _destroy(self):
         self.destroy()
 
     def _doDestroy(self):
-        for node in self.__nodes:
-            node._destroy()
-        for node in self.__readonlyNodes:
-            node._destroy()
-        if self.__selfNodeAddr is not None:
-            self.__server.unbind()
+        self.__transport.destroy()
         for consumer in self.__consumers:
             consumer._destroy()
         self.__raftLog._destroy()
-
-    def __initInTickThread(self):
-        try:
-            self.__lastInitTryTime = time.time()
-            if self.__selfNodeAddr is not None:
-                self.__server.bind()
-                shouldConnect = None
-            else:
-                shouldConnect = True
-            self.__nodes = []
-            for nodeAddr in self.__otherNodesAddrs:
-                self.__nodes.append(Node(self, nodeAddr, shouldConnect))
-                self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
-                self.__raftMatchIndex[nodeAddr] = 0
-            self.__needLoadDumpFile = True
-            self.__isInitialized = True
-            self.__bindedEvent.set()
-        except:
-            self.__bindRetries += 1
-            if self.__conf.maxBindRetries and self.__bindRetries >= self.__conf.maxBindRetries:
-                self.__bindedEvent.set()
-                raise SyncObjException('BindError')
-            logging.exception('failed to perform initialization')
 
     def getCodeVersion(self):
         return self.__enabledCodeVersion
@@ -329,39 +330,43 @@ class SyncObj(object):
             raise Exception('wrong version, enabled version is %d, requested version is %d' % (self.__enabledCodeVersion, newVersion))
         self._applyCommand(pickle.dumps(newVersion), callback, _COMMAND_TYPE.VERSION)
 
-    def addNodeToCluster(self, nodeName, callback = None):
+    def addNodeToCluster(self, node, callback = None):
         """Add single node to cluster (dynamic membership changes). Async.
         You should wait until node successfully added before adding
         next node.
 
-        :param nodeName: nodeHost:nodePort
-        :type nodeName: str
+        :param node: node object or 'nodeHost:nodePort'
+        :type node: Node | str
         :param callback: will be called on success or fail
         :type callback: function(`FAIL_REASON <#pysyncobj.FAIL_REASON>`_, None)
         """
         if not self.__conf.dynamicMembershipChange:
             raise Exception('dynamicMembershipChange is disabled')
-        self._applyCommand(pickle.dumps(['add', nodeName]), callback, _COMMAND_TYPE.MEMBERSHIP)
+        if not isinstance(node, Node):
+            node = self.__nodeClass(node)
+        self._applyCommand(pickle.dumps(['add', node.id, node]), callback, _COMMAND_TYPE.MEMBERSHIP)
 
-    def removeNodeFromCluster(self, nodeName, callback = None):
+    def removeNodeFromCluster(self, node, callback = None):
         """Remove single node from cluster (dynamic membership changes). Async.
         You should wait until node successfully added before adding
         next node.
 
-        :param nodeName: nodeHost:nodePort
-        :type nodeName: str
+        :param node: node object or 'nodeHost:nodePort'
+        :type node: Node | str
         :param callback: will be called on success or fail
         :type callback: function(`FAIL_REASON <#pysyncobj.FAIL_REASON>`_, None)
         """
         if not self.__conf.dynamicMembershipChange:
             raise Exception('dynamicMembershipChange is disabled')
-        self._applyCommand(pickle.dumps(['rem', nodeName]), callback, _COMMAND_TYPE.MEMBERSHIP)
+        if not isinstance(node, Node):
+            node = self.__nodeClass(node)
+        self._applyCommand(pickle.dumps(['rem', node.id, node]), callback, _COMMAND_TYPE.MEMBERSHIP)
 
-    def _addNodeToCluster(self, nodeName, callback=None):
-        self.addNodeToCluster(nodeName, callback)
+    def _addNodeToCluster(self, node, callback=None):
+        self.addNodeToCluster(node, callback)
 
-    def _removeNodeFromCluster(self, nodeName, callback=None):
-        self.removeNodeFromCluster(nodeName, callback)
+    def _removeNodeFromCluster(self, node, callback=None):
+        self.removeNodeFromCluster(node, callback)
 
     def __onSetCodeVersion(self, newVersion):
         methods = [m for m in dir(self) if callable(getattr(self, m)) and\
@@ -438,7 +443,7 @@ class SyncObj(object):
                         if callback is not None:
                             self.__commandsWaitingCommit[idx].append((term, callback))
                     else:
-                        self.__send(requestNode, {
+                        self.__transport.send(requestNode, {
                             'type': 'apply_command_response',
                             'request_id': requestID,
                             'log_idx': idx,
@@ -452,7 +457,7 @@ class SyncObj(object):
                         if callback is not None:
                             callback(None, FAIL_REASON.REQUEST_DENIED)
                     else:
-                        self.__send(requestNode, {
+                        self.__transport.send(requestNode, {
                             'type': 'apply_command_response',
                             'request_id': requestID,
                             'error': FAIL_REASON.REQUEST_DENIED,
@@ -470,9 +475,9 @@ class SyncObj(object):
                         self.__commandsWaitingReply[self.__commandsLocalCounter] = callback
                         message['request_id'] = self.__commandsLocalCounter
 
-                    self.__send(self.__raftLeader, message)
+                    self.__transport.send(self.__raftLeader, message)
                 else:
-                    self.__send(requestNode, {
+                    self.__transport.send(requestNode, {
                         'type': 'apply_command_response',
                         'request_id': requestID,
                         'error': FAIL_REASON.NOT_LEADER,
@@ -482,11 +487,10 @@ class SyncObj(object):
 
     def _autoTickThread(self):
         try:
-            self.__initInTickThread()
-        except SyncObjException as e:
-            if e.errorCode == 'BindError':
-                return
-            raise
+            self.__transport.tryGetReady()
+        except TransportNotReadyError:
+            logging.exception('failed to perform initialization')
+            return
         finally:
             self.__initialised.set()
         time.sleep(0.1)
@@ -512,11 +516,14 @@ class SyncObj(object):
         self._onTick(timeToWait)
 
     def _onTick(self, timeToWait=0.0):
-        if not self.__isInitialized:
-            if time.time() >= self.__lastInitTryTime + self.__conf.bindRetryTime:
-                self.__initInTickThread()
+        if not self.__transport.ready:
+            try:
+                self.__transport.tryGetReady()
+            except TransportNotReadyError:
+                # Implicitly handled in the 'if not self.__transport.ready' below
+                pass
 
-        if not self.__isInitialized:
+        if not self.__transport.ready:
             time.sleep(timeToWait)
             return
 
@@ -525,43 +532,43 @@ class SyncObj(object):
                 self.__loadDumpFile(clearJournal=False)
             self.__needLoadDumpFile = False
 
-        if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE) and self.__selfNodeAddr is not None:
+        if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE) and self.__selfNode is not None:
             if self.__raftElectionDeadline < time.time() and self.__connectedToAnyone():
                 self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
                 self.__raftLeader = None
                 self.__setState(_RAFT_STATE.CANDIDATE)
                 self.__raftCurrentTerm += 1
-                self.__votedFor = self._getSelfNodeAddr()
+                self.__votedForNodeId = self.__selfNode.id
                 self.__votesCount = 1
-                for node in self.__nodes:
-                    node.send({
+                for node in self.__otherNodes:
+                    self.__transport.send(node, {
                         'type': 'request_vote',
                         'term': self.__raftCurrentTerm,
                         'last_log_index': self.__getCurrentLogIndex(),
                         'last_log_term': self.__getCurrentLogTerm(),
                     })
                 self.__onLeaderChanged()
-                if self.__votesCount > (len(self.__nodes) + 1) / 2:
+                if self.__votesCount > (len(self.__otherNodes) + 1) / 2:
                     self.__onBecomeLeader()
 
         if self.__raftState == _RAFT_STATE.LEADER:
             while self.__raftCommitIndex < self.__getCurrentLogIndex():
                 nextCommitIndex = self.__raftCommitIndex + 1
                 count = 1
-                for node in self.__nodes:
-                    if self.__raftMatchIndex[node.getAddress()] >= nextCommitIndex:
+                for node in self.__otherNodes:
+                    if self.__raftMatchIndex[node] >= nextCommitIndex:
                         count += 1
-                if count > (len(self.__nodes) + 1) / 2:
+                if count > (len(self.__otherNodes) + 1) / 2:
                     self.__raftCommitIndex = nextCommitIndex
                 else:
                     break
             self.__leaderCommitIndex = self.__raftCommitIndex
             deadline = time.time() - self.__conf.leaderFallbackTimeout
             count = 1
-            for node in self.__nodes:
-                if self.__lastResponseTime[node.getAddress()] > deadline:
+            for node in self.__otherNodes:
+                if self.__lastResponseTime[node] > deadline:
                     count += 1
-            if count <= (len(self.__nodes) + 1) / 2:
+            if count <= (len(self.__otherNodes) + 1) / 2:
                 self.__setState(_RAFT_STATE.FOLLOWER)
                 self.__raftLeader = None
 
@@ -602,21 +609,23 @@ class SyncObj(object):
         self._checkCommandsToApply()
         self.__tryLogCompaction()
 
-        for node in self.__nodes:
-            node.connectIfRequired()
-
-        if time.time() > self.__lastReadonlyCheck + 1.0:
-            self.__lastReadonlyCheck = time.time()
-            newReadonlyNodes = []
-            for node in self.__readonlyNodes:
-                if node.isConnected():
-                    newReadonlyNodes.append(node)
-                else:
-                    self.__raftNextIndex.pop(node, None)
-                    self.__raftMatchIndex.pop(node, None)
-                    node._destroy()
+        with self.__onTickCallbacksLock:
+            for callback in self.__onTickCallbacks:
+                callback()
 
         self._poller.poll(timeToWait)
+
+    def addOnTickCallback(self, callback):
+        with self.__onTickCallbacksLock:
+            self.__onTickCallbacks.append(callback)
+
+    def removeOnTickCallback(self, callback):
+        with self.__onTickCallbacksLock:
+            try:
+                self.__onTickCallbacks.remove(callback)
+            except ValueError:
+                # callback not in list, ignore
+                pass
 
     def getStatus(self):
         """Dumps different debug info about cluster to dict and return it"""
@@ -624,26 +633,25 @@ class SyncObj(object):
         status = {}
         status['version'] = VERSION
         status['revision'] = REVISION
-        status['self'] = self.__selfNodeAddr
+        status['self'] = self.__selfNode
         status['state'] = self.__raftState
         status['leader'] = self.__raftLeader
-        status['partner_nodes_count'] = len(self.__nodes)
-        for n in self.__nodes:
-            status['partner_node_status_server_'+n.getAddress()] = n.getStatus()
+        status['partner_nodes_count'] = len(self.__otherNodes)
+        for node in self.__otherNodes:
+            status['partner_node_status_server_' + node.id] = 2 if node in self.__connectedNodes else 0
         status['readonly_nodes_count'] = len(self.__readonlyNodes)
-        for n in self.__readonlyNodes:
-            status['readonly_node_status_server_'+n.getAddress()] = n.getStatus()
-        status['unknown_connections_count'] = len(self.__unknownConnections)
+        for node in self.__readonlyNodes:
+            status['readonly_node_status_server_' + node.id] = 2 if node in self.__connectedNodes else 0
         status['log_len'] = len(self.__raftLog)
         status['last_applied'] = self.__raftLastApplied
         status['commit_idx'] = self.__raftCommitIndex
         status['raft_term'] = self.__raftCurrentTerm
         status['next_node_idx_count'] = len(self.__raftNextIndex)
-        for k, v in iteritems(self.__raftNextIndex):
-            status['next_node_idx_server_'+k] = v
+        for node, idx in iteritems(self.__raftNextIndex):
+            status['next_node_idx_server_' + node.id] = idx
         status['match_idx_count'] = len(self.__raftMatchIndex)
-        for k, v in iteritems(self.__raftMatchIndex):
-            status['match_idx_server_'+k] = v
+        for node, idx in iteritems(self.__raftMatchIndex):
+            status['match_idx_server_' + node.id] = idx
         status['leader_commit_idx'] = self.__leaderCommitIndex
         status['uptime'] = int(time.time() - self.__startTime)
         status['self_code_version'] = self.__selfCodeVersion
@@ -700,13 +708,13 @@ class SyncObj(object):
 
         return self._idToMethod[funcID](*args, **kwargs)
 
-    def _onMessageReceived(self, nodeAddr, message):
+    def __onMessageReceived(self, node, message):
 
-        if message['type'] == 'request_vote' and self.__selfNodeAddr is not None:
+        if message['type'] == 'request_vote' and self.__selfNode is not None:
 
             if message['term'] > self.__raftCurrentTerm:
                 self.__raftCurrentTerm = message['term']
-                self.__votedFor = None
+                self.__votedForNodeId = None
                 self.__setState(_RAFT_STATE.FOLLOWER)
                 self.__raftLeader = None
 
@@ -719,25 +727,25 @@ class SyncObj(object):
                     if lastLogTerm == self.__getCurrentLogTerm() and \
                             lastLogIdx < self.__getCurrentLogIndex():
                         return
-                    if self.__votedFor is not None:
+                    if self.__votedForNodeId is not None:
                         return
 
-                    self.__votedFor = nodeAddr
+                    self.__votedForNodeId = node.id
 
                     self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
-                    self.__send(nodeAddr, {
+                    self.__transport.send(node, {
                         'type': 'response_vote',
                         'term': message['term'],
                     })
 
         if message['type'] == 'append_entries' and message['term'] >= self.__raftCurrentTerm:
             self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
-            if self.__raftLeader != nodeAddr:
+            if self.__raftLeader != node:
                 self.__onLeaderChanged()
-            self.__raftLeader = nodeAddr
+            self.__raftLeader = node
             if message['term'] > self.__raftCurrentTerm:
                 self.__raftCurrentTerm = message['term']
-                self.__votedFor = None
+                self.__votedForNodeId = None
             self.__setState(_RAFT_STATE.FOLLOWER)
             newEntries = message.get('entries', [])
             serialized = message.get('serialized', None)
@@ -749,11 +757,11 @@ class SyncObj(object):
                 if transmission is not None:
                     if transmission == 'start':
                         self.__recvTransmission = message['data']
-                        self.__sendNextNodeIdx(nodeAddr, success=False, reset=False)
+                        self.__sendNextNodeIdx(node, success=False, reset=False)
                         return
                     elif transmission == 'process':
                         self.__recvTransmission += message['data']
-                        self.__sendNextNodeIdx(nodeAddr, success=False, reset=False)
+                        self.__sendNextNodeIdx(node, success=False, reset=False)
                         return
                     elif transmission == 'finish':
                         self.__recvTransmission += message['data']
@@ -766,10 +774,10 @@ class SyncObj(object):
                 prevLogTerm = message['prevLogTerm']
                 prevEntries = self.__getEntries(prevLogIdx)
                 if not prevEntries:
-                    self.__sendNextNodeIdx(nodeAddr, success=False, reset=True)
+                    self.__sendNextNodeIdx(node, success=False, reset=True)
                     return
                 if prevEntries[0][2] != prevLogTerm:
-                    self.__sendNextNodeIdx(nodeAddr, nextNodeIdx = prevLogIdx, success = False, reset=True)
+                    self.__sendNextNodeIdx(node, nextNodeIdx = prevLogIdx, success = False, reset=True)
                     return
                 if len(prevEntries) > 1:
                     # rollback cluster changes
@@ -794,19 +802,19 @@ class SyncObj(object):
                 if newEntries:
                     nextNodeIdx = newEntries[-1][1]
 
-                self.__sendNextNodeIdx(nodeAddr, nextNodeIdx=nextNodeIdx, success=True)
+                self.__sendNextNodeIdx(node, nextNodeIdx=nextNodeIdx, success=True)
 
             # Install snapshot
             elif serialized is not None:
                 if self.__serializer.setTransmissionData(serialized):
                     self.__loadDumpFile(clearJournal=True)
-                    self.__sendNextNodeIdx(nodeAddr, success=True)
+                    self.__sendNextNodeIdx(node, success=True)
 
             self.__raftCommitIndex = min(leaderCommitIndex, self.__getCurrentLogIndex())
 
         if message['type'] == 'apply_command':
             if 'request_id' in message:
-                self._applyCommand(message['command'], (nodeAddr, message['request_id']))
+                self._applyCommand(message['command'], (node, message['request_id']))
             else:
                 self._applyCommand(message['command'], None)
 
@@ -827,7 +835,7 @@ class SyncObj(object):
             if message['type'] == 'response_vote' and message['term'] == self.__raftCurrentTerm:
                 self.__votesCount += 1
 
-                if self.__votesCount > (len(self.__nodes) + 1) / 2:
+                if self.__votesCount > (len(self.__otherNodes) + 1) / 2:
                     self.__onBecomeLeader()
 
         if self.__raftState == _RAFT_STATE.LEADER:
@@ -838,17 +846,17 @@ class SyncObj(object):
 
                 currentNodeIdx = nextNodeIdx - 1
                 if reset:
-                    self.__raftNextIndex[nodeAddr] = nextNodeIdx
+                    self.__raftNextIndex[node] = nextNodeIdx
                 if success:
-                    self.__raftMatchIndex[nodeAddr] = currentNodeIdx
-                self.__lastResponseTime[nodeAddr] = time.time()
+                    self.__raftMatchIndex[node] = currentNodeIdx
+                self.__lastResponseTime[node] = time.time()
 
     def __callErrCallback(self, err, callback):
         if callback is None:
             return
         if isinstance(callback, tuple):
             requestNode, requestID = callback
-            self.__send(requestNode, {
+            self.__transport.send(requestNode, {
                 'type': 'apply_command_response',
                 'request_id': requestID,
                 'error': err,
@@ -856,10 +864,10 @@ class SyncObj(object):
             return
         callback(None, err)
 
-    def __sendNextNodeIdx(self, nodeAddr, reset=False, nextNodeIdx = None, success = False):
+    def __sendNextNodeIdx(self, node, reset=False, nextNodeIdx = None, success = False):
         if nextNodeIdx is None:
             nextNodeIdx = self.__getCurrentLogIndex() + 1
-        self.__send(nodeAddr, {
+        self.__transport.send(node, {
             'type': 'next_node_idx',
             'next_node_idx': nextNodeIdx,
             'reset': reset,
@@ -871,84 +879,24 @@ class SyncObj(object):
         maxTimeout = self.__conf.raftMaxTimeout
         return minTimeout + (maxTimeout - minTimeout) * random.random()
 
-    def __onNewConnection(self, conn):
-        descr = conn.fileno()
-        self.__unknownConnections[descr] = conn
-        if self.__encryptor:
-            conn.encryptor = self.__encryptor
+    def __onReadonlyNodeConnected(self, node):
+        self.__readonlyNodes.add(node)
+        self.__connectedNodes.add(node)
+        self.__raftNextIndex[node] = self.__getCurrentLogIndex() + 1
+        self.__raftMatchIndex[node] = 0
 
-        conn.setOnMessageReceivedCallback(functools.partial(self.__onMessageReceived, conn))
-        conn.setOnDisconnectedCallback(functools.partial(self.__onDisconnected, conn))
+    def __onReadonlyNodeDisconnected(self, node):
+        self.__readonlyNodes.discard(node)
+        self.__connectedNodes.discard(node)
+        self.__raftNextIndex.pop(node, None)
+        self.__raftMatchIndex.pop(node, None)
+        node._destroy()
 
+    def __onNodeConnected(self, node):
+        self.__connectedNodes.add(node)
 
-    def __utilityCallback(self, res, err, conn, cmd, node):
-        cmdResult = 'FAIL'
-        if err == FAIL_REASON.SUCCESS:
-            cmdResult = 'SUCCESS'
-        conn.send(cmdResult + ' ' + cmd + ' ' + node)
-
-    def __onUtilityMessage(self, conn, message):
-        try:
-            if message[0] == 'status':
-                conn.send(self.getStatus())
-                return True
-            elif message[0] == 'add':
-                self.addNodeToCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='ADD', node=message[1]))
-                return True
-            elif message[0] == 'remove':
-                if message[1] == self.__selfNodeAddr:
-                    conn.send('FAIL REMOVE ' + message[1])
-                else:
-                    self.removeNodeFromCluster(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='REMOVE', node=message[1]))
-                return True
-            elif message[0] == 'set_version':
-                self.setCodeVersion(message[1], callback=functools.partial(self.__utilityCallback, conn=conn, cmd='SET_VERSION', node=str(message[1])))
-                return True
-        except Exception as e:
-            conn.send(str(e))
-            return True
-
-        return False
-
-    def __onMessageReceived(self, conn, message):
-        if self.__encryptor and not conn.sendRandKey:
-            conn.sendRandKey = message
-            conn.recvRandKey = os.urandom(32)
-            conn.send(conn.recvRandKey)
-            return
-
-        descr = conn.fileno()
-
-        if isinstance(message, list) and self.__onUtilityMessage(conn, message):
-            self.__unknownConnections.pop(descr, None)
-            return
-
-        partnerNode = None
-        for node in self.__nodes:
-            if node.getAddress() == message:
-                partnerNode = node
-                break
-
-        if partnerNode is None and message != 'readonly':
-            conn.disconnect()
-            self.__unknownConnections.pop(descr, None)
-            return
-
-        if partnerNode is not None:
-            partnerNode.onPartnerConnected(conn)
-        else:
-            nodeAddr = str(self.__readonlyNodesCounter)
-            node = Node(self, nodeAddr, shouldConnect=False)
-            node.onPartnerConnected(conn)
-            self.__readonlyNodes.append(node)
-            self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
-            self.__raftMatchIndex[nodeAddr] = 0
-            self.__readonlyNodesCounter += 1
-
-        self.__unknownConnections.pop(descr, None)
-
-    def __onDisconnected(self, conn):
-        self.__unknownConnections.pop(conn.fileno(), None)
+    def __onNodeDisconnected(self, node):
+        self.__connectedNodes.discard(node)
 
     def __getCurrentLogIndex(self):
         return self.__raftLog[-1][1]
@@ -997,8 +945,8 @@ class SyncObj(object):
         WARNING: this information could be outdated, eg. there could be another leader selected!
         WARNING: there could be multiple leaders at the same time!
 
-        :return: Address of the last known leader node.
-        :rtype: str
+        :return: the last known leader node.
+        :rtype: Node
         """
         return self.__raftLeader
 
@@ -1034,15 +982,14 @@ class SyncObj(object):
         self.__raftLog.deleteEntriesTo(diff)
 
     def __onBecomeLeader(self):
-        self.__raftLeader = self.__selfNodeAddr
+        self.__raftLeader = self.__selfNode
         self.__setState(_RAFT_STATE.LEADER)
 
         self.__lastResponseTime.clear()
-        for node in self.__nodes + self.__readonlyNodes:
-            nodeAddr = node.getAddress()
-            self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
-            self.__raftMatchIndex[nodeAddr] = 0
-            self.__lastResponseTime[node.getAddress()] = time.time()
+        for node in self.__otherNodes | self.__readonlyNodes:
+            self.__raftNextIndex[node] = self.__getCurrentLogIndex() + 1
+            self.__raftMatchIndex[node] = 0
+            self.__lastResponseTime[node] = time.time()
 
         # No-op command after leader election.
         idx, term = self.__getCurrentLogIndex() + 1, self.__raftCurrentTerm
@@ -1072,16 +1019,14 @@ class SyncObj(object):
 
         batchSizeBytes = self.__conf.appendEntriesBatchSizeBytes
 
-        for node in self.__nodes + self.__readonlyNodes:
-            nodeAddr = node.getAddress()
-
-            if not node.isConnected():
-                self.__serializer.cancelTransmisstion(nodeAddr)
+        for node in self.__otherNodes | self.__readonlyNodes:
+            if node not in self.__connectedNodes:
+                self.__serializer.cancelTransmisstion(node)
                 continue
 
             sendSingle = True
             sendingSerialized = False
-            nextNodeIndex = self.__raftNextIndex[nodeAddr]
+            nextNodeIndex = self.__raftNextIndex[node]
 
             while nextNodeIndex <= self.__getCurrentLogIndex() or sendSingle or sendingSerialized:
                 if nextNodeIndex > self.__raftLog[0][1]:
@@ -1089,7 +1034,7 @@ class SyncObj(object):
                     entries = []
                     if nextNodeIndex <= self.__getCurrentLogIndex():
                         entries = self.__getEntries(nextNodeIndex, None, batchSizeBytes)
-                        self.__raftNextIndex[nodeAddr] = entries[-1][1] + 1
+                        self.__raftNextIndex[node] = entries[-1][1] + 1
 
                     if len(entries) == 1 and len(entries[0][0]) >= batchSizeBytes:
                         entry = pickle.dumps(entries[0])
@@ -1110,7 +1055,7 @@ class SyncObj(object):
                                 'prevLogIdx': prevLogIdx,
                                 'prevLogTerm': prevLogTerm,
                             }
-                            node.send(message)
+                            self.__transport.send(node, message)
                     else:
                         message = {
                             'type': 'append_entries',
@@ -1120,27 +1065,27 @@ class SyncObj(object):
                             'prevLogIdx': prevLogIdx,
                             'prevLogTerm': prevLogTerm,
                         }
-                        node.send(message)
+                        self.__transport.send(node, message)
                 else:
-                    transmissionData = self.__serializer.getTransmissionData(nodeAddr)
+                    transmissionData = self.__serializer.getTransmissionData(node)
                     message = {
                         'type': 'append_entries',
                         'term': self.__raftCurrentTerm,
                         'commit_index': self.__raftCommitIndex,
                         'serialized': transmissionData,
                     }
-                    node.send(message)
+                    self.__transport.send(node, message)
                     if transmissionData is not None:
                         isLast = transmissionData[2]
                         if isLast:
-                            self.__raftNextIndex[nodeAddr] = self.__raftLog[1][1] + 1
+                            self.__raftNextIndex[node] = self.__raftLog[1][1] + 1
                             sendingSerialized = False
                         else:
                             sendingSerialized = True
                     else:
                         sendingSerialized = False
 
-                nextNodeIndex = self.__raftNextIndex[nodeAddr]
+                nextNodeIndex = self.__raftNextIndex[node]
 
                 sendSingle = False
 
@@ -1148,27 +1093,21 @@ class SyncObj(object):
                 if delta > self.__conf.appendEntriesPeriod:
                     break
 
-    def __send(self, nodeAddr, message):
-        for node in self.__nodes + self.__readonlyNodes:
-            if node.getAddress() == nodeAddr:
-                node.send(message)
-                break
-
     def __connectedToAnyone(self):
-        for node in self.__nodes:
-            if node.getStatus() == NODE_STATUS.CONNECTED:
-                return True
-        if not self.__nodes:
-            return True
-        return False
-
-    def _getSelfNodeAddr(self):
-        return self.__selfNodeAddr
+        return len(self.__connectedNodes) > 0 or len(self.__otherNodes) == 0
 
     def _getConf(self):
         return self.__conf
 
+    @property
+    def conf(self):
+        return self.__conf
+
     def _getEncryptor(self):
+        return self.__encryptor
+
+    @property
+    def encryptor(self):
         return self.__encryptor
 
     def __changeCluster(self, request):
@@ -1191,7 +1130,13 @@ class SyncObj(object):
 
     def __doChangeCluster(self, request, reverse = False):
         requestType = request[0]
-        requestNode = request[1]
+        requestNodeId = request[1]
+        if len(request) >= 3:
+            requestNode = request[2]
+            if not isinstance(requestNode, Node): # Actually shouldn't be necessary, but better safe than sorry.
+                requestNode = self.__nodeClass(requestNode)
+        else:
+            requestNode = self.__nodeClass(requestNodeId)
 
         if requestType == 'add':
             adding = not reverse
@@ -1200,38 +1145,29 @@ class SyncObj(object):
         else:
             return False
 
-        if self.__selfNodeAddr is not None:
-            shouldConnect = None
-        else:
-            shouldConnect = True
-
         if adding:
             newNode = requestNode
             # Node already exists in cluster
-            if newNode == self.__selfNodeAddr or newNode in self.__otherNodesAddrs:
+            if newNode is self.__selfNode or newNode in self.__otherNodes:
                 return False
-            self.__otherNodesAddrs.append(newNode)
-            self.__nodes.append(Node(self, newNode, shouldConnect))
+            self.__otherNodes.add(newNode)
             self.__raftNextIndex[newNode] = self.__getCurrentLogIndex() + 1
             self.__raftMatchIndex[newNode] = 0
             if self._isLeader():
                 self.__lastResponseTime[newNode] = time.time()
+            self.__transport.addNode(newNode)
             return True
         else:
             oldNode = requestNode
-            if oldNode == self.__selfNodeAddr:
+            if oldNode is self.__selfNode:
                 return False
-            if oldNode not in self.__otherNodesAddrs:
+            if oldNode not in self.__otherNodes:
                 return False
-            for i in xrange(len(self.__nodes)):
-                if self.__nodes[i].getAddress() == oldNode:
-                    self.__nodes[i]._destroy()
-                    self.__nodes.pop(i)
-                    self.__otherNodesAddrs.remove(oldNode)
-                    del self.__raftNextIndex[oldNode]
-                    del self.__raftMatchIndex[oldNode]
-                    return True
-            return False
+            self.__otherNodes.discard(oldNode)
+            self.__raftNextIndex.pop(oldNode, None)
+            self.__raftMatchIndex.pop(oldNode, None)
+            self.__transport.dropNode(oldNode)
+            return True
 
     def __parseChangeClusterRequest(self, command):
         commandType = ord(command[:1])
@@ -1260,9 +1196,9 @@ class SyncObj(object):
             return
 
         if self.__conf.logCompactionSplit:
-            allNodes = sorted(self.__otherNodesAddrs + [self.__selfNodeAddr])
-            nodesCount = len(allNodes)
-            selfIdx = allNodes.index(self.__selfNodeAddr)
+            allNodeIds = sorted([node.id for node in (self.__otherNodes | {self.__selfNode})])
+            nodesCount = len(allNodeIds)
+            selfIdx = allNodeIds.index(self.__selfNode.id)
             interval = self.__conf.logCompactionMinTime
             periodStart = int(currTime / interval ) * interval
             nodeInterval = float(interval) / nodesCount
@@ -1287,7 +1223,7 @@ class SyncObj(object):
                     data.append(consumer._serialize())
         else:
             data = None
-        cluster = self.__otherNodesAddrs + [self.__selfNodeAddr]
+        cluster = self.__otherNodes | {self.__selfNode}
         self.__serializer.serialize((data, lastAppliedEntries[1], lastAppliedEntries[0], cluster), lastAppliedEntries[0][1])
 
     def __loadDumpFile(self, clearJournal):
@@ -1318,32 +1254,25 @@ class SyncObj(object):
             self.__raftLastApplied = data[1][1]
 
             if self.__conf.dynamicMembershipChange:
-                self.__otherNodesAddrs = [node for node in data[3] if node != self.__selfNodeAddr]
-                self.__updateClusterConfiguration()
+                self.__updateClusterConfiguration([node for node in data[3] if node != self.__selfNode])
             self.__onSetCodeVersion(0)
         except:
             logging.exception('failed to load full dump')
 
-    def __updateClusterConfiguration(self):
-        currentNodes = set()
-        for i in xrange(len(self.__nodes) -1, -1, -1):
-            nodeAddr = self.__nodes[i].getAddress()
-            if nodeAddr not in self.__otherNodesAddrs:
-                self.__nodes[i]._destroy()
-                self.__nodes.pop(i)
-            else:
-                currentNodes.add(nodeAddr)
-
-        if self.__selfNodeAddr is not None:
-            shouldConnect = None
-        else:
-            shouldConnect = True
-
-        for nodeAddr in self.__otherNodesAddrs:
-            if nodeAddr not in currentNodes:
-                self.__nodes.append(Node(self, nodeAddr, shouldConnect))
-                self.__raftNextIndex[nodeAddr] = self.__getCurrentLogIndex() + 1
-                self.__raftMatchIndex[nodeAddr] = 0
+    def __updateClusterConfiguration(self, newNodes):
+        # newNodes: list of Node or node ID
+        newNodes = {self.__nodeClass(node) if not isinstance(node, Node) else node for node in newNodes}
+        nodesToRemove = self.__otherNodes - newNodes
+        nodesToAdd = newNodes - self.__otherNodes
+        for node in nodesToRemove:
+            self.__raftNextIndex.pop(node, None)
+            self.__raftMatchIndex.pop(node, None)
+            self.__transport.dropNode(node)
+        self.__otherNodes = newNodes
+        for node in nodesToAdd:
+            self.__transport.addNode(node)
+            self.__raftNextIndex[node] = self.__getCurrentLogIndex() + 1
+            self.__raftMatchIndex[node] = 0
 
 def __copy_func(f, name):
     if is_py3:

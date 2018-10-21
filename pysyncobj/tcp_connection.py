@@ -60,6 +60,9 @@ class TcpConnection(object):
         self.__sendBufferSize = sendBufferSize
         self.__recvBufferSize = recvBufferSize
 
+    def setOnConnectedCallback(self, onConnected):
+        self.__onConnected = onConnected
+
     def setOnMessageReceivedCallback(self, onMessageReceived):
         self.__onMessageReceived = onMessageReceived
 
@@ -232,3 +235,7 @@ class TcpConnection(object):
             return None
         self.__readBuffer = self.__readBuffer[4 + l:]
         return message
+
+    @property
+    def state(self):
+        return self.__state
