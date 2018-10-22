@@ -604,8 +604,7 @@ def test_checkBigStorage():
 
 
 def test_encryptionCorrectPassword():
-	if not HAS_CRYPTO:
-		return
+	assert HAS_CRYPTO
 
 	random.seed(42)
 
@@ -632,8 +631,7 @@ def test_encryptionCorrectPassword():
 
 
 def test_encryptionWrongPassword():
-	if not HAS_CRYPTO:
-		return
+	assert HAS_CRYPTO
 
 	random.seed(12)
 
@@ -1283,8 +1281,7 @@ def test_readOnlyNodes():
 	b2._destroy()
 
 def test_syncobjAdminStatus():
-	if not HAS_CRYPTO:
-		return
+	assert HAS_CRYPTO
 
 	random.seed(42)
 
