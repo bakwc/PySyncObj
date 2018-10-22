@@ -429,7 +429,7 @@ class TCPTransport(Transport):
         if self._syncObj.encryptor:
             conn.setOnMessageReceivedCallback(functools.partial(self._onOutgoingMessageReceived, conn)) # So we can process the sendRandKey
             conn.recvRandKey = os.urandom(32)
-            conn.send(self.__conn.recvRandKey)
+            conn.send(conn.recvRandKey)
         else:
             # The onMessageReceived callback is configured in addNode already.
             if not self._selfIsReadonlyNode:
