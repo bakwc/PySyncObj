@@ -29,6 +29,11 @@ class Node(object):
     def __eq__(self, other):
         return isinstance(other, Node) and self.id == other.id
 
+    def __ne__(self, other):
+        # In Python 3, __ne__ defaults to inverting the result of __eq__.
+        # Python 2 isn't as sane. So for Python 2 compatibility, we also need to define the != operator explicitly.
+        return not (self == other)
+
     def __hash__(self):
         return hash(self.id)
 
