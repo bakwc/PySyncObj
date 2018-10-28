@@ -15,6 +15,7 @@ import logging
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, \
 	createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException, SyncObjConsumer, _RAFT_STATE
 from pysyncobj.batteries import ReplCounter, ReplList, ReplDict, ReplSet, ReplLockManager, ReplQueue, ReplPriorityQueue
+from pysyncobj.node import TCPNode
 from collections import defaultdict
 
 logging.basicConfig(format = u'[%(asctime)s %(filename)s:%(lineno)d %(levelname)s]  %(message)s', level = logging.DEBUG)
@@ -240,7 +241,7 @@ def test_syncTwoObjects():
 
 	o1._printStatus()
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 	assert o1._isReady()
 	assert o2._isReady()
@@ -274,7 +275,7 @@ def test_singleObject():
 
 	o1._printStatus()
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._isReady()
 
 	o1.addValue(150)
@@ -311,11 +312,11 @@ def test_syncThreeObjectsLeaderFail():
 	assert o2._isReady()
 	assert o3._isReady()
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 	assert o1._getLeader() == o3._getLeader()
 
-	assert _RAFT_STATE.LEADER in states[o1._getLeader()]
+	assert _RAFT_STATE.LEADER in states[o1._getLeader().address]
 
 	o1.addValue(150)
 	o2.addValue(200)
@@ -326,19 +327,20 @@ def test_syncThreeObjectsLeaderFail():
 
 	prevLeader = o1._getLeader()
 
-	newObjs = [o for o in objs if o._getSelfNodeAddr() != prevLeader]
+	newObjs = [o for o in objs if o._SyncObj__selfNode != prevLeader]
 
 	assert len(newObjs) == 2
 
 	doTicks(newObjs, 10.0, stopFunc=lambda: newObjs[0]._getLeader() != prevLeader and \
-											newObjs[0]._getLeader() in a and \
+											newObjs[0]._getLeader() is not None and \
+											newObjs[0]._getLeader().address in a and \
 											newObjs[0]._getLeader() == newObjs[1]._getLeader())
 
 	assert newObjs[0]._getLeader() != prevLeader
-	assert newObjs[0]._getLeader() in a
+	assert newObjs[0]._getLeader().address in a
 	assert newObjs[0]._getLeader() == newObjs[1]._getLeader()
 
-	assert _RAFT_STATE.LEADER in states[newObjs[0]._getLeader()]
+	assert _RAFT_STATE.LEADER in states[newObjs[0]._getLeader().address]
 
 	newObjs[1].addValue(50)
 
@@ -376,7 +378,7 @@ def test_manyActionsLogCompaction():
 	assert o2._isReady()
 	assert o3._isReady()
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 	assert o1._getLeader() == o3._getLeader()
 
@@ -449,7 +451,7 @@ def test_checkCallbacksSimple():
 	assert o2._isReady()
 	assert o3._isReady()
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 	assert o1._getLeader() == o3._getLeader()
 
@@ -496,7 +498,7 @@ def checkDumpToFile(useFork):
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 
 	o1.addValue(150)
@@ -523,7 +525,7 @@ def checkDumpToFile(useFork):
 	assert o1._isReady()
 	assert o2._isReady()
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 
 	assert o1.getCounter() == 350
@@ -557,7 +559,7 @@ def test_checkBigStorage():
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 
 	# Store ~50Mb data.
@@ -589,7 +591,7 @@ def test_checkBigStorage():
 	# Wait for disk load, election and replication
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 
 	assert o1.getValue('test') == testRandStr
@@ -602,8 +604,7 @@ def test_checkBigStorage():
 
 
 def test_encryptionCorrectPassword():
-	if not HAS_CRYPTO:
-		return
+	assert HAS_CRYPTO
 
 	random.seed(42)
 
@@ -614,7 +615,7 @@ def test_encryptionCorrectPassword():
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 
 	o1.addValue(150)
@@ -630,8 +631,7 @@ def test_encryptionCorrectPassword():
 
 
 def test_encryptionWrongPassword():
-	if not HAS_CRYPTO:
-		return
+	assert HAS_CRYPTO
 
 	random.seed(12)
 
@@ -644,7 +644,7 @@ def test_encryptionWrongPassword():
 
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 
 	doTicks(objs, 1.0)
@@ -658,12 +658,12 @@ def test_encryptionWrongPassword():
 def _checkSameLeader(objs):
 	for obj1 in objs:
 		l1 = obj1._getLeader()
-		if l1 != obj1._getSelfNodeAddr():
+		if l1 != obj1._SyncObj__selfNode:
 			continue
 		t1 = obj1._getTerm()
 		for obj2 in objs:
 			l2 = obj2._getLeader()
-			if l2 != obj2._getSelfNodeAddr():
+			if l2 != obj2._SyncObj__selfNode:
 				continue
 			if obj2._getTerm() != t1:
 				continue
@@ -779,7 +779,7 @@ def test_logCompactionRegressionTest1():
 
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 
 	o1._forceLogCompaction()
@@ -816,7 +816,7 @@ def test_logCompactionRegressionTest2():
 	o3._forceLogCompaction()
 	doTicks(objs, 0.5)
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader() == o3._getLeader()
 
 	o3._destroy()
@@ -846,25 +846,10 @@ def test_logCompactionRegressionTest2():
 	removeFiles(dumpFiles)
 
 
-def __checkParnerNodeExists(obj, nodeName, shouldExist = True):
-	nodesSet1 = set()
-	nodesSet2 = set(obj._SyncObj__otherNodesAddrs)
-	for node in obj._SyncObj__nodes:
-		nodesSet1.add(node.getAddress())
+def __checkParnerNodeExists(obj, nodeAddr, shouldExist = True):
+	nodeAddrSet = {node.address for node in obj._SyncObj__otherNodes}
+	return (nodeAddr in nodeAddrSet) == shouldExist # either nodeAddr is in nodeAddrSet and shouldExist is True, or nodeAddr isn't in the set and shouldExist is False
 
-	if nodesSet1 != nodesSet2:
-		print('otherNodes:', nodesSet2)
-		print('nodes:', nodesSet1)
-		return False
-
-	if shouldExist:
-		#assert nodeName in nodesSet1
-		if nodeName not in nodesSet1:
-			return False
-	else:
-		if nodeName in nodesSet1:
-			return False
-	return True
 
 def test_doChangeClusterUT1():
 	dumpFiles = [getNextDumpFile()]
@@ -882,7 +867,7 @@ def test_doChangeClusterUT1():
 	member = _bchr(_COMMAND_TYPE.MEMBERSHIP)
 
 	# Check regular configuration change - adding
-	o1._onMessageReceived('localhost:12345', {
+	o1._SyncObj__onMessageReceived(TCPNode('localhost:12345'), {
 		'type': 'append_entries',
 		'term': 1,
 		'prevLogIdx': 1,
@@ -894,7 +879,7 @@ def test_doChangeClusterUT1():
 	__checkParnerNodeExists(o1, 'localhost:1239', False)
 
 	# Check rollback adding
-	o1._onMessageReceived('localhost:1236', {
+	o1._SyncObj__onMessageReceived(TCPNode('localhost:1236'), {
 		'type': 'append_entries',
 		'term': 2,
 		'prevLogIdx': 2,
@@ -907,7 +892,7 @@ def test_doChangeClusterUT1():
 	__checkParnerNodeExists(o1, oterAddr, True)
 
 	# Check regular configuration change - removing
-	o1._onMessageReceived('localhost:1236', {
+	o1._SyncObj__onMessageReceived(TCPNode('localhost:1236'), {
 		'type': 'append_entries',
 		'term': 2,
 		'prevLogIdx': 4,
@@ -994,7 +979,7 @@ def test_journalTest1():
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 
 	o1.addValue(150)
@@ -1017,7 +1002,7 @@ def test_journalTest1():
 	assert o1._isReady()
 	assert o2._isReady()
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 
 	assert o1.getCounter() == 350
@@ -1056,7 +1041,7 @@ def test_journalTest1():
 	assert o1._isReady()
 	assert o2._isReady()
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 
 	assert o1.getCounter() == 900
@@ -1115,7 +1100,7 @@ def test_autoTick1():
 	assert o1._isReady()
 	assert o2._isReady()
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 	assert o1._isReady()
 	assert o2._isReady()
@@ -1148,11 +1133,11 @@ def test_largeCommands():
 	a = [getNextAddr(), getNextAddr()]
 
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.LARGE_COMMAND, dumpFile = dumpFiles[0], leaderFallbackTimeout=60.0)
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.LARGE_COMMAND, dumpFile = dumpFiles[0], leaderFallbackTimeout=60.0)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.LARGE_COMMAND, dumpFile = dumpFiles[1], leaderFallbackTimeout=60.0)
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 
 	# Generate ~20Mb data.
@@ -1194,7 +1179,7 @@ def test_largeCommands():
 									   o2.getValue('big') == bigStr and \
 									   o1._isReady() and o2._isReady())
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 
 	assert o1.getValue('test') == testRandStr
@@ -1238,20 +1223,21 @@ def test_readOnlyNodes():
 
 	assert b1.getCounter() == b2.getCounter() == 350
 	assert o1._getLeader() == b1._getLeader() == o2._getLeader() == b2._getLeader()
-	assert b1._getLeader() in a
+	assert b1._getLeader().address in a
 
 	prevLeader = o1._getLeader()
 
-	newObjs = [o for o in objs if o._getSelfNodeAddr() != prevLeader]
+	newObjs = [o for o in objs if o._SyncObj__selfNode != prevLeader]
 
 	assert len(newObjs) == 2
 
 	doTicks(newObjs + roObjs, 10.0, stopFunc=lambda: newObjs[0]._getLeader() != prevLeader and \
-											newObjs[0]._getLeader() in a and \
+											newObjs[0]._getLeader() is not None and \
+											newObjs[0]._getLeader().address in a and \
 											newObjs[0]._getLeader() == newObjs[1]._getLeader())
 
 	assert newObjs[0]._getLeader() != prevLeader
-	assert newObjs[0]._getLeader() in a
+	assert newObjs[0]._getLeader().address in a
 	assert newObjs[0]._getLeader() == newObjs[1]._getLeader()
 
 	newObjs[1].addValue(50)
@@ -1295,8 +1281,7 @@ def test_readOnlyNodes():
 	b2._destroy()
 
 def test_syncobjAdminStatus():
-	if not HAS_CRYPTO:
-		return
+	assert HAS_CRYPTO
 
 	random.seed(42)
 
@@ -1541,7 +1526,7 @@ def test_consumers():
 
 	doTicks(objs, 10.0, stopFunc=lambda: o1._isReady() and o2._isReady())
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 	assert o1._isReady()
 	assert o2._isReady()
@@ -1822,7 +1807,7 @@ def test_ipv6():
 	assert o1._isReady()
 	assert o2._isReady()
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 	assert o1._isReady()
 	assert o2._isReady()
@@ -1861,7 +1846,7 @@ def test_localhost():
 
 	o1._printStatus()
 
-	assert o1._getLeader() in a
+	assert o1._getLeader().address in a
 	assert o1._getLeader() == o2._getLeader()
 	assert o1._isReady()
 	assert o2._isReady()

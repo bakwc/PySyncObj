@@ -9,7 +9,7 @@ class DnsCachingResolver(object):
         self.__cache = {}
         self.__cacheTime = cacheTime
         self.__failCacheTime = failCacheTime
-        self.__preferedAddrFamily = socket.AF_INET
+        self.__preferredAddrFamily = socket.AF_INET
 
     def setTimeouts(self, cacheTime, failCacheTime):
         self.__cacheTime = cacheTime
@@ -35,13 +35,13 @@ class DnsCachingResolver(object):
         elif preferredAddrFamily == 'ipv6':
             self.__preferredAddrFamily = socket.AF_INET
         else:
-            self.__preferedAddrFamily = preferredAddrFamily
+            self.__preferredAddrFamily = preferredAddrFamily
 
     def __doResolve(self, hostname):
         try:
             addrs = socket.getaddrinfo(hostname, None)
             ips = []
-            if self.__preferedAddrFamily is not None:
+            if self.__preferredAddrFamily is not None:
                 ips = list(set([addr[4][0] for addr in addrs\
                                 if addr[0] == self.__preferredAddrFamily]))
             if not ips:
