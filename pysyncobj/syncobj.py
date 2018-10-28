@@ -268,8 +268,8 @@ class SyncObj(object):
                 while not self.__transport.ready:
                     self.__transport.tryGetReady()
             except TransportNotReadyError:
-                raise SyncObjException('BindError') # Backwards compatibility
                 logging.exception('failed to perform initialization')
+                raise SyncObjException('BindError') # Backwards compatibility
 
     def destroy(self):
         """
