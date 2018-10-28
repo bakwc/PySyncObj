@@ -1133,7 +1133,7 @@ def test_largeCommands():
 	a = [getNextAddr(), getNextAddr()]
 
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.LARGE_COMMAND, dumpFile = dumpFiles[0], leaderFallbackTimeout=60.0)
-	o2 = TestObj(a[1], [a[0]], TEST_TYPE.LARGE_COMMAND, dumpFile = dumpFiles[0], leaderFallbackTimeout=60.0)
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.LARGE_COMMAND, dumpFile = dumpFiles[1], leaderFallbackTimeout=60.0)
 	objs = [o1, o2]
 	doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
 
