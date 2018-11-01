@@ -21,17 +21,6 @@ class Journal(object):
 
     def __getitem__(self, item):
         raise NotImplementedError
-
-    def __len__(self):
-        raise NotImplementedError
-
-    def _destroy(self):
-        raise NotImplementedError
-
-
-class MemoryJournal(Journal):
-
-    def __init__(self):
         self.__journal = []
         self.__bytesSize = 0
 
@@ -80,9 +69,9 @@ class ResizableFile(object):
         currSize = self.__mm.size()
         if offset + size > self.__mm.size():
             try:
-                self.__mm.resize(int(self.__mm.size() * self.__resizeFactor))
+                self.__mm.resize(int((offset+size) * self.__resizeFactor))
             except SystemError:
-                self.__extand(int(self.__mm.size() * self.__resizeFactor) - currSize)
+                self.__extand(int((offset+size) * self.__resizeFactor) - currSize)
         self.__mm[offset:offset + size] = values
 
     def read(self, offset, size):
