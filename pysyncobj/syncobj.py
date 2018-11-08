@@ -154,7 +154,7 @@ class SyncObj(object):
         self.__votesCount = 0
         self.__raftLeader = None
         self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
-        self.__raftLog = createJournal(self.__conf.journalFile)
+        self.__raftLog = createJournal(self.__conf.journalFile, self.__conf.flushJournal)
         if len(self.__raftLog) == 0:
             self.__raftLog.add(_bchr(_COMMAND_TYPE.NO_OP), 1, self.__raftCurrentTerm)
         self.__raftCommitIndex = 1

@@ -125,7 +125,7 @@ LAST_RECORD_OFFSET_OFFSET = NAME_SIZE + VERSION_SIZE + 4
 
 class FileJournal(Journal):
 
-    def __init__(self, journalFile):
+    def __init__(self, journalFile, flushJournal):
         self.__journalFile = ResizableFile(journalFile, defaultContent=self.__getDefaultHeader())
         self.__journal = []
         currentOffset = FIRST_RECORD_OFFSET
@@ -138,6 +138,7 @@ class FileJournal(Journal):
             self.__journal.append((command, idx, term))
             currentOffset += nextRecordSize + 8
         self.__currentOffset = currentOffset
+        self.__flushJournal = flushJournal
 
     def __getDefaultHeader(self):
         appName = APP_NAME + b'\0' * (NAME_SIZE - len(APP_NAME))
@@ -150,8 +151,9 @@ class FileJournal(Journal):
 
     def __setLastRecordOffset(self, offset):
         self.__journalFile.write(LAST_RECORD_OFFSET_OFFSET, struct.pack('<I', offset))
+        # No auto-flushing needed here because it's called in the methods below.
 
-    def add(self, command, idx, term):
+    def add(self, command, idx, term, _doFlush = True):
         self.__journal.append((command, idx, term))
         cmdData = struct.pack('<QQ', idx, term) + to_bytes(command)
         cmdLenData = struct.pack('<I', len(cmdData))
@@ -159,11 +161,15 @@ class FileJournal(Journal):
         self.__journalFile.write(self.__currentOffset, cmdData)
         self.__currentOffset += len(cmdData)
         self.__setLastRecordOffset(self.__currentOffset)
+        if _doFlush and self.__flushJournal:
+            self.flush()
 
     def clear(self):
         self.__journal = []
         self.__setLastRecordOffset(FIRST_RECORD_OFFSET)
         self.__currentOffset = FIRST_RECORD_OFFSET
+        if self.__flushJournal:
+            self.flush()
 
     def __getitem__(self, idx):
         return self.__journal[idx]
@@ -184,12 +190,16 @@ class FileJournal(Journal):
                 self.__setLastRecordOffset(currentOffset)
         self.__currentOffset = currentOffset
         self.__setLastRecordOffset(currentOffset)
+        if self.__flushJournal:
+            self.flush()
 
     def deleteEntriesTo(self, entryTo):
         journal = self.__journal[entryTo:]
         self.clear()
         for entry in journal:
-            self.add(*entry)
+            self.add(*entry, _doFlush = False)
+        if self.__flushJournal:
+            self.flush()
 
     def _destroy(self):
         self.__journalFile._destroy()
@@ -197,7 +207,10 @@ class FileJournal(Journal):
     def flush(self):
         self.__journalFile.flush()
 
-def createJournal(journalFile = None):
+def createJournal(journalFile, flushJournal):
+    if flushJournal is None:
+        flushJournal = journalFile is not None
     if journalFile is None:
+        assert not flushJournal
         return MemoryJournal()
-    return FileJournal(journalFile)
+    return FileJournal(journalFile, flushJournal)

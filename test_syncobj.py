@@ -1,4 +1,5 @@
 from __future__ import print_function
+import io
 import os
 import time
 import pytest
@@ -15,6 +16,7 @@ import logging
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, \
 	createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException, SyncObjConsumer, _RAFT_STATE
 from pysyncobj.batteries import ReplCounter, ReplList, ReplDict, ReplSet, ReplLockManager, ReplQueue, ReplPriorityQueue
+import pysyncobj.journal
 from pysyncobj.node import TCPNode
 from collections import defaultdict
 
@@ -1059,31 +1061,118 @@ def test_journalTest2():
 	removeFiles(journalFiles)
 
 	removeFiles(journalFiles)
-	journal = createJournal(journalFiles[0])
+	journal = createJournal(journalFiles[0], True)
 	journal.add(b'cmd1', 1, 0)
 	journal.add(b'cmd2', 2, 0)
 	journal.add(b'cmd3', 3, 0)
 	journal._destroy()
 
-	journal = createJournal(journalFiles[0])
+	journal = createJournal(journalFiles[0], True)
 	assert len(journal) == 3
 	assert journal[0] == (b'cmd1', 1, 0)
 	assert journal[-1] == (b'cmd3', 3, 0)
 	journal.deleteEntriesFrom(2)
 	journal._destroy()
 
-	journal = createJournal(journalFiles[0])
+	journal = createJournal(journalFiles[0], True)
 	assert len(journal) == 2
 	assert journal[0] == (b'cmd1', 1, 0)
 	assert journal[-1] == (b'cmd2', 2, 0)
 	journal.deleteEntriesTo(1)
 	journal._destroy()
 
-	journal = createJournal(journalFiles[0])
+	journal = createJournal(journalFiles[0], True)
 	assert len(journal) == 1
 	assert journal[0] == (b'cmd2', 2, 0)
 	journal._destroy()
 	removeFiles(journalFiles)
+
+
+def test_journal_flushing():
+	# Patch ResizableFile to simulate a file which isn't flushed without calling flush explicitly; the read method will always return the expected data, but it won't be written to disk.
+	# This is done because testing actual flushing is very difficult from this level. However, it achieves the same effect and tests whether the FileJournal itself handles flushing correctly.
+	# Note that this does *not* test whether ResizableFile flushing is correct.
+
+	class TestResizableFile(object):
+		# A class that provides the same API as pysyncobj.journal.ResizableFile but never writes data to disk unless it's explicitly flushed.
+		# To achieve this, it simply uses an in-memory buffer that is written to disk upon flush. This is to avoid having nearly identical code to ResizableFile in here.
+
+		def __init__(self, filename, defaultContent = None, **kwargs):
+			initialData = defaultContent
+			if os.path.exists(filename):
+				with open(filename, 'rb') as fp:
+					initialData = fp.read()
+			self._buffer = io.BytesIO(initialData)
+			self._filename = filename
+
+		def write(self, offset, data):
+			self._buffer.seek(offset)
+			self._buffer.write(data)
+
+		def read(self, offset, size):
+			self._buffer.seek(offset)
+			return self._buffer.read(size)
+
+		def flush(self):
+			with open(self._filename, 'wb') as fp:
+				fp.write(self._buffer.getvalue())
+
+		def _destroy(self):
+			self.flush()
+			self._buffer.close()
+
+	origResizableFile = pysyncobj.journal.ResizableFile
+	try:
+		pysyncobj.journal.ResizableFile = TestResizableFile
+
+		journalFiles = [getNextJournalFile()]
+
+		def run_test(flushJournal, useDestroy):
+			for mode in ('add', 'clear', 'deleteEntriesFrom', 'deleteEntriesTo'):
+				removeFiles(journalFiles)
+				journal = createJournal(journalFiles[0], flushJournal)
+				assert len(journal) == 0
+				journal.add(b'cmd1', 1, 0)
+				journal.add(b'cmd2', 2, 0)
+				journal.add(b'cmd3', 3, 0)
+				journal.flush()
+				expectedNotWorking = [(b'cmd1', 1, 0), (b'cmd2', 2, 0), (b'cmd3', 3, 0)]
+				if mode == 'add':
+					journal.add(b'cmd4', 4, 0)
+					expectedWorking = [(b'cmd1', 1, 0), (b'cmd2', 2, 0), (b'cmd3', 3, 0), (b'cmd4', 4, 0)]
+				elif mode == 'clear':
+					journal.clear()
+					expectedWorking = []
+				elif mode == 'deleteEntriesFrom':
+					journal.deleteEntriesFrom(2)
+					expectedWorking = [(b'cmd1', 1, 0), (b'cmd2', 2, 0)]
+				elif mode == 'deleteEntriesTo':
+					journal.deleteEntriesTo(2)
+					expectedWorking = [(b'cmd3', 3, 0)]
+				if useDestroy:
+					journal._destroy()
+				del journal
+
+				journal = createJournal(journalFiles[0], flushJournal)
+				if flushJournal or useDestroy:
+					assert journal[:] == expectedWorking
+				else:
+					assert journal[:] == expectedNotWorking
+
+		# Verify that, when journal flushing is disabled, values written after the last flush without using _destroy (which implicitly flushes) are not preserved.
+		run_test(False, False)
+
+		# Verify that using _destroy causes a flush
+		run_test(False, True)
+
+		# Verify that journal flushing without _destroy preserves everything
+		run_test(True, False)
+
+		# Verify that journal flushing with _destroy works as well
+		run_test(True, True)
+	finally:
+		pysyncobj.journal.ResizableFile = origResizableFile
+
 
 def test_autoTick1():
 	random.seed(42)
