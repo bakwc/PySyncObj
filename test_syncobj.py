@@ -1173,6 +1173,8 @@ def test_journal_flushing():
 	finally:
 		pysyncobj.journal.ResizableFile = origResizableFile
 
+	removeFiles(journalFiles)
+
 
 def test_autoTick1():
 	random.seed(42)
