@@ -1,7 +1,10 @@
+import hashlib
 import os
 import mmap
+import pickle
 import struct
 
+from .atomic_replace import atomicReplace
 from .version import VERSION
 from .pickle import to_bytes
 
@@ -106,7 +109,7 @@ class ResizableFile(object):
 
 
 
-JOURNAL_FORMAT_VERSION = 1
+JOURNAL_FORMAT_VERSION = 2
 APP_NAME = b'PYSYNCOBJ'
 APP_VERSION = str.encode(VERSION)
 
@@ -114,20 +117,62 @@ NAME_SIZE = 24
 VERSION_SIZE = 8
 assert len(APP_NAME) < NAME_SIZE
 assert len(APP_VERSION) < VERSION_SIZE
-FIRST_RECORD_OFFSET = NAME_SIZE + VERSION_SIZE + 4 + 4
-LAST_RECORD_OFFSET_OFFSET = NAME_SIZE + VERSION_SIZE + 4
+CURRENT_TERM_SIZE = 8
+VOTED_FOR_SIZE = 16
+FIRST_RECORD_OFFSET = NAME_SIZE + VERSION_SIZE + 4 + CURRENT_TERM_SIZE + VOTED_FOR_SIZE + 4
+LAST_RECORD_OFFSET_OFFSET = NAME_SIZE + VERSION_SIZE + 4 + CURRENT_TERM_SIZE + VOTED_FOR_SIZE
 
-#
-#  APP_NAME (24b) + APP_VERSION (8b) + FORMAT_VERSION (4b) + LAST_RECORD_OFFSET (4b) +
-#      record1size + record1 + record1size   +  record2size + record2 + record2size   +  ...
-#                (record1)                   |               (record2)                |  ...
-#
+# Journal version 2:
+#   APP_NAME (24b) + APP_VERSION (8b) + FORMAT_VERSION (4b) + CURRENT_TERM (8b) + VOTED_FOR (16b) + LAST_RECORD_OFFSET (4b) +
+#       record1size + record1 + record1size   +  record2size + record2 + record2size   +  ...
+#                 (record1)                   |               (record2)                |  ...
+
+# VOTED_FOR is an MD5 hash of the pickled node ID.
+# LAST_RECORD_OFFSET is the offset from the beginning of the journal file at which the last record ends.
+
+# Version 1 is identical except it has neither CURRENT_TERM nor VOTED_FOR.
 
 class FileJournal(Journal):
 
     def __init__(self, journalFile, flushJournal):
         self.__journalFile = ResizableFile(journalFile, defaultContent=self.__getDefaultHeader())
         self.__journal = []
+
+        # Handle journal format version upgrades
+        version = struct.unpack('<I', self.__journalFile.read(32, 4))[0]
+        if version == 1:
+            # Header size increased by 24 bytes, so everything needs to be moved...
+            tmpFile = journalFile + '.tmp'
+            if os.path.exists(tmpFile):
+                raise RuntimeError('Migration of journal file failed: {} already exists'.format(tmpFile))
+            oldJournalFile = self.__journalFile  # Just for readability
+            newJournalFile = ResizableFile(tmpFile, defaultContent=self.__getDefaultHeader())
+            oldFirstRecordOffset = NAME_SIZE + VERSION_SIZE + 4 + 4
+            oldLastRecordOffset = struct.unpack('<I', oldJournalFile.read(NAME_SIZE + VERSION_SIZE + 4, 4))[0]
+            oldCurrentOffset = oldFirstRecordOffset
+            deltaOffset = 24  # delta in record offsets between old and new format
+            while oldCurrentOffset < oldLastRecordOffset:
+                # Copy data in chunks of 4 MB (plus possibly a smaller chunk at the end)
+                d = oldJournalFile.read(oldCurrentOffset, min(4000000, oldLastRecordOffset - oldCurrentOffset))
+                if not d:
+                    # Reached EOF
+                    break
+                newJournalFile.write(oldCurrentOffset + deltaOffset, d)
+                oldCurrentOffset += len(d)
+            newJournalFile.write(LAST_RECORD_OFFSET_OFFSET, struct.pack('<I', oldLastRecordOffset + deltaOffset))
+            newJournalFile.flush()
+
+            del oldJournalFile  # Delete reference
+            self.__journalFile._destroy()
+            newJournalFile._destroy()
+            atomicReplace(tmpFile, journalFile)
+            self.__journalFile = ResizableFile(journalFile, defaultContent=self.__getDefaultHeader())
+        elif version == JOURNAL_FORMAT_VERSION:
+            # Nothing to do
+            pass
+        else:
+            raise RuntimeError('Unknown journal file version encountered: {} (expected <= {})'.format(version, JOURNAL_FORMAT_VERSION))
+
         currentOffset = FIRST_RECORD_OFFSET
         lastRecordOffset = self.__getLastRecordOffset()
         while currentOffset < lastRecordOffset:
@@ -143,7 +188,10 @@ class FileJournal(Journal):
     def __getDefaultHeader(self):
         appName = APP_NAME + b'\0' * (NAME_SIZE - len(APP_NAME))
         appVersion = APP_VERSION + b'\0' * (VERSION_SIZE - len(APP_VERSION))
-        header = appName + appVersion + struct.pack('<II', JOURNAL_FORMAT_VERSION, FIRST_RECORD_OFFSET)
+        header = (appName + appVersion + struct.pack('<I', JOURNAL_FORMAT_VERSION) +
+          struct.pack('<Q', 0) + # default term = 0
+          hashlib.md5(pickle.dumps(None)).digest() + # default voted for = empty
+          struct.pack('<I', FIRST_RECORD_OFFSET))
         return header
 
     def __getLastRecordOffset(self):

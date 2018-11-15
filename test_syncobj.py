@@ -1,5 +1,6 @@
 from __future__ import print_function
 import io
+import math
 import os
 import time
 import pytest
@@ -1174,6 +1175,124 @@ def test_journal_flushing():
 		pysyncobj.journal.ResizableFile = origResizableFile
 
 	removeFiles(journalFiles)
+
+
+def test_journal_upgrade_version_1_to_2():
+	def data_to_entry(index, term, data):
+		d = struct.pack('<QQ', index, term) + data
+		l = struct.pack('<I', len(d))
+		return l + d + l
+
+	# Base header including app name, version, and journal format version; notably, this does *not* include the last record offset
+	# Note that the name and version strings here are intentionally modified to check whether they're replaced on migration as expected.
+	baseHeader = (
+		b'PYSYNCOBJ!' + b'\x00' * 14 +
+		b'0.3.0' + b'\x00' * 3 +
+		b'\x01\x00\x00\x00'
+	  )
+
+	journals = [
+		# (name, journal entry bytes (including record size but still without the last record offset!), expected journal entries)
+
+		('empty journal', b'', []),
+
+		(
+		  'one proper entry',
+		  data_to_entry(1, 1, b'\x01'),
+		  [(b'\x01', 1, 1)]
+		),
+
+		# An entry with arbitrary data (the journal shouldn't do any parsing of the data)
+		(
+		  'one arbitrary',
+		  data_to_entry(1, 1, b'testing the journal'),
+		  [(b'testing the journal', 1, 1)]
+		),
+
+		# Really arbitrary...
+		(
+		  'one really arbitrary',
+		  data_to_entry(1, 1, b'\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\x7f\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\x8b\x8c\x8d\x8e\x8f\x90\x91\x92\x93\x94\x95\x96\x97\x98\x99\x9a\x9b\x9c\x9d\x9e\x9f\xa0\xa1\xa2\xa3\xa4\xa5\xa6\xa7\xa8\xa9\xaa\xab\xac\xad\xae\xaf\xb0\xb1\xb2\xb3\xb4\xb5\xb6\xb7\xb8\xb9\xba\xbb\xbc\xbd\xbe\xbf\xc0\xc1\xc2\xc3\xc4\xc5\xc6\xc7\xc8\xc9\xca\xcb\xcc\xcd\xce\xcf\xd0\xd1\xd2\xd3\xd4\xd5\xd6\xd7\xd8\xd9\xda\xdb\xdc\xdd\xde\xdf\xe0\xe1\xe2\xe3\xe4\xe5\xe6\xe7\xe8\xe9\xea\xeb\xec\xed\xee\xef\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9\xfa\xfb\xfc\xfd\xfe\xff'),
+		  [(bytes(bytearray.fromhex(''.join('{:02x}'.format(i) for i in range(256)))), 1, 1)] # bytes(range(256)) on Py3
+		),
+
+		# Empty data should work as well
+		(
+		  'empty data',
+		  data_to_entry(1, 1, b''),
+		  [(b'', 1, 1)]
+		),
+
+		# A few entries
+		(
+		  'a few entries',
+		  data_to_entry(1, 1, b'\x01') + data_to_entry(2, 2, b'\x01') + data_to_entry(3, 4, b'\x01'),
+		  [(b'\x01', 1, 1), (b'\x01', 2, 2), (b'\x01', 3, 4)]
+		),
+	]
+
+	# Generate larger journals
+	# 400 B: some arbitrary length which fits well within a single block
+	# 1000 B: should expand to exactly 1024 B in the new format, i.e. no resizing of the file necessary
+	# 1020/3/4 B: almost or entirely full journal which can't fit the new header fields anymore, so it needs to be expanded on migration
+	# 1025 B: a journal which already has been expanded
+	# pi MiB: some large journal
+	for length in (400, 1000, 1020, 1023, 1024, 1025, int(math.pi * 1048576)): # length including the header...
+		for smallRecords in (True, False):
+			entries = []
+			expectedEntries = []
+			deltaLength = length - len(baseHeader) - 4  # 4: last record offset
+
+			# Each record has an overhead of 8 bytes (length of the record at beginning and end) and also stores an index and a term with 8 bytes each.
+			if smallRecords:
+				# Small records hold only 1 B of data, i.e. are 25 B in total; so we create deltaLength // 25 - 1 such records and then fill up with one possibly slightly larger record (up to 25 bytes of payload)
+				nSmall = deltaLength // 25 - 1
+				for i in range(nSmall):
+					entries.append(data_to_entry(i, i, b'\x01'))
+					expectedEntries.append((b'\x01', i, i))
+				remainingData = b'\x00' * (deltaLength - nSmall * 25 - 24)
+				entries.append(data_to_entry(nSmall, nSmall, remainingData))
+				expectedEntries.append((remainingData, nSmall, nSmall))
+			else:
+				# Just one huge record to fit the length
+				data = b'\x00' * (deltaLength - 24)
+				entries.append(data_to_entry(1, 1, data))
+				expectedEntries.append((data, 1, 1))
+
+			journals.append(('length={} small={}'.format(length, smallRecords), b''.join(entries), expectedEntries))
+
+	journalFile = getNextJournalFile()
+
+	for name, entryBytes, expectedEntries in journals:
+		print(name)
+		removeFiles([journalFile])
+		with open(journalFile, 'wb') as fp:
+			size = 0
+			fp.write(baseHeader)
+			size += len(baseHeader)
+			fp.write(struct.pack('<I', len(baseHeader) + 4 + len(entryBytes)))
+			size += 4
+			fp.write(entryBytes)
+			size += len(entryBytes)
+
+			# Fill up with zero bytes to a power of 2
+			fp.write(b'\x00' * (2 ** max(math.ceil(math.log(size, 2)), 10) - size))
+
+		journal = createJournal(journalFile, True)
+		assert journal[:] == expectedEntries
+		journal._destroy()
+		assert os.path.getsize(journalFile) == 2 ** max(math.ceil(math.log(size + 24, 2)), 10)
+		with open(journalFile, 'rb') as fp:
+			# Check app name, version, and journal format version
+			assert fp.read(24) == b'PYSYNCOBJ' + b'\x00' * 15
+			assert fp.read(8) != b'0.3.0' + b'\x00' * 3
+			assert fp.read(4) == b'\x02\x00\x00\x00'
+			fp.seek(60)
+			assert struct.unpack('<I', fp.read(4))[0] == size + 24
+			fp.seek(size + 24)
+			assert fp.read().replace(b'\x00', b'') == b''
+
+	removeFiles([journalFile])
 
 
 def test_autoTick1():
