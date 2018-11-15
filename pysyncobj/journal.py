@@ -81,7 +81,7 @@ class ResizableFile(object):
     def write(self, offset, values):
         size = len(values)
         currSize = self.__mm.size()
-        if offset + size > self.__mm.size():
+        while offset + size > self.__mm.size():
             try:
                 self.__mm.resize(int(self.__mm.size() * self.__resizeFactor))
             except SystemError:
