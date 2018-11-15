@@ -1,4 +1,5 @@
 from __future__ import print_function
+import hashlib
 import io
 import math
 import os
@@ -1066,19 +1067,26 @@ def test_journalTest2():
 	journal.add(b'cmd1', 1, 0)
 	journal.add(b'cmd2', 2, 0)
 	journal.add(b'cmd3', 3, 0)
+	journal.currentTerm = 42
+	journal.votedForNodeId = 'example.org'
 	journal._destroy()
 
 	journal = createJournal(journalFiles[0], True)
 	assert len(journal) == 3
 	assert journal[0] == (b'cmd1', 1, 0)
 	assert journal[-1] == (b'cmd3', 3, 0)
+	assert journal.currentTerm == 42
+	assert journal.votedForNodeId == 'example.org'
 	journal.deleteEntriesFrom(2)
+	journal.set_currentTerm_and_votedForNodeId(100, 'other.example.net')
 	journal._destroy()
 
 	journal = createJournal(journalFiles[0], True)
 	assert len(journal) == 2
 	assert journal[0] == (b'cmd1', 1, 0)
 	assert journal[-1] == (b'cmd2', 2, 0)
+	assert journal.currentTerm == 100
+	assert journal.votedForNodeId == 'other.example.net'
 	journal.deleteEntriesTo(1)
 	journal._destroy()
 
@@ -1129,15 +1137,25 @@ def test_journal_flushing():
 		journalFiles = [getNextJournalFile()]
 
 		def run_test(flushJournal, useDestroy):
-			for mode in ('add', 'clear', 'deleteEntriesFrom', 'deleteEntriesTo'):
+			for mode in ('add', 'clear', 'deleteEntriesFrom', 'deleteEntriesTo', 'currentTerm', 'votedForNodeId', 'currentTerm and votedForNodeId'):
 				removeFiles(journalFiles)
 				journal = createJournal(journalFiles[0], flushJournal)
 				assert len(journal) == 0
 				journal.add(b'cmd1', 1, 0)
 				journal.add(b'cmd2', 2, 0)
 				journal.add(b'cmd3', 3, 0)
+				expectedCurrentTermNotWorking = 13
+				journal.currentTerm = 13
+				expectedVotedForNodeIdNotWorking = 'bad.example.org'
+				journal.votedForNodeId = 'bad.example.org'
 				journal.flush()
 				expectedNotWorking = [(b'cmd1', 1, 0), (b'cmd2', 2, 0), (b'cmd3', 3, 0)]
+
+				# Default values for when something else is being tested
+				expectedCurrentTermWorking = expectedCurrentTermNotWorking
+				expectedVotedForNodeIdWorking = expectedVotedForNodeIdNotWorking
+				expectedWorking = expectedNotWorking
+
 				if mode == 'add':
 					journal.add(b'cmd4', 4, 0)
 					expectedWorking = [(b'cmd1', 1, 0), (b'cmd2', 2, 0), (b'cmd3', 3, 0), (b'cmd4', 4, 0)]
@@ -1150,6 +1168,17 @@ def test_journal_flushing():
 				elif mode == 'deleteEntriesTo':
 					journal.deleteEntriesTo(2)
 					expectedWorking = [(b'cmd3', 3, 0)]
+				elif mode == 'currentTerm':
+					journal.currentTerm = 42
+					expectedCurrentTermWorking = 42
+				elif mode == 'votedForNodeId':
+					journal.votedForNodeId = 'good.example.org'
+					expectedVotedForNodeIdWorking = 'good.example.org'
+				elif mode == 'currentTerm and votedForNodeId':
+					journal.set_currentTerm_and_votedForNodeId(42, 'good.example.org')
+					expectedCurrentTermWorking = 42
+					expectedVotedForNodeIdWorking = 'good.example.org'
+
 				if useDestroy:
 					journal._destroy()
 				del journal
@@ -1157,8 +1186,12 @@ def test_journal_flushing():
 				journal = createJournal(journalFiles[0], flushJournal)
 				if flushJournal or useDestroy:
 					assert journal[:] == expectedWorking
+					assert journal.currentTerm == expectedCurrentTermWorking
+					assert journal.votedForNodeId == expectedVotedForNodeIdWorking
 				else:
 					assert journal[:] == expectedNotWorking
+					assert journal.currentTerm == expectedCurrentTermNotWorking
+					assert journal.votedForNodeId == expectedVotedForNodeIdNotWorking
 
 		# Verify that, when journal flushing is disabled, values written after the last flush without using _destroy (which implicitly flushes) are not preserved.
 		run_test(False, False)
@@ -1293,6 +1326,22 @@ def test_journal_upgrade_version_1_to_2():
 			assert fp.read().replace(b'\x00', b'') == b''
 
 	removeFiles([journalFile])
+
+
+def test_journal_voted_for_proxy():
+	nodeId = 'example.org'
+	otherNodeId = 'example.net'
+
+	for votedFor in [
+	  pysyncobj.journal.VotedForNodeIdHashProxy(nodeId),
+	  pysyncobj.journal.VotedForNodeIdHashProxy(nodeId = nodeId),
+	  pysyncobj.journal.VotedForNodeIdHashProxy(_hash = hashlib.md5(pickle.dumps(nodeId)).digest()),
+	 ]:
+		assert votedFor == nodeId
+		assert nodeId == votedFor
+		assert votedFor != otherNodeId
+		assert otherNodeId != votedFor
+		assert votedFor is not None
 
 
 def test_autoTick1():

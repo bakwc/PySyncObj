@@ -1,14 +1,39 @@
 import hashlib
 import os
 import mmap
-import pickle
+import pysyncobj.pickle
 import struct
 
 from .atomic_replace import atomicReplace
 from .version import VERSION
-from .pickle import to_bytes
 
 class Journal(object):
+
+    @property
+    def currentTerm(self):
+        raise NotImplementedError
+
+    @currentTerm.setter
+    def currentTerm(self, term):
+        raise NotImplementedError
+
+    @property
+    def votedForNodeId(self):
+        raise NotImplementedError
+
+    @votedForNodeId.setter
+    def votedForNodeId(self, nodeId):
+        raise NotImplementedError
+
+    def set_currentTerm_and_votedForNodeId(self, term, nodeId):
+        """
+        Convenience method since the two are often modified at the same time.
+
+        Subclasses may choose to implement a more efficient method than setting the two individually here.
+        """
+
+        self.currentTerm = term
+        self.votedForNodeId = nodeId
 
     def add(self, command, idx, term):
         raise NotImplementedError
@@ -37,6 +62,24 @@ class MemoryJournal(Journal):
     def __init__(self):
         self.__journal = []
         self.__bytesSize = 0
+        self.__currentTerm = 0
+        self.__votedForNodeId = None
+
+    @property
+    def currentTerm(self):
+        return self.__currentTerm
+
+    @currentTerm.setter
+    def currentTerm(self, term):
+        self.__currentTerm = term
+
+    @property
+    def votedForNodeId(self):
+        return self.__votedForNodeId
+
+    @votedForNodeId.setter
+    def votedForNodeId(self, nodeId):
+        self.__votedForNodeId = nodeId
 
     def add(self, command, idx, term):
         self.__journal.append((command, idx, term))
@@ -58,6 +101,32 @@ class MemoryJournal(Journal):
 
     def _destroy(self):
         pass
+
+
+class VotedForNodeIdHashProxy(object):
+    """
+    A proxy for the voted-for node ID storing only the hash.
+
+    This object can only be used for equality tests (equal if the MD5 hash of the other operand after pickling is identical) and identity checks against None ('is None').
+    """
+
+    def __init__(self, nodeId = None, _hash = None):
+        # Accepts either a node ID or a hash, but the latter is not public API (optimisation because the FileJournal already needs to compute the hash)
+        if nodeId is None and _hash is None:
+            raise ValueError('Argument required')
+        if _hash is not None:
+            self.__hash = _hash
+        else:
+            self.__hash = hashlib.md5(pysyncobj.pickle.dumps(nodeId)).digest()
+
+    def __eq__(self, other):
+        return self.__hash == hashlib.md5(pysyncobj.pickle.dumps(other)).digest()
+
+    def __ne__(self, other): # Py2 compatibility
+        return not (self == other)
+
+    def __repr__(self):
+        return '{}({!r})'.format(type(self).__name__, self.__hash)
 
 
 class ResizableFile(object):
@@ -130,6 +199,8 @@ LAST_RECORD_OFFSET_OFFSET = NAME_SIZE + VERSION_SIZE + 4 + CURRENT_TERM_SIZE + V
 # VOTED_FOR is an MD5 hash of the pickled node ID.
 # LAST_RECORD_OFFSET is the offset from the beginning of the journal file at which the last record ends.
 
+VOTED_FOR_NONE_HASH = hashlib.md5(pysyncobj.pickle.dumps(None)).digest()
+
 # Version 1 is identical except it has neither CURRENT_TERM nor VOTED_FOR.
 
 class FileJournal(Journal):
@@ -173,6 +244,10 @@ class FileJournal(Journal):
         else:
             raise RuntimeError('Unknown journal file version encountered: {} (expected <= {})'.format(version, JOURNAL_FORMAT_VERSION))
 
+        self.__currentTerm = struct.unpack('<Q', self.__journalFile.read(NAME_SIZE + VERSION_SIZE + 4, CURRENT_TERM_SIZE))[0]
+        self.__votedForNodeIdHash = self.__journalFile.read(NAME_SIZE + VERSION_SIZE + 4 + CURRENT_TERM_SIZE, VOTED_FOR_SIZE)
+        self.__votedForNodeIdProxy = VotedForNodeIdHashProxy(_hash = self.__votedForNodeIdHash) if self.__votedForNodeIdHash != VOTED_FOR_NONE_HASH else None
+
         currentOffset = FIRST_RECORD_OFFSET
         lastRecordOffset = self.__getLastRecordOffset()
         while currentOffset < lastRecordOffset:
@@ -190,7 +265,7 @@ class FileJournal(Journal):
         appVersion = APP_VERSION + b'\0' * (VERSION_SIZE - len(APP_VERSION))
         header = (appName + appVersion + struct.pack('<I', JOURNAL_FORMAT_VERSION) +
           struct.pack('<Q', 0) + # default term = 0
-          hashlib.md5(pickle.dumps(None)).digest() + # default voted for = empty
+          VOTED_FOR_NONE_HASH + # default voted for = empty
           struct.pack('<I', FIRST_RECORD_OFFSET))
         return header
 
@@ -201,9 +276,46 @@ class FileJournal(Journal):
         self.__journalFile.write(LAST_RECORD_OFFSET_OFFSET, struct.pack('<I', offset))
         # No auto-flushing needed here because it's called in the methods below.
 
+    @property
+    def currentTerm(self):
+        return self.__currentTerm
+
+    @currentTerm.setter
+    def currentTerm(self, term):
+        self.__set_currentTerm(term)
+
+    @property
+    def votedForNodeId(self):
+        return self.__votedForNodeIdProxy
+
+    @votedForNodeId.setter
+    def votedForNodeId(self, nodeId):
+        self.__set_votedForNodeId(nodeId)
+
+    def __set_currentTerm(self, term, flush = True):
+        self.__journalFile.write(NAME_SIZE + VERSION_SIZE + 4, struct.pack('<Q', term))
+        if flush and self.__flushJournal:
+            self.flush()
+        self.__currentTerm = term
+
+    def __set_votedForNodeId(self, nodeId, flush = True):
+        self.__votedForNodeIdHash = hashlib.md5(pysyncobj.pickle.dumps(nodeId)).digest()
+        self.__journalFile.write(NAME_SIZE + VERSION_SIZE + 4 + CURRENT_TERM_SIZE, self.__votedForNodeIdHash)
+        if flush and self.__flushJournal:
+            self.flush()
+        if self.__votedForNodeIdHash != VOTED_FOR_NONE_HASH:
+            self.__votedForNodeIdProxy = VotedForNodeIdHashProxy(_hash = self.__votedForNodeIdHash)
+        else:
+            self.__votedForNodeIdProxy = None
+
+    def set_currentTerm_and_votedForNodeId(self, term, nodeId):
+        # Only flush once
+        self.__set_currentTerm(term, flush = False)
+        self.__set_votedForNodeId(nodeId, flush = True)
+
     def add(self, command, idx, term, _doFlush = True):
         self.__journal.append((command, idx, term))
-        cmdData = struct.pack('<QQ', idx, term) + to_bytes(command)
+        cmdData = struct.pack('<QQ', idx, term) + pysyncobj.pickle.to_bytes(command)
         cmdLenData = struct.pack('<I', len(cmdData))
         cmdData = cmdLenData + cmdData + cmdLenData
         self.__journalFile.write(self.__currentOffset, cmdData)
