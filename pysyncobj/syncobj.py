@@ -170,6 +170,15 @@ class SyncObj(object):
         self.__destroying = False
         self.__recvTransmission = ''
 
+        if not self.__conf.journalFile or not self.__conf.flushJournal:
+            # Journal is either not written to a file or not flushed.
+            # We can't be sure whether this node voted in the current term yet, so don't vote until maxTimeout has elapsed.
+            # Factor 1.1 just to be safe.
+		# Note that an entire non-flushing cluster should always use the same maximum timeout to ensure that this method works!
+            self.__voteBlockTime = time.time() + 1.1 * self.__conf.raftMaxTimeout
+        else:
+            self.__voteBlockTime = None
+
         self.__onTickCallbacks = []
         self.__onTickCallbacksLock = threading.Lock()
 
@@ -713,6 +722,10 @@ class SyncObj(object):
                 self.__raftLog.set_currentTerm_and_votedForNodeId(message['term'], None)
                 self.__setState(_RAFT_STATE.FOLLOWER)
                 self.__raftLeader = None
+
+            if self.__voteBlockTime is not None and time.time() <= self.__voteBlockTime:
+                return
+            self.__voteBlockTime = None
 
             if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
                 lastLogTerm = message['last_log_term']

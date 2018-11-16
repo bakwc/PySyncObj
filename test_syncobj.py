@@ -35,6 +35,8 @@ class TEST_TYPE:
 	AUTO_TICK_1 = 5
 	WAIT_BIND = 6
 	LARGE_COMMAND = 7
+	NOFLUSH_NOVOTE_1 = 8
+	NOFLUSH_NOVOTE_2 = 9
 
 class TestObj(SyncObj):
 
@@ -112,6 +114,16 @@ class TestObj(SyncObj):
 		if testType == TEST_TYPE.WAIT_BIND:
 			cfg.maxBindRetries = 1
 			cfg.autoTick = True
+
+		if testType in (TEST_TYPE.NOFLUSH_NOVOTE_1, TEST_TYPE.NOFLUSH_NOVOTE_2):
+			cfg.logCompactionMinTime = 999999
+			cfg.logCompactionMinEntries = 999999
+			cfg.appendEntriesPeriod = 0.02
+			cfg.raftMinTimeout = 0.1 if testType == TEST_TYPE.NOFLUSH_NOVOTE_1 else 0.48
+			cfg.raftMaxTimeout = 0.1000001 if testType == TEST_TYPE.NOFLUSH_NOVOTE_1 else 0.4800001
+			cfg.fullDumpFile = dumpFile
+			cfg.journalFile = journalFile
+			cfg.flushJournal = testType == TEST_TYPE.NOFLUSH_NOVOTE_1
 
 		super(TestObj, self).__init__(selfNodeAddr, otherNodeAddrs, cfg, consumers)
 		self.__counter = 0
@@ -360,6 +372,73 @@ def test_syncThreeObjectsLeaderFail():
 	o1._destroy()
 	o2._destroy()
 	o3._destroy()
+
+def sync_noflush_novote(journalFile2Enabled):
+	# Test that if flushing is disabled, the node won't vote until the maximum timeout has been exceeded
+	# o1's timeout is set to 0.1 seconds, so it will call for an election almost immediately.
+	# o2's timeout is set to 0.48 seconds, so it will not call for an election before o1, and it will ignore o1's request_vote messages.
+	# Specifically, o2 is expected to ignore the messages until 1.1 * timeout, i.e. including the one sent by o1 after 0.5 seconds.
+	# This test doesn't actually verify that o2 gets o1's request_vote messages, but that should be covered by other tests.
+	# Note that o1 has flushing enabled but o2 doesn't!
+
+	random.seed(42)
+
+	a = [getNextAddr(), getNextAddr()]
+	if journalFile2Enabled:
+		journalFiles = [getNextJournalFile(), getNextJournalFile()]
+	else:
+		journalFiles = [getNextJournalFile()]
+	removeFiles(journalFiles)
+
+	# Make sure that o1 already has a log; this means that it will never accept a vote request from o2
+	o1 = TestObj(a[0], [], TEST_TYPE.NOFLUSH_NOVOTE_1, journalFile = journalFiles[0])
+	doTicks([o1], 10, stopFunc=lambda: o1.isReady())
+	o1.addValue(42)
+	doTicks([o1], 10, stopFunc=lambda: o1.getCounter() == 42)
+	o1._destroy()
+
+	states = defaultdict(list)
+
+	o1 = TestObj(a[0], [a[1]], TEST_TYPE.NOFLUSH_NOVOTE_1, journalFile = journalFiles[0], onStateChanged=lambda old, new: states[a[0]].append(new))
+	o2 = TestObj(a[1], [a[0]], TEST_TYPE.NOFLUSH_NOVOTE_2, journalFile = journalFiles[1] if journalFile2Enabled else None, onStateChanged=lambda old, new: states[a[1]].append(new))
+	objs = [o1, o2]
+
+	assert not o1._isReady()
+	assert not o2._isReady()
+
+	doTicks(objs, 0.45) #, stopFunc=lambda: o1._SyncObj__raftState == _RAFT_STATE.CANDIDATE)
+
+	# Here, o1 has called several elections, but o2 never granted its vote.
+
+	assert o1._SyncObj__raftState == _RAFT_STATE.CANDIDATE
+	assert o2._SyncObj__raftState == _RAFT_STATE.FOLLOWER
+	assert _RAFT_STATE.LEADER not in states[a[0]]
+	assert states[a[1]] == [] # Never had a state change, i.e. it's still the default follower
+
+	doTicks(objs, 0.1)
+
+	# We have now surpassed o2's timeout, but the last vote request from o1 was at 0.5, i.e. *before* o2's 1.1 * timeout has expired.
+	# o2 is expected to have called for an election, but o1 would never vote for o2 due to the missing log entry.
+
+	assert o1._SyncObj__raftState == _RAFT_STATE.CANDIDATE
+	assert o2._SyncObj__raftState == _RAFT_STATE.CANDIDATE
+	assert _RAFT_STATE.LEADER not in states[a[0]]
+	assert _RAFT_STATE.LEADER not in states[a[1]]
+
+	doTicks(objs, 0.1)
+
+	# o1 called for another election at 0.6, i.e. after o2's vote block timeout, so it should now be elected.
+	assert o1._SyncObj__raftState == _RAFT_STATE.LEADER
+	assert o2._SyncObj__raftState == _RAFT_STATE.FOLLOWER
+	assert _RAFT_STATE.LEADER not in states[a[1]]
+
+	o1._destroy()
+	o2._destroy()
+	removeFiles(journalFiles)
+
+def test_sync_noflush_novote():
+	sync_noflush_novote(True) # Test with an unflushed journal file
+	sync_noflush_novote(False) # Test with a memory journal
 
 def test_manyActionsLogCompaction():
 
