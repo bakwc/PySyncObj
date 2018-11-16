@@ -149,14 +149,12 @@ class SyncObj(object):
         self.__nodeClass = nodeClass
 
         self.__raftState = _RAFT_STATE.FOLLOWER
-        self.__raftCurrentTerm = 0
-        self.__votedForNodeId = None
         self.__votesCount = 0
         self.__raftLeader = None
         self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
         self.__raftLog = createJournal(self.__conf.journalFile, self.__conf.flushJournal)
         if len(self.__raftLog) == 0:
-            self.__raftLog.add(_bchr(_COMMAND_TYPE.NO_OP), 1, self.__raftCurrentTerm)
+            self.__raftLog.add(_bchr(_COMMAND_TYPE.NO_OP), 1, self.__raftLog.currentTerm)
         self.__raftCommitIndex = 1
         self.__raftLastApplied = 1
         self.__raftNextIndex = {}
@@ -428,7 +426,7 @@ class SyncObj(object):
                 requestNode, requestID = callback
 
             if self.__raftState == _RAFT_STATE.LEADER:
-                idx, term = self.__getCurrentLogIndex() + 1, self.__raftCurrentTerm
+                idx, term = self.__getCurrentLogIndex() + 1, self.__raftLog.currentTerm
 
                 if self.__conf.dynamicMembershipChange:
                     changeClusterRequest = self.__parseChangeClusterRequest(command)
@@ -537,13 +535,12 @@ class SyncObj(object):
                 self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
                 self.__raftLeader = None
                 self.__setState(_RAFT_STATE.CANDIDATE)
-                self.__raftCurrentTerm += 1
-                self.__votedForNodeId = self.__selfNode.id
+                self.__raftLog.set_currentTerm_and_votedForNodeId(self.__raftLog.currentTerm + 1, self.__selfNode.id)
                 self.__votesCount = 1
                 for node in self.__otherNodes:
                     self.__transport.send(node, {
                         'type': 'request_vote',
-                        'term': self.__raftCurrentTerm,
+                        'term': self.__raftLog.currentTerm,
                         'last_log_index': self.__getCurrentLogIndex(),
                         'last_log_term': self.__getCurrentLogTerm(),
                     })
@@ -645,7 +642,7 @@ class SyncObj(object):
         status['log_len'] = len(self.__raftLog)
         status['last_applied'] = self.__raftLastApplied
         status['commit_idx'] = self.__raftCommitIndex
-        status['raft_term'] = self.__raftCurrentTerm
+        status['raft_term'] = self.__raftLog.currentTerm
         status['next_node_idx_count'] = len(self.__raftNextIndex)
         for node, idx in iteritems(self.__raftNextIndex):
             status['next_node_idx_server_' + node.id] = idx
@@ -712,25 +709,24 @@ class SyncObj(object):
 
         if message['type'] == 'request_vote' and self.__selfNode is not None:
 
-            if message['term'] > self.__raftCurrentTerm:
-                self.__raftCurrentTerm = message['term']
-                self.__votedForNodeId = None
+            if message['term'] > self.__raftLog.currentTerm:
+                self.__raftLog.set_currentTerm_and_votedForNodeId(message['term'], None)
                 self.__setState(_RAFT_STATE.FOLLOWER)
                 self.__raftLeader = None
 
             if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE):
                 lastLogTerm = message['last_log_term']
                 lastLogIdx = message['last_log_index']
-                if message['term'] >= self.__raftCurrentTerm:
+                if message['term'] >= self.__raftLog.currentTerm:
                     if lastLogTerm < self.__getCurrentLogTerm():
                         return
                     if lastLogTerm == self.__getCurrentLogTerm() and \
                             lastLogIdx < self.__getCurrentLogIndex():
                         return
-                    if self.__votedForNodeId is not None:
+                    if self.__raftLog.votedForNodeId is not None:
                         return
 
-                    self.__votedForNodeId = node.id
+                    self.__raftLog.votedForNodeId = node.id
 
                     self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
                     self.__transport.send(node, {
@@ -738,14 +734,13 @@ class SyncObj(object):
                         'term': message['term'],
                     })
 
-        if message['type'] == 'append_entries' and message['term'] >= self.__raftCurrentTerm:
+        if message['type'] == 'append_entries' and message['term'] >= self.__raftLog.currentTerm:
             self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
             if self.__raftLeader != node:
                 self.__onLeaderChanged()
             self.__raftLeader = node
-            if message['term'] > self.__raftCurrentTerm:
-                self.__raftCurrentTerm = message['term']
-                self.__votedForNodeId = None
+            if message['term'] > self.__raftLog.currentTerm:
+                self.__raftLog.set_currentTerm_and_votedForNodeId(message['term'], None)
             self.__setState(_RAFT_STATE.FOLLOWER)
             newEntries = message.get('entries', [])
             serialized = message.get('serialized', None)
@@ -832,7 +827,7 @@ class SyncObj(object):
                     self.__commandsWaitingCommit[idx].append((term, callback))
 
         if self.__raftState == _RAFT_STATE.CANDIDATE:
-            if message['type'] == 'response_vote' and message['term'] == self.__raftCurrentTerm:
+            if message['type'] == 'response_vote' and message['term'] == self.__raftLog.currentTerm:
                 self.__votesCount += 1
 
                 if self.__votesCount > (len(self.__otherNodes) + 1) / 2:
@@ -962,7 +957,7 @@ class SyncObj(object):
         return self.isReady()
 
     def _getTerm(self):
-        return self.__raftCurrentTerm
+        return self.__raftLog.currentTerm
 
     def _getRaftLogSize(self):
         return len(self.__raftLog)
@@ -992,7 +987,7 @@ class SyncObj(object):
             self.__lastResponseTime[node] = time.time()
 
         # No-op command after leader election.
-        idx, term = self.__getCurrentLogIndex() + 1, self.__raftCurrentTerm
+        idx, term = self.__getCurrentLogIndex() + 1, self.__raftLog.currentTerm
         self.__raftLog.add(_bchr(_COMMAND_TYPE.NO_OP), idx, term)
         self.__noopIDx = idx
         if not self.__conf.appendEntriesUseBatch:
@@ -1050,7 +1045,7 @@ class SyncObj(object):
                                 'type': 'append_entries',
                                 'transmission': transmission,
                                 'data': currData,
-                                'term': self.__raftCurrentTerm,
+                                'term': self.__raftLog.currentTerm,
                                 'commit_index': self.__raftCommitIndex,
                                 'prevLogIdx': prevLogIdx,
                                 'prevLogTerm': prevLogTerm,
@@ -1059,7 +1054,7 @@ class SyncObj(object):
                     else:
                         message = {
                             'type': 'append_entries',
-                            'term': self.__raftCurrentTerm,
+                            'term': self.__raftLog.currentTerm,
                             'commit_index': self.__raftCommitIndex,
                             'entries': entries,
                             'prevLogIdx': prevLogIdx,
@@ -1070,7 +1065,7 @@ class SyncObj(object):
                     transmissionData = self.__serializer.getTransmissionData(node)
                     message = {
                         'type': 'append_entries',
-                        'term': self.__raftCurrentTerm,
+                        'term': self.__raftLog.currentTerm,
                         'commit_index': self.__raftCommitIndex,
                         'serialized': transmissionData,
                     }
