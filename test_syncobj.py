@@ -118,9 +118,8 @@ class TestObj(SyncObj):
 		if testType in (TEST_TYPE.NOFLUSH_NOVOTE_1, TEST_TYPE.NOFLUSH_NOVOTE_2):
 			cfg.logCompactionMinTime = 999999
 			cfg.logCompactionMinEntries = 999999
-			cfg.appendEntriesPeriod = 0.02
-			cfg.raftMinTimeout = 0.1 if testType == TEST_TYPE.NOFLUSH_NOVOTE_1 else 0.48
-			cfg.raftMaxTimeout = 0.1000001 if testType == TEST_TYPE.NOFLUSH_NOVOTE_1 else 0.4800001
+			cfg.raftMinTimeout = 0.5 if testType == TEST_TYPE.NOFLUSH_NOVOTE_1 else 2.4
+			cfg.raftMaxTimeout = cfg.raftMinTimeout * 1.000001
 			cfg.fullDumpFile = dumpFile
 			cfg.journalFile = journalFile
 			cfg.flushJournal = testType == TEST_TYPE.NOFLUSH_NOVOTE_1
@@ -375,10 +374,9 @@ def test_syncThreeObjectsLeaderFail():
 
 def sync_noflush_novote(journalFile2Enabled):
 	# Test that if flushing is disabled, the node won't vote until the maximum timeout has been exceeded
-	# o1's timeout is set to 0.1 seconds, so it will call for an election almost immediately.
-	# o2's timeout is set to 0.48 seconds, so it will not call for an election before o1, and it will ignore o1's request_vote messages.
-	# Specifically, o2 is expected to ignore the messages until 1.1 * timeout, i.e. including the one sent by o1 after 0.5 seconds.
-	# This test doesn't actually verify that o2 gets o1's request_vote messages, but that should be covered by other tests.
+	# o1's timeout is set to 0.5 seconds, so it will call for an election almost immediately.
+	# o2's timeout is set to 2.4 seconds, so it will not call for an election before o1, and it will ignore o1's request_vote messages.
+	# Specifically, o2 is expected to ignore the messages until 1.1 * timeout, i.e. including the one sent by o1 after 2.5 seconds, except for updating its term.
 	# Note that o1 has flushing enabled but o2 doesn't!
 
 	random.seed(42)
@@ -406,7 +404,7 @@ def sync_noflush_novote(journalFile2Enabled):
 	assert not o1._isReady()
 	assert not o2._isReady()
 
-	doTicks(objs, 0.45) #, stopFunc=lambda: o1._SyncObj__raftState == _RAFT_STATE.CANDIDATE)
+	doTicks(objs, 2.25)
 
 	# Here, o1 has called several elections, but o2 never granted its vote.
 
@@ -415,19 +413,20 @@ def sync_noflush_novote(journalFile2Enabled):
 	assert _RAFT_STATE.LEADER not in states[a[0]]
 	assert states[a[1]] == [] # Never had a state change, i.e. it's still the default follower
 
-	doTicks(objs, 0.1)
+	doTicks(objs, 0.3) # 2.55 total
 
-	# We have now surpassed o2's timeout, but the last vote request from o1 was at 0.5, i.e. *before* o2's 1.1 * timeout has expired.
-	# o2 is expected to have called for an election, but o1 would never vote for o2 due to the missing log entry.
+	# We have now surpassed o2's timeout, but the last vote request from o1 was at 2.5, i.e. *before* o2's 1.1 * timeout (= 2.64) has expired.
+	# o2 is expected to have called for an election at 2.4, but o1 would never vote for o2 due to the missing log entry.
+	# Due to the bigger term in o2's vote request message, o1 should now be a follower.
 
-	assert o1._SyncObj__raftState == _RAFT_STATE.CANDIDATE
+	assert o1._SyncObj__raftState == _RAFT_STATE.FOLLOWER
 	assert o2._SyncObj__raftState == _RAFT_STATE.CANDIDATE
 	assert _RAFT_STATE.LEADER not in states[a[0]]
 	assert _RAFT_STATE.LEADER not in states[a[1]]
 
-	doTicks(objs, 0.1)
+	doTicks(objs, 0.6) # 3.15 total
 
-	# o1 called for another election at 0.6, i.e. after o2's vote block timeout, so it should now be elected.
+	# o1 called for another election at 2.9 (it reset its timeout on o2's vote request at 2.4), i.e. after o2's vote block timeout, so it should now be elected.
 	assert o1._SyncObj__raftState == _RAFT_STATE.LEADER
 	assert o2._SyncObj__raftState == _RAFT_STATE.FOLLOWER
 	assert _RAFT_STATE.LEADER not in states[a[1]]
@@ -1388,12 +1387,12 @@ def test_journal_upgrade_version_1_to_2():
 			size += len(entryBytes)
 
 			# Fill up with zero bytes to a power of 2
-			fp.write(b'\x00' * (2 ** max(math.ceil(math.log(size, 2)), 10) - size))
+			fp.write(b'\x00' * (2 ** max(int(math.ceil(math.log(size, 2))), 10) - size))
 
 		journal = createJournal(journalFile, True)
 		assert journal[:] == expectedEntries
 		journal._destroy()
-		assert os.path.getsize(journalFile) == 2 ** max(math.ceil(math.log(size + 24, 2)), 10)
+		assert os.path.getsize(journalFile) == 2 ** max(int(math.ceil(math.log(size + 24, 2))), 10)
 		with open(journalFile, 'rb') as fp:
 			# Check app name, version, and journal format version
 			assert fp.read(24) == b'PYSYNCOBJ' + b'\x00' * 15
