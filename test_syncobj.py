@@ -379,6 +379,14 @@ def sync_noflush_novote(journalFile2Enabled):
 	# Specifically, o2 is expected to ignore the messages until 1.1 * timeout, i.e. including the one sent by o1 after 2.5 seconds, except for updating its term.
 	# Note that o1 has flushing enabled but o2 doesn't!
 
+	def tick(o1, o2, startTime, totalTickTime, sleepTime):
+		# Tick o1 and o2 until totalTickTime has elapsed since startTime
+		assert time.time() < startTime + totalTickTime # Make sure that we tick at least once
+		while time.time() < start + totalTickTime:
+			o1.doTick()
+			o2.doTick()
+			time.sleep(sleepTime)
+
 	random.seed(42)
 
 	a = [getNextAddr(), getNextAddr()]
@@ -397,6 +405,7 @@ def sync_noflush_novote(journalFile2Enabled):
 
 	states = defaultdict(list)
 
+	start = time.time()
 	o1 = TestObj(a[0], [a[1]], TEST_TYPE.NOFLUSH_NOVOTE_1, journalFile = journalFiles[0], onStateChanged=lambda old, new: states[a[0]].append(new))
 	o2 = TestObj(a[1], [a[0]], TEST_TYPE.NOFLUSH_NOVOTE_2, journalFile = journalFiles[1] if journalFile2Enabled else None, onStateChanged=lambda old, new: states[a[1]].append(new))
 	objs = [o1, o2]
@@ -404,7 +413,7 @@ def sync_noflush_novote(journalFile2Enabled):
 	assert not o1._isReady()
 	assert not o2._isReady()
 
-	doTicks(objs, 2.25)
+	tick(o1, o2, start, 2.25, 0.01)
 
 	# Here, o1 has called several elections, but o2 never granted its vote.
 
@@ -413,20 +422,30 @@ def sync_noflush_novote(journalFile2Enabled):
 	assert _RAFT_STATE.LEADER not in states[a[0]]
 	assert states[a[1]] == [] # Never had a state change, i.e. it's still the default follower
 
-	doTicks(objs, 0.3) # 2.55 total
+	tick(o1, o2, start, 2.45, 0.01)
 
-	# We have now surpassed o2's timeout, but the last vote request from o1 was at 2.5, i.e. *before* o2's 1.1 * timeout (= 2.64) has expired.
+	# We have now surpassed o2's timeout, but the last vote request from o1 was at 2.0, i.e. *before* o2's 1.1 * timeout (= 2.64) has expired.
 	# o2 is expected to have called for an election at 2.4, but o1 would never vote for o2 due to the missing log entry.
-	# Due to the bigger term in o2's vote request message, o1 should now be a follower.
+	# o1 converted to a follower due to o2's bigger term.
 
 	assert o1._SyncObj__raftState == _RAFT_STATE.FOLLOWER
 	assert o2._SyncObj__raftState == _RAFT_STATE.CANDIDATE
 	assert _RAFT_STATE.LEADER not in states[a[0]]
 	assert _RAFT_STATE.LEADER not in states[a[1]]
 
-	doTicks(objs, 0.6) # 3.15 total
+	tick(o1, o2, start, 2.55, 0.01)
 
-	# o1 called for another election at 2.9 (it reset its timeout on o2's vote request at 2.4), i.e. after o2's vote block timeout, so it should now be elected.
+	# While o1 converted to a follower at 2.4 due to o2's vote request, it still called for an election at 2.5 since the term change doesn't affect the election timeout.
+	# Therefore, o2 converted to a follower again at 2.5 due to the bigger term. However, o2 still didn't grant its vote to o1 since 1.1 * timeout (= 2.64) hasn't elapsed yet.
+
+	assert o1._SyncObj__raftState == _RAFT_STATE.CANDIDATE
+	assert o2._SyncObj__raftState == _RAFT_STATE.FOLLOWER
+	assert _RAFT_STATE.LEADER not in states[a[0]]
+	assert _RAFT_STATE.LEADER not in states[a[1]]
+
+	tick(o1, o2, start, 3.15, 0.01)
+
+	# o1 called for another election at 3.0, i.e. after o2's vote block timeout, so it should now be elected.
 	assert o1._SyncObj__raftState == _RAFT_STATE.LEADER
 	assert o2._SyncObj__raftState == _RAFT_STATE.FOLLOWER
 	assert _RAFT_STATE.LEADER not in states[a[1]]
