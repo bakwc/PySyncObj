@@ -1588,6 +1588,9 @@ def test_batteriesCommon():
 	assert l2.tryAcquire('test.lock1', sync=True) == False
 	assert l2.isAcquired('test.lock1') == False
 
+	l1id = l1._ReplLockManager__selfID
+	l1._ReplLockManager__lockImpl.prolongate(l1id, 0, _doApply=True)
+
 	l1.release('test.lock1', sync=True)
 	assert l2.tryAcquire('test.lock1', sync=True) == True
 
