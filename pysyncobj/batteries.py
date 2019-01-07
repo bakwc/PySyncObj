@@ -416,7 +416,7 @@ class _ReplLockManagerImpl(SyncObjConsumer):
 
     @replicated
     def prolongate(self, clientID, currentTime):
-        for lockID in self.__locks.keys():
+        for lockID in list(self.__locks):
             lockClientID, lockTime = self.__locks[lockID]
 
             if currentTime - lockTime > self.__autoUnlockTime:
