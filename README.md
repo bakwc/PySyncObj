@@ -110,7 +110,7 @@ print(counter1, counter2, dict1['testKey1'], dict1.get('testKey2'))
 from pysyncobj import SyncObj
 from pysyncobj.batteries import ReplLockManager
 
-lockManager = ReplLockManager(timeout=75) # Lock will be released if connection dropped for more than 75 seconds
+lockManager = ReplLockManager(autoUnlockTime=75) # Lock will be released if connection dropped for more than 75 seconds
 syncObj = SyncObj('serverA:4321', ['serverB:4321', 'serverC:4321'], consumers=[lockManager])
 if lockManager.tryAcquire('testLockName', sync=True):
   # do some actions
