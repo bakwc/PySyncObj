@@ -115,7 +115,13 @@ class SyncObjConf(object):
         self.fullDumpFile = kwargs.get('fullDumpFile', None)
 
         #: File to store operations journal. Save each record as soon as received.
+        #: If unspecified or None, an in-memory journal is used.
         self.journalFile = kwargs.get('journalFile', None)
+
+        #: Flush the journal whenever something is written to it.
+        #: Enabled by default if a journalFile is used.
+        #: Cannot be enabled if the journalFile is unspecified (i.e. when the journal is not preserved).
+        self.flushJournal = kwargs.get('flushJournal', None)
 
         #: Will try to bind port every bindRetryTime seconds until success.
         self.bindRetryTime = kwargs.get('bindRetryTime', 1.0)
@@ -179,6 +185,7 @@ class SyncObjConf(object):
         assert self.logCompactionMinEntries >= 2
         assert self.logCompactionMinTime > 0
         assert self.logCompactionBatchSize > 0
+        assert self.journalFile is not None or not self.flushJournal, 'flushJournal cannot be enabled without specifying a journal file'
         assert self.bindRetryTime > 0
         assert (self.deserializer is None) == (self.serializer is None)
         if self.serializer is not None:
