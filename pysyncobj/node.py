@@ -44,6 +44,8 @@ class Node(object):
         v = vars(self)
         return '{}({}{})'.format(type(self).__name__, repr(self.id), (', ' + ', '.join('{} = {}'.format(key, repr(v[key])) for key in v if key != '_id')) if len(v) > 1 else '')
 
+    def _destroy(self):
+        pass
     @property
     def id(self):
         return self._id
