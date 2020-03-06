@@ -1287,6 +1287,18 @@ def test_readOnlyNodes():
     assert b2.getCounter() == 450
     assert currRes.get(0) == FAIL_REASON.SUCCESS
 
+
+    # check that all objects have 2 readonly nodes
+    assert all(map(lambda o: o.getStatus()['readonly_nodes_count'] == 2, objs))
+
+    # disconnect readonly node
+    b1._destroy()
+    doTicks(objs, 2.0)
+
+    assert all(map(lambda o: o.getStatus()['readonly_nodes_count'] == 1, objs))
+
+
+
     o1._destroy()
     o2._destroy()
     o3._destroy()
