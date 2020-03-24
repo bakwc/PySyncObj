@@ -6,3 +6,6 @@ dist/
 *.bin
 build/
 docs/build*
+.DS_Store
+.cache/
+pysyncobj.egg-info/
