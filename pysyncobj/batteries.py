@@ -506,7 +506,25 @@ class ReplLockManager(object):
         :type timeout: float
         :return True if acquired, False - somebody else already acquired lock
         """
-        return self.__lockImpl.acquire(lockID, self.__selfID, time.time(), callback=callback, sync=sync, timeout=timeout)
+        attemptTime = time.time()
+        if sync:
+            acquireRes = self.__lockImpl.acquire(lockID, self.__selfID, attemptTime, callback=callback, sync=sync, timeout=timeout)
+            acquireTime = time.time()
+            if acquireRes:
+                if acquireTime - attemptTime > self.__autoUnlockTime / 2.0:
+                    acquireRes = False
+                    self.__lockImpl.release(lockID, self.__selfID, sync=sync)
+            return acquireRes
+
+        def asyncCallback(acquireRes, errCode):
+            if acquireRes:
+                acquireTime = time.time()
+                if acquireTime - attemptTime > self.__autoUnlockTime / 2.0:
+                    acquireRes = False
+                    self.__lockImpl.release(lockID, self.__selfID, sync=False)
+            callback(acquireRes, errCode)
+
+        self.__lockImpl.acquire(lockID, self.__selfID, attemptTime, callback=asyncCallback, sync=sync, timeout=timeout)
 
     def isAcquired(self, lockID):
         """Check if lock is acquired by ourselves.
