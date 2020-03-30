@@ -7,6 +7,7 @@ import pysyncobj.pickle as pickle
 import pysyncobj.win_inet_pton
 
 from .poller import POLL_EVENT_TYPE
+from .monotonic import monotonic as monotonicTime
 
 
 class CONNECTION_STATE:
@@ -39,7 +40,7 @@ class TcpConnection(object):
         self.__socket = socket
         self.__readBuffer = bytes()
         self.__writeBuffer = bytes()
-        self.__lastReadTime = time.time()
+        self.__lastReadTime = monotonicTime()
         self.__timeout = timeout
         self.__poller = poller
         if socket is not None:
@@ -79,7 +80,7 @@ class TcpConnection(object):
         self.__socket.setblocking(0)
         self.__readBuffer = bytes()
         self.__writeBuffer = bytes()
-        self.__lastReadTime = time.time()
+        self.__lastReadTime = monotonicTime()
 
         try:
             self.__socket.connect((host, port))
@@ -135,7 +136,7 @@ class TcpConnection(object):
             self.disconnect()
             return
 
-        if time.time() - self.__lastReadTime > self.__timeout:
+        if monotonicTime() - self.__lastReadTime > self.__timeout:
             self.disconnect()
             return
 
@@ -148,7 +149,7 @@ class TcpConnection(object):
                 if self.__onConnected is not None:
                     self.__onConnected()
                 self.__state = CONNECTION_STATE.CONNECTED
-                self.__lastReadTime = time.time()
+                self.__lastReadTime = monotonicTime()
                 return
 
         if eventType & POLL_EVENT_TYPE.WRITE:
@@ -198,7 +199,7 @@ class TcpConnection(object):
     def __tryReadBuffer(self):
         while self.__processRead():
             pass
-        self.__lastReadTime = time.time()
+        self.__lastReadTime = monotonicTime()
 
     def __processRead(self):
         try:

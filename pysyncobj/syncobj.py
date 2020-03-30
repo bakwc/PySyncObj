@@ -44,6 +44,8 @@ from .encryptor import HAS_CRYPTO, getEncryptor
 from .version import VERSION
 from .revision import REVISION
 from .fast_queue import FastQueue
+from .monotonic import monotonic as monotonicTime
+
 
 class _RAFT_STATE:
     FOLLOWER = 0
@@ -153,7 +155,7 @@ class SyncObj(object):
         self.__votedForNodeId = None
         self.__votesCount = 0
         self.__raftLeader = None
-        self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
+        self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
         self.__raftLog = createJournal(self.__conf.journalFile)
         if len(self.__raftLog) == 0:
             self.__raftLog.add(_bchr(_COMMAND_TYPE.NO_OP), 1, self.__raftCurrentTerm)
@@ -162,7 +164,7 @@ class SyncObj(object):
         self.__raftNextIndex = {}
         self.__lastResponseTime = {}
         self.__raftMatchIndex = {}
-        self.__lastSerializedTime = time.time()
+        self.__lastSerializedTime = monotonicTime()
         self.__lastSerializedEntry = None
         self.__forceLogCompaction = False
         self.__leaderCommitIndex = None
@@ -175,7 +177,7 @@ class SyncObj(object):
         self.__onTickCallbacks = []
         self.__onTickCallbacksLock = threading.Lock()
 
-        self.__startTime = time.time()
+        self.__startTime = monotonicTime()
         globalDnsResolver().setTimeouts(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
         globalDnsResolver().setPreferredAddrFamily(self.__conf.preferredAddrType)
         self.__serializer = Serializer(self.__conf.fullDumpFile,
@@ -413,9 +415,9 @@ class SyncObj(object):
             self.__callErrCallback(FAIL_REASON.QUEUE_FULL, callback)
 
     def _checkCommandsToApply(self):
-        startTime = time.time()
+        startTime = monotonicTime()
 
-        while time.time() - startTime < self.__conf.appendEntriesPeriod:
+        while monotonicTime() - startTime < self.__conf.appendEntriesPeriod:
             if self.__raftLeader is None and self.__conf.commandsWaitLeader:
                 break
             try:
@@ -533,8 +535,8 @@ class SyncObj(object):
             self.__needLoadDumpFile = False
 
         if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE) and self.__selfNode is not None:
-            if self.__raftElectionDeadline < time.time() and self.__connectedToAnyone():
-                self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
+            if self.__raftElectionDeadline < monotonicTime() and self.__connectedToAnyone():
+                self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
                 self.__raftLeader = None
                 self.__setState(_RAFT_STATE.CANDIDATE)
                 self.__raftCurrentTerm += 1
@@ -563,7 +565,7 @@ class SyncObj(object):
                 else:
                     break
             self.__leaderCommitIndex = self.__raftCommitIndex
-            deadline = time.time() - self.__conf.leaderFallbackTimeout
+            deadline = monotonicTime() - self.__conf.leaderFallbackTimeout
             count = 1
             for node in self.__otherNodes:
                 if self.__lastResponseTime[node] > deadline:
@@ -598,7 +600,7 @@ class SyncObj(object):
                 needSendAppendEntries = True
 
         if self.__raftState == _RAFT_STATE.LEADER:
-            if time.time() > self.__newAppendEntriesTime or needSendAppendEntries:
+            if monotonicTime() > self.__newAppendEntriesTime or needSendAppendEntries:
                 self.__sendAppendEntries()
 
         if not self.__onReadyCalled and self.__raftLastApplied == self.__leaderCommitIndex:
@@ -653,7 +655,7 @@ class SyncObj(object):
         for node, idx in iteritems(self.__raftMatchIndex):
             status['match_idx_server_' + node.id] = idx
         status['leader_commit_idx'] = self.__leaderCommitIndex
-        status['uptime'] = int(time.time() - self.__startTime)
+        status['uptime'] = int(monotonicTime() - self.__startTime)
         status['self_code_version'] = self.__selfCodeVersion
         status['enabled_code_version'] = self.__enabledCodeVersion
         return status
@@ -732,14 +734,14 @@ class SyncObj(object):
 
                     self.__votedForNodeId = node.id
 
-                    self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
+                    self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
                     self.__transport.send(node, {
                         'type': 'response_vote',
                         'term': message['term'],
                     })
 
         if message['type'] == 'append_entries' and message['term'] >= self.__raftCurrentTerm:
-            self.__raftElectionDeadline = time.time() + self.__generateRaftTimeout()
+            self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
             if self.__raftLeader != node:
                 self.__onLeaderChanged()
             self.__raftLeader = node
@@ -849,7 +851,7 @@ class SyncObj(object):
                     self.__raftNextIndex[node] = nextNodeIdx
                 if success:
                     self.__raftMatchIndex[node] = currentNodeIdx
-                self.__lastResponseTime[node] = time.time()
+                self.__lastResponseTime[node] = monotonicTime()
 
     def __callErrCallback(self, err, callback):
         if callback is None:
@@ -989,7 +991,7 @@ class SyncObj(object):
         for node in self.__otherNodes | self.__readonlyNodes:
             self.__raftNextIndex[node] = self.__getCurrentLogIndex() + 1
             self.__raftMatchIndex[node] = 0
-            self.__lastResponseTime[node] = time.time()
+            self.__lastResponseTime[node] = monotonicTime()
 
         # No-op command after leader election.
         idx, term = self.__getCurrentLogIndex() + 1, self.__raftCurrentTerm
@@ -1013,9 +1015,9 @@ class SyncObj(object):
         self.__commandsWaitingReply = {}
 
     def __sendAppendEntries(self):
-        self.__newAppendEntriesTime = time.time() + self.__conf.appendEntriesPeriod
+        self.__newAppendEntriesTime = monotonicTime() + self.__conf.appendEntriesPeriod
 
-        startTime = time.time()
+        startTime = monotonicTime()
 
         batchSizeBytes = self.__conf.appendEntriesBatchSizeBytes
 
@@ -1089,7 +1091,7 @@ class SyncObj(object):
 
                 sendSingle = False
 
-                delta = time.time() - startTime
+                delta = monotonicTime() - startTime
                 if delta > self.__conf.appendEntriesPeriod:
                     break
 
@@ -1154,7 +1156,7 @@ class SyncObj(object):
             self.__raftNextIndex[newNode] = self.__getCurrentLogIndex() + 1
             self.__raftMatchIndex[newNode] = 0
             if self._isLeader():
-                self.__lastResponseTime[newNode] = time.time()
+                self.__lastResponseTime[newNode] = monotonicTime()
             self.__transport.addNode(newNode)
             return True
         else:
@@ -1176,7 +1178,7 @@ class SyncObj(object):
         return pickle.loads(command[1:])
 
     def __tryLogCompaction(self):
-        currTime = time.time()
+        currTime = monotonicTime()
         serializeState, serializeID = self.__serializer.checkSerializing()
 
         if serializeState == SERIALIZER_STATE.SUCCESS:
