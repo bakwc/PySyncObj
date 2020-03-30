@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-
-if [ -a .commit ]
-    then
-    rm .commit
-    git commit -a --amend -C HEAD --no-verify
-fi

@@ -42,7 +42,6 @@ from .journal import createJournal
 from .config import SyncObjConf, FAIL_REASON
 from .encryptor import HAS_CRYPTO, getEncryptor
 from .version import VERSION
-from .revision import REVISION
 from .fast_queue import FastQueue
 from .monotonic import monotonic as monotonicTime
 
@@ -634,7 +633,7 @@ class SyncObj(object):
 
         status = {}
         status['version'] = VERSION
-        status['revision'] = REVISION
+        status['revision'] = 'deprecated'
         status['self'] = self.__selfNode
         status['state'] = self.__raftState
         status['leader'] = self.__raftLeader
