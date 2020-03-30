@@ -1,5 +1,6 @@
 from .config import FAIL_REASON
 from .dns_resolver import globalDnsResolver
+from .monotonic import monotonic as monotonicTime
 from .node import Node, TCPNode
 from .tcp_connection import TcpConnection, CONNECTION_STATE
 from .tcp_server import TcpServer
@@ -259,9 +260,9 @@ class TCPTransport(Transport):
         :raises TransportNotReadyError if the bind attempt fails
         """
 
-        if self._ready or self._selfIsReadonlyNode or time.time() < self._lastBindAttemptTime + self._syncObj.conf.bindRetryTime:
+        if self._ready or self._selfIsReadonlyNode or monotonicTime() < self._lastBindAttemptTime + self._syncObj.conf.bindRetryTime:
             return
-        self._lastBindAttemptTime = time.time()
+        self._lastBindAttemptTime = monotonicTime()
         try:
             self._server.bind()
         except Exception as e:
@@ -403,9 +404,9 @@ class TCPTransport(Transport):
         if not self._shouldConnect(node):
             return False
         assert node in self._connections # Since we "should connect" to this node, there should always be a connection object already in place.
-        if node in self._lastConnectAttempt and time.time() - self._lastConnectAttempt[node] < self._syncObj.conf.connectionRetryTime:
+        if node in self._lastConnectAttempt and monotonicTime() - self._lastConnectAttempt[node] < self._syncObj.conf.connectionRetryTime:
             return False
-        self._lastConnectAttempt[node] = time.time()
+        self._lastConnectAttempt[node] = monotonicTime()
         return self._connections[node].connect(node.ip, node.port)
 
     def _connectIfNecessary(self):

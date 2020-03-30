@@ -2,6 +2,7 @@ import time
 import socket
 import random
 import logging
+from .monotonic import monotonic as monotonicTime
 
 
 class DnsCachingResolver(object):
@@ -16,7 +17,7 @@ class DnsCachingResolver(object):
         self.__failCacheTime = failCacheTime
 
     def resolve(self, hostname):
-        currTime = time.time()
+        currTime = monotonicTime()
         cachedTime, ips = self.__cache.get(hostname, (0, []))
         timePassed = currTime - cachedTime
         if (timePassed > self.__cacheTime) or (not ips and timePassed > self.__failCacheTime):
