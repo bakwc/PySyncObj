@@ -563,6 +563,6 @@ class TCPTransport(Transport):
             self.dropNode(node)
         if self._server is not None:
             self._server.unbind()
-        for conn in self._unknownConnections:
+        for conn in list(self._unknownConnections):
             conn.disconnect()
         self._unknownConnections = set()
