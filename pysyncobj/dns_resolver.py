@@ -18,7 +18,7 @@ class DnsCachingResolver(object):
 
     def resolve(self, hostname):
         currTime = monotonicTime()
-        cachedTime, ips = self.__cache.get(hostname, (0, []))
+        cachedTime, ips = self.__cache.get(hostname, (-self.__failCacheTime-1, []))
         timePassed = currTime - cachedTime
         if (timePassed > self.__cacheTime) or (not ips and timePassed > self.__failCacheTime):
             prevIps = ips
