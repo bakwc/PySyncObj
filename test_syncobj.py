@@ -6,6 +6,7 @@ import random
 import threading
 import sys
 import pysyncobj.pickle as pickle
+import pysyncobj.dns_resolver as dns_resolver
 
 if sys.version_info >= (3, 0):
     xrange = range
@@ -2006,3 +2007,10 @@ def test_zeroDeployVersions():
     assert 'someMethod' not in o1._methodToID
     assert 'thirdMethod' not in o1._methodToID
     assert 'lastMethod' not in o1._methodToID
+
+
+def test_dnsResolverBug(monkeypatch):
+    monkeypatch.setattr(dns_resolver, "monotonicTime", lambda: 0.0)
+    resolver = dns_resolver.DnsCachingResolver(600, 30)
+    ip = resolver.resolve('localhost')
+    assert ip == '127.0.0.1'
