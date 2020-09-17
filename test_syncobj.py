@@ -2100,3 +2100,11 @@ def test_readOnlyDrop():
     o2._destroy()
     o3._destroy()
 
+
+def test_filterParners():
+    random.seed(42)
+
+    a = [getNextAddr(), getNextAddr()]
+
+    o1 = TestObj(a[0], [a[1], a[0]])
+    assert len(o1._SyncObj__otherNodes) == 1
