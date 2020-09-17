@@ -1057,6 +1057,8 @@ class SyncObj(object):
                                 'prevLogTerm': prevLogTerm,
                             }
                             self.__transport.send(node, message)
+                            if node not in self.__connectedNodes:
+                                break
                     else:
                         message = {
                             'type': 'append_entries',
@@ -1067,6 +1069,8 @@ class SyncObj(object):
                             'prevLogTerm': prevLogTerm,
                         }
                         self.__transport.send(node, message)
+                        if node not in self.__connectedNodes:
+                            break
                 else:
                     transmissionData = self.__serializer.getTransmissionData(node)
                     message = {
@@ -1076,6 +1080,9 @@ class SyncObj(object):
                         'serialized': transmissionData,
                     }
                     self.__transport.send(node, message)
+                    if node not in self.__connectedNodes:
+                        break
+
                     if transmissionData is not None:
                         isLast = transmissionData[2]
                         if isLast:

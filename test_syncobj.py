@@ -2014,3 +2014,89 @@ def test_dnsResolverBug(monkeypatch):
     resolver = dns_resolver.DnsCachingResolver(600, 30)
     ip = resolver.resolve('localhost')
     assert ip == '127.0.0.1'
+
+class MockSocket(object):
+    def __init__(self, socket, numSuccessSends):
+        self.socket = socket
+        self.numSuccessSends = numSuccessSends
+    def send(self, data):
+        self.numSuccessSends -= 1
+        if self.numSuccessSends <= 0:
+            return -100500
+        return self.socket.send(data)
+    def close(self):
+        return self.socket.close()
+    def getsockopt(self, *args, **kwargs):
+        return self.socket.getsockopt(*args, **kwargs)
+    def recv(self, *args, **kwargs):
+        return self.socket.recv(*args, **kwargs)
+
+def setMockSocket(o, numSuccess = 0):
+    for readonlyNode in o._SyncObj__readonlyNodes:
+        for node, conn in o._SyncObj__transport._connections.items():
+            if node == readonlyNode:
+                origSocket = conn._TcpConnection__socket
+                conn._TcpConnection__socket = MockSocket(origSocket, numSuccess)
+                #origSend = origSocket.send
+                #origSocket.send = lambda x: mockSend(origSend, x)
+                #print("Set mock send")
+
+def test_readOnlyDrop():
+    random.seed(42)
+
+    a = [getNextAddr(), getNextAddr()]
+
+    o1 = TestObj(a[0], [a[1]])
+    o2 = TestObj(a[1], [a[0]])
+    o3 = TestObj(None, [a[0], a[1]])
+    objs = [o1, o2, o3]
+
+    assert not o1._isReady()
+    assert not o2._isReady()
+    assert not o3._isReady()
+
+    doTicks(objs, 10.0, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
+
+    o1.waitBinded()
+    o2.waitBinded()
+
+    o1._printStatus()
+
+    assert o1._getLeader().address in a
+    assert o1._getLeader() == o2._getLeader()
+    assert o1._isReady()
+    assert o2._isReady()
+    assert o3._isReady()
+
+    o1.addValue(150)
+    o2.addValue(200)
+
+    doTicks(objs, 10.0, stopFunc=lambda: o1.getCounter() == 350 and o2.getCounter() == 350 and o3.getCounter() == 350)
+
+    assert o1._isReady()
+    assert o2._isReady()
+
+    assert o1.getCounter() == 350
+    assert o2.getCounter() == 350
+    assert o3.getCounter() == 350
+
+    setMockSocket(o1, 1)
+    setMockSocket(o2, 1)
+
+    global _g_numSuccessSends
+    _g_numSuccessSends = 0
+
+    for i in range(150):
+        o1.addValue(1)
+    for i in range(200):
+        o2.addValue(1)
+
+    doTicks(objs, 10.0, stopFunc=lambda: o1.getCounter() == 700 and o2.getCounter() == 700)
+
+    assert o1.getCounter() == 700
+    assert o2.getCounter() == 700
+
+    o1._destroy()
+    o2._destroy()
+    o3._destroy()
+
