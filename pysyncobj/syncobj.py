@@ -137,11 +137,14 @@ class SyncObj(object):
 
         self.__consumers = consumers
 
+        origSelfNode = selfNode
         if not isinstance(selfNode, Node) and selfNode is not None:
             selfNode = nodeClass(selfNode)
         self.__selfNode = selfNode
         self.__otherNodes = set() # set of Node
         for otherNode in otherNodes:
+            if otherNode == origSelfNode:
+                continue
             if not isinstance(otherNode, Node):
                 otherNode = nodeClass(otherNode)
             self.__otherNodes.add(otherNode)
