@@ -63,8 +63,8 @@ class Utility(object):
 
         parser = Parser()
         data = parser.parse(args)
-        if not self.__checkCorrectAdress(data.connection):
-            self.__result = 'invalid adress to connect'
+        if not self.__checkCorrectAddress(data.connection):
+            self.__result = 'invalid address to connect'
             return False
         self.__host, self.__port = data.connection.rsplit(':', 1)
         self.__port = int(self.__port)
@@ -74,14 +74,14 @@ class Utility(object):
             self.__data = ['status']
             return True
         elif data.add:
-            if not self.__checkCorrectAdress(data.add):
-                self.__result = 'invalid adress to command add'
+            if not self.__checkCorrectAddress(data.add):
+                self.__result = 'invalid address to command add'
                 return False
             self.__data = ['add', data.add]
             return True
         elif data.remove:
-            if not self.__checkCorrectAdress(data.remove):
-                self.__result = 'invalid adress to command remove'
+            if not self.__checkCorrectAddress(data.remove):
+                self.__result = 'invalid address to command remove'
                 return False
             self.__data = ['remove', data.remove]
             return True
@@ -97,10 +97,10 @@ class Utility(object):
             return False
 
 
-    def __checkCorrectAdress(self, adress):
+    def __checkCorrectAddress(self, address):
 
         try:
-            host, port = adress.rsplit(':', 1)
+            host, port = address.rsplit(':', 1)
             port = int(port)
             assert (port > 0 and port < 65536)
             return True
@@ -111,7 +111,7 @@ class Utility(object):
 class Parser(object):
     def __init__(self):
         self.__parser = ArgumentParser()
-        self.__parser.add_argument('-conn', action='store', dest='connection', help='adress to connect')
+        self.__parser.add_argument('-conn', action='store', dest='connection', help='address to connect')
         self.__parser.add_argument('-pass', action='store', dest='password', help='cluster\'s password')
         self.__parser.add_argument('-status', action='store_true', help='send command \'status\'')
         self.__parser.add_argument('-add', action='store', dest='add', help='send command \'add\'')
