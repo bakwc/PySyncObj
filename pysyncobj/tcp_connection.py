@@ -112,7 +112,6 @@ class TcpConnection(object):
             self.__onDisconnected()
         self.sendRandKey = None
         self.recvRandKey = None
-        self.encryptor = None
         if self.__socket is not None:
             self.__socket.close()
             self.__socket = None
