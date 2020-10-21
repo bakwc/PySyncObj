@@ -1211,13 +1211,13 @@ def test_readOnlyNodes():
 
     a = [getNextAddr(), getNextAddr(), getNextAddr()]
 
-    o1 = TestObj(a[0], [a[1], a[2]])
-    o2 = TestObj(a[1], [a[2], a[0]])
-    o3 = TestObj(a[2], [a[0], a[1]])
+    o1 = TestObj(a[0], [a[1], a[2]], password='123')
+    o2 = TestObj(a[1], [a[2], a[0]], password='123')
+    o3 = TestObj(a[2], [a[0], a[1]], password='123')
     objs = [o1, o2, o3]
 
-    b1 = TestObj(None, [a[0], a[1], a[2]])
-    b2 = TestObj(None, [a[0], a[1], a[2]])
+    b1 = TestObj(None, [a[0], a[1], a[2]], password='123')
+    b2 = TestObj(None, [a[0], a[1], a[2]], password='123')
 
     roObjs = [b1, b2]
 
