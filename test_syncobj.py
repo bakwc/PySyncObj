@@ -639,6 +639,16 @@ def test_encryptionCorrectPassword():
     assert o1.getCounter() == 350
     assert o2.getCounter() == 350
 
+    for conn in list(o1._SyncObj__transport._connections.values()) + list(o2._SyncObj__transport._connections.values()):
+        conn.disconnect()
+
+    o1.addValue(100)
+
+    doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 450 and o2.getCounter() == 450)
+
+    assert o1.getCounter() == 450
+    assert o2.getCounter() == 450
+
     o1._destroy()
     o2._destroy()
 
