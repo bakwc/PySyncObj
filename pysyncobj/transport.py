@@ -417,6 +417,12 @@ class TCPTransport(Transport):
         for node in self._nodes:
             self._connectIfNecessarySingle(node)
 
+    def _sendSelfAddress(self, conn):
+        if self._selfIsReadonlyNode:
+            conn.send('readonly')
+        else:
+            conn.send(self._selfNode.address)
+
     def _onOutgoingConnected(self, conn):
         """
         Callback for when a new connection from this to another node is established. Handles encryption and informs the other node which node this is.
@@ -432,11 +438,8 @@ class TCPTransport(Transport):
             conn.recvRandKey = os.urandom(32)
             conn.send(conn.recvRandKey)
         else:
+            self._sendSelfAddress(conn)
             # The onMessageReceived callback is configured in addNode already.
-            if not self._selfIsReadonlyNode:
-                conn.send(self._selfNode.address)
-            else:
-                conn.send('readonly')
             self._onNodeConnected(self._connToNode(conn))
 
     def _onOutgoingMessageReceived(self, conn, message):
@@ -452,7 +455,7 @@ class TCPTransport(Transport):
 
         if not conn.sendRandKey:
             conn.sendRandKey = message
-            conn.send(self._selfNode.address)
+            self._sendSelfAddress(conn)
 
         node = self._connToNode(conn)
         conn.setOnMessageReceivedCallback(functools.partial(self._onMessageReceived, node))
