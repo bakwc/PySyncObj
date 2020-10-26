@@ -15,7 +15,7 @@ def checkCorrectAddress(address):
         return False
 
 
-def syncobjAdmin(args):
+def executeAdminCommand(args):
     parser = ArgumentParser()
     parser.add_argument('-conn', action='store', dest='connection', help='address to connect')
     parser.add_argument('-pass', action='store', dest='password', help='cluster\'s password')
@@ -44,11 +44,8 @@ def syncobjAdmin(args):
         return 'invalid command'
 
     util = TcpUtility(data.password)
-    util.sendMessage(data.connection, message)
-    result = util.getResult()
+    result = util.executeCommand(data.connection, message)
 
-    if result is None:
-        return util.getError()
     if isinstance(result, str):
         return result
     if isinstance(result, dict):
@@ -60,7 +57,7 @@ def main(args=None):
     if args is None:
         args = sys.argv[1:]
 
-    result = syncobjAdmin(args)
+    result = executeAdminCommand(args)
     sys.stdout.write(result)
     sys.stdout.write(os.linesep)
 

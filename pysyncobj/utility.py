@@ -23,7 +23,7 @@ class TcpUtility(object):
         self.__result = None
         self.__error = None
 
-    def sendMessage(self, node, message):
+    def executeCommand(self, node, message):
         self.__result = None
         self.__error = None
 
@@ -46,6 +46,8 @@ class TcpUtility(object):
             self.__poller.poll(0.5)
             if time.time() > deadline:
                 self.__connection.disconnect()
+
+        return self.getResult() or self.getError()
 
     def getResult(self):
         return self.__result

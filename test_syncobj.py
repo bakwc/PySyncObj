@@ -16,7 +16,7 @@ import struct
 import logging
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, \
     createJournal, HAS_CRYPTO, replicated_sync, SyncObjException, SyncObjConsumer, _RAFT_STATE
-from pysyncobj.syncobj_admin import syncobjAdmin
+from pysyncobj.syncobj_admin import executeAdminCommand
 from pysyncobj.batteries import ReplCounter, ReplList, ReplDict, ReplSet, ReplLockManager, ReplQueue, ReplPriorityQueue
 from pysyncobj.node import TCPNode
 from collections import defaultdict
@@ -161,7 +161,7 @@ def singleTickFunc(o, timeToTick, interval, stopFunc):
 
 
 def utilityTickFunc(args, currRes, key):
-    currRes[key] = syncobjAdmin(args)
+    currRes[key] = executeAdminCommand(args)
 
 
 def doSyncObjAdminTicks(objects, arguments, timeToTick, currRes, interval=0.05, stopFunc=None):
