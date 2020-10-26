@@ -2,7 +2,7 @@
 
 import sys, os
 from argparse import ArgumentParser
-from .utility import TcpUtility
+from .utility import TcpUtility, UtilityException
 
 
 def checkCorrectAddress(address):
@@ -44,7 +44,10 @@ def executeAdminCommand(args):
         return 'invalid command'
 
     util = TcpUtility(data.password)
-    result = util.executeCommand(data.connection, message)
+    try:
+        result = util.executeCommand(data.connection, message)
+    except UtilityException as e:
+        return str(e)
 
     if isinstance(result, str):
         return result

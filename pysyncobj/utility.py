@@ -7,7 +7,37 @@ from .poller import createPoller
 from .tcp_connection import TcpConnection
 
 
-class TcpUtility(object):
+class UtilityException(Exception):
+    pass
+
+
+class Utility(object):
+
+    def __init__(self, password=None, timeout=900.0):
+        """
+        Initialise the utility object
+
+        :param password: password for encryption
+        :type password: str or None
+        :param timeout: communication timeout
+        :type timeout: float
+        """
+
+    def executeCommand(self, node, command):
+        """
+        Executes command on the given node.
+
+        :param node: where to execute the command
+        :type node: Node or str
+        :param command: the command which should be sent
+        :type command: list
+        :returns: result
+        :rtype: any object
+        :raises: UtilityException in case of error
+        """
+
+
+class TcpUtility(Utility):
 
     def __init__(self, password=None, timeout=900.0):
         self.__timeout = timeout
@@ -23,7 +53,13 @@ class TcpUtility(object):
         self.__result = None
         self.__error = None
 
-    def executeCommand(self, node, message):
+    def executeCommand(self, node, command):
+        """
+        Executes command on the given node.
+        :param node: where to execute the command
+        :type node: Node or str
+        """
+
         self.__result = None
         self.__error = None
 
@@ -41,19 +77,16 @@ class TcpUtility(object):
 
         deadline = time.time() + self.__timeout
 
-        self.__data = message
+        self.__data = command
         while self.__isConnected:
             self.__poller.poll(0.5)
             if time.time() > deadline:
                 self.__connection.disconnect()
 
-        return self.getResult() or self.getError()
+        if self.__result is None:
+            raise UtilityException(self.__error)
 
-    def getResult(self):
         return self.__result
-
-    def getError(self):
-        return self.__error
 
     def __onMessageReceived(self, message):
         if self.__connection.encryptor and not self.__connection.sendRandKey:
