@@ -15,7 +15,8 @@ import functools
 import struct
 import logging
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TYPE, \
-    createJournal, HAS_CRYPTO, replicated_sync, Utility, SyncObjException, SyncObjConsumer, _RAFT_STATE
+    createJournal, HAS_CRYPTO, replicated_sync, SyncObjException, SyncObjConsumer, _RAFT_STATE
+from pysyncobj.syncobj_admin import executeAdminCommand
 from pysyncobj.batteries import ReplCounter, ReplList, ReplDict, ReplSet, ReplLockManager, ReplQueue, ReplPriorityQueue
 from pysyncobj.node import TCPNode
 from collections import defaultdict
@@ -159,14 +160,8 @@ def singleTickFunc(o, timeToTick, interval, stopFunc):
                 break
 
 
-def utilityTickFunc(args, currRes, key, timeToTick):
-    u = Utility(args)
-    currTime = time.time()
-    finishTime = currTime + timeToTick
-    while time.time() < finishTime:
-        if u.getResult() is not None:
-            currRes[key] = u.getResult()
-            break
+def utilityTickFunc(args, currRes, key):
+    currRes[key] = executeAdminCommand(args)
 
 
 def doSyncObjAdminTicks(objects, arguments, timeToTick, currRes, interval=0.05, stopFunc=None):
@@ -177,7 +172,7 @@ def doSyncObjAdminTicks(objects, arguments, timeToTick, currRes, interval=0.05, 
         t1.start()
         objThreads.append(t1)
         if arguments.get(o) is not None:
-            t2 = threading.Thread(target=utilityTickFunc, args=(arguments[o], currRes, o, timeToTick))
+            t2 = threading.Thread(target=utilityTickFunc, args=(arguments[o], currRes, o))
             t2.start()
             utilityThreads.append(t2)
     for t in objThreads:
