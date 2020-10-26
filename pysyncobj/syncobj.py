@@ -200,6 +200,10 @@ class SyncObj(object):
         self.__transport.setOnMessageReceivedCallback(self.__onMessageReceived)
         self.__transport.setOnReadonlyNodeConnectedCallback(self.__onReadonlyNodeConnected)
         self.__transport.setOnReadonlyNodeDisconnectedCallback(self.__onReadonlyNodeDisconnected)
+        self.__transport.setOnUtilityMessageCallback('status', self._getStatus)
+        self.__transport.setOnUtilityMessageCallback('add', self._addNodeToCluster)
+        self.__transport.setOnUtilityMessageCallback('remove', self._removeNodeFromCluster)
+        self.__transport.setOnUtilityMessageCallback('set_version', self._setCodeVersion)
 
         self._methodToID = {}
         self._idToMethod = {}
@@ -324,7 +328,7 @@ class SyncObj(object):
 
         :param newVersion: new code version
         :type int
-        :param callback: will be called on cussess or fail
+        :param callback: will be called on success or fail
         :type callback: function(`FAIL_REASON <#pysyncobj.FAIL_REASON>`_, None)
         """
         assert isinstance(newVersion, int)
@@ -366,11 +370,18 @@ class SyncObj(object):
             node = self.__nodeClass(node)
         self._applyCommand(pickle.dumps(['rem', node.id, node]), callback, _COMMAND_TYPE.MEMBERSHIP)
 
-    def _addNodeToCluster(self, node, callback=None):
-        self.addNodeToCluster(node, callback)
+    def _setCodeVersion(self, args, callback):
+        self.setCodeVersion(args[0], callback)
 
-    def _removeNodeFromCluster(self, node, callback=None):
-        self.removeNodeFromCluster(node, callback)
+    def _addNodeToCluster(self, args, callback):
+        self.addNodeToCluster(args[0], callback)
+
+    def _removeNodeFromCluster(self, args, callback):
+        node = args[0]
+        if node == self.__selfNode.address:
+            callback(None, FAIL_REASON.REQUEST_DENIED)
+        else:
+            self.removeNodeFromCluster(node, callback)
 
     def __onSetCodeVersion(self, newVersion):
         methods = [m for m in dir(self) if callable(getattr(self, m)) and\
@@ -662,8 +673,8 @@ class SyncObj(object):
         status['enabled_code_version'] = self.__enabledCodeVersion
         return status
 
-    def _getStatus(self):
-        return self.getStatus()
+    def _getStatus(self, args, callback):
+        callback(self.getStatus(), None)
 
     def printStatus(self):
         """Dumps different debug info about cluster to default logger"""

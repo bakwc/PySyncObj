@@ -959,7 +959,7 @@ def test_doChangeClusterUT2():
 
     assert o1._isReady() == o2._isReady() == o3._isReady() == True
     o3.addValue(50)
-    o2._addNodeToCluster(a[3])
+    o2.addNodeToCluster(a[3])
 
     success = False
     for i in xrange(10):
@@ -971,7 +971,7 @@ def test_doChangeClusterUT2():
         if res:
             success = True
             break
-        o2._addNodeToCluster(a[3])
+        o2.addNodeToCluster(a[3])
 
     assert success
 
@@ -1336,8 +1336,8 @@ def test_syncobjAdminStatus():
     assert o1._isReady()
     assert o2._isReady()
 
-    status1 = o1._getStatus()
-    status2 = o2._getStatus()
+    status1 = o1.getStatus()
+    status2 = o2.getStatus()
 
     assert 'version' in status1
     assert 'log_len' in status2

@@ -34,6 +34,7 @@ class Transport(object):
         self._onNodeDisconnectedCallback = None
         self._onReadonlyNodeConnectedCallback = None
         self._onReadonlyNodeDisconnectedCallback = None
+        self._onUtilityMessageCallbacks = {}
 
     def setOnMessageReceivedCallback(self, callback):
         """
@@ -84,6 +85,21 @@ class Transport(object):
         """
 
         self._onReadonlyNodeDisconnectedCallback = callback
+
+    def setOnUtilityMessageCallback(self, message, callback):
+        """
+        Set the callback for when an utility message is received, or disable callback by passing None
+
+        :param message: the utility message string (add, remove, set_version, and so on)
+        :type message: str
+        :param callback: callback
+        :type callback: function(message: list, callback: function) or None
+        """
+
+        if callback:
+            self._onUtilityMessageCallbacks[message] = callback
+        elif message in self._onUtilityMessageCallbacks:
+            del self._onUtilityMessageCallbacks[message]
 
     # Helper functions so you don't need to check for the callbacks manually in subclasses
     def _onMessageReceived(self, node, message):
@@ -318,29 +334,8 @@ class TCPTransport(Transport):
             return
 
         # Utility messages
-        if isinstance(message, list):
-            done = False
-            try:
-                if message[0] == 'status':
-                    conn.send(self._syncObj.getStatus())
-                    done = True
-                elif message[0] == 'add':
-                    self._syncObj.addNodeToCluster(message[1], callback = functools.partial(self._utilityCallback, conn = conn, cmd = 'ADD', arg = message[1]))
-                    done = True
-                elif message[0] == 'remove':
-                    if message[1] == self._selfNode.address:
-                        conn.send('FAIL REMOVE ' + message[1])
-                    else:
-                        self._syncObj.removeNodeFromCluster(message[1], callback = functools.partial(self._utilityCallback, conn = conn, cmd = 'REMOVE', arg = message[1]))
-                    done = True
-                elif message[0] == 'set_version':
-                    self._syncObj.setCodeVersion(message[1], callback = functools.partial(self._utilityCallback, conn = conn, cmd = 'SET_VERSION', arg = str(message[1])))
-                    done = True
-            except Exception as e:
-                conn.send(str(e))
-                done = True
-            if done:
-                return
+        if isinstance(message, list) and self._onUtilityMessage(conn, message):
+            return
 
         # At this point, message should be either a node ID (i.e. address) or 'readonly'
         node = self._nodeAddrToNode[message] if message in self._nodeAddrToNode else None
@@ -365,21 +360,31 @@ class TCPTransport(Transport):
         else:
             self._onReadonlyNodeConnected(node)
 
-    def _utilityCallback(self, res, err, conn, cmd, arg):
+    def _onUtilityMessage(self, conn, message):
+        command = message[0]
+        if command in self._onUtilityMessageCallbacks:
+            message[0] = command.upper()
+            callback = functools.partial(self._utilityCallback, conn = conn, args = message)
+            try:
+                self._onUtilityMessageCallbacks[command](message[1:], callback)
+            except Exception as e:
+                conn.send(str(e))
+            return True
+
+    def _utilityCallback(self, res, err, conn, args):
         """
         Callback for the utility messages
 
         :param res: result of the command
         :param err: error code (one of pysyncobj.config.FAIL_REASON)
         :param conn: utility connection
-        :param cmd: command
-        :param arg: command arguments
+        :param args: command with arguments
         """
 
-        cmdResult = 'FAIL'
-        if err == FAIL_REASON.SUCCESS:
-            cmdResult = 'SUCCESS'
-        conn.send(cmdResult + ' ' + cmd + ' ' + arg)
+        if not (err is None and res):
+            cmdResult = 'SUCCESS' if err == FAIL_REASON.SUCCESS else 'FAIL'
+            res = ' '.join(map(str, [cmdResult] + args))
+        conn.send(res)
 
     def _shouldConnect(self, node):
         """
