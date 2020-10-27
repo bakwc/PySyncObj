@@ -54,12 +54,6 @@ class TcpUtility(Utility):
         self.__error = None
 
     def executeCommand(self, node, command):
-        """
-        Executes command on the given node.
-        :param node: where to execute the command
-        :type node: Node or str
-        """
-
         self.__result = None
         self.__error = None
 
@@ -70,7 +64,7 @@ class TcpUtility(Utility):
                 self.__error = 'invalid address to connect'
                 return
 
-        self.__isConnected = self.__connection.connect(node.host, node.port)
+        self.__isConnected = self.__connection.connect(node.ip, node.port)
         if not self.__isConnected:
             self.__error = "can't connected"
             return
