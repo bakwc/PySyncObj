@@ -1170,7 +1170,7 @@ class SyncObj(object):
         if adding:
             newNode = requestNode
             # Node already exists in cluster
-            if newNode is self.__selfNode or newNode in self.__otherNodes:
+            if newNode == self.__selfNode or newNode in self.__otherNodes:
                 return False
             self.__otherNodes.add(newNode)
             self.__raftNextIndex[newNode] = self.__getCurrentLogIndex() + 1
@@ -1181,7 +1181,7 @@ class SyncObj(object):
             return True
         else:
             oldNode = requestNode
-            if oldNode is self.__selfNode:
+            if oldNode == self.__selfNode:
                 return False
             if oldNode not in self.__otherNodes:
                 return False
