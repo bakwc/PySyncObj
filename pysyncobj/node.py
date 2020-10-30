@@ -66,10 +66,26 @@ class TCPNode(Node):
         """
 
         super(TCPNode, self).__init__(address, **kwargs)
-        self.address = address
-        self.host, port = address.rsplit(':', 1)
-        self.port = int(port)
-        self.ip = globalDnsResolver().resolve(self.host)
+        self._address = address
+        self._host, port = address.rsplit(':', 1)
+        self._port = int(port)
+        self._ip = globalDnsResolver().resolve(self.host)
+
+    @property
+    def address(self):
+        return self._address
+
+    @property
+    def host(self):
+        return self._host
+
+    @property
+    def port(self):
+        return self._port
+
+    @property
+    def ip(self):
+        return self._ip
 
     def __repr__(self):
         v = vars(self)

@@ -642,25 +642,76 @@ class SyncObj(object):
                 # callback not in list, ignore
                 pass
 
+    def isNodeConnected(self, node):
+        """
+        Checks if the given node is connected
+        :param node: node to check
+        :type node: Node
+        :rtype: bool
+        """
+        return node in self.__connectedNodes
+
+    @property
+    def selfNode(self):
+        """
+        :rtype: Node
+        """
+        return self.__selfNode
+
+    @property
+    def otherNodes(self):
+        """
+        :rtype: set of Node
+        """
+        return self.__otherNodes.copy()
+
+    @property
+    def readonlyNodes(self):
+        """
+        :rtype: set of Node
+        """
+        return self.__readonlyNodes.copy()
+
+    @property
+    def raftLastApplied(self):
+        """
+        :rtype: int
+        """
+        return self.__raftLastApplied
+
+    @property
+    def raftCommitIndex(self):
+        """
+        :rtype: int
+        """
+        return self.__raftCommitIndex
+
+    @property
+    def raftCurrentTerm(self):
+        """
+        :rtype: int
+        """
+        return self.__raftCurrentTerm
+
     def getStatus(self):
         """Dumps different debug info about cluster to dict and return it"""
 
         status = {}
         status['version'] = VERSION
         status['revision'] = 'deprecated'
-        status['self'] = self.__selfNode
+        status['self'] = self.selfNode
         status['state'] = self.__raftState
         status['leader'] = self.__raftLeader
         status['partner_nodes_count'] = len(self.__otherNodes)
         for node in self.__otherNodes:
-            status['partner_node_status_server_' + node.id] = 2 if node in self.__connectedNodes else 0
+            status['partner_node_status_server_' + node.id] = 2 if self.isNodeConnected(node) else 0
         status['readonly_nodes_count'] = len(self.__readonlyNodes)
         for node in self.__readonlyNodes:
-            status['readonly_node_status_server_' + node.id] = 2 if node in self.__connectedNodes else 0
+            status['readonly_node_status_server_' + node.id] = 2 if self.isNodeConnected(node) else 0
         status['log_len'] = len(self.__raftLog)
-        status['last_applied'] = self.__raftLastApplied
-        status['commit_idx'] = self.__raftCommitIndex
-        status['raft_term'] = self.__raftCurrentTerm
+        status['last_applied'] = self.raftLastApplied
+        status['commit_idx'] = self.raftCommitIndex
+        status['raft_term'] = self.raftCurrentTerm
         status['next_node_idx_count'] = len(self.__raftNextIndex)
         for node, idx in iteritems(self.__raftNextIndex):
             status['next_node_idx_server_' + node.id] = idx
