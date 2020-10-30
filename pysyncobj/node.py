@@ -66,29 +66,29 @@ class TCPNode(Node):
         """
 
         super(TCPNode, self).__init__(address, **kwargs)
-        self._address = address
-        self._host, port = address.rsplit(':', 1)
-        self._port = int(port)
-        self._ip = globalDnsResolver().resolve(self.host)
+        self.__address = address
+        self.__host, port = address.rsplit(':', 1)
+        self.__port = int(port)
+        self.__ip = globalDnsResolver().resolve(self.host)
 
     @property
     def address(self):
-        return self._address
+        return self.__address
 
     @property
     def host(self):
-        return self._host
+        return self.__host
 
     @property
     def port(self):
-        return self._port
+        return self.__port
 
     @property
     def ip(self):
-        return self._ip
+        return self.__ip
 
     def __repr__(self):
         v = vars(self)
-        filtered = ['_id', 'address', 'host', 'port', 'ip']
+        filtered = ['_id', '_TCPNode__address', '_TCPNode__host', '_TCPNode__port', '_TCPNode__ip']
         formatted = ['{} = {}'.format(key, repr(v[key])) for key in v if key not in filtered]
         return '{}({}{})'.format(type(self).__name__, repr(self.id), (', ' + ', '.join(formatted)) if len(formatted) else '')
