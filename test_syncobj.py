@@ -120,6 +120,7 @@ class TestObj(SyncObj):
 
     @replicated
     def addValue(self, value):
+        print(" === CALL ADD VALUE ===", value)
         self.__counter += value
         return self.__counter
 
@@ -714,6 +715,7 @@ def _checkSameLeader2(objs):
 def test_randomTest1():
     journalFiles = [getNextJournalFile(), getNextJournalFile(), getNextJournalFile()]
     removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
 
     random.seed(12)
 
@@ -784,6 +786,7 @@ def test_randomTest1():
         raise AssertionError('Values not equal')
 
     removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
 
 
 # Ensure that raftLog after serialization is the same as in serialized data
@@ -987,6 +990,7 @@ def test_journalTest1():
     journalFiles = [getNextJournalFile(), getNextJournalFile()]
     removeFiles(dumpFiles)
     removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
 
     random.seed(42)
 
@@ -1070,11 +1074,13 @@ def test_journalTest1():
 
     removeFiles(dumpFiles)
     removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
 
 
 def test_journalTest2():
     journalFiles = [getNextJournalFile()]
     removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
 
     removeFiles(journalFiles)
     journal = createJournal(journalFiles[0])
@@ -1102,6 +1108,54 @@ def test_journalTest2():
     assert journal[0] == (b'cmd2', 2, 0)
     journal._destroy()
     removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
+
+
+def test_applyJournalAfterRestart():
+    dumpFiles = [getNextDumpFile(), getNextDumpFile()]
+    journalFiles = [getNextJournalFile(), getNextJournalFile()]
+    removeFiles(dumpFiles)
+    removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
+
+    random.seed(42)
+
+    a = [getNextAddr(), getNextAddr()]
+
+    o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile=dumpFiles[0], journalFile=journalFiles[0])
+    o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile=dumpFiles[1], journalFile=journalFiles[1])
+    objs = [o1, o2]
+    doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
+
+    assert o1._getLeader().address in a
+    assert o1._getLeader() == o2._getLeader()
+
+    o1.addValue(150)
+    o2.addValue(200)
+
+    doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 350 and o2.getCounter() == 350)
+
+    assert o1.getCounter() == 350
+    assert o2.getCounter() == 350
+    doTicks(objs, 2)
+
+    o1._destroy()
+    o2._destroy()
+
+    del o1
+    del o2
+
+    removeFiles(dumpFiles)
+
+    o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile=dumpFiles[0], journalFile=journalFiles[0])
+    objs = [o1]
+    doTicks(objs, 10, o1.getCounter() == 350)
+
+    assert o1.getCounter() == 350
+
+    removeFiles(dumpFiles)
+    removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
 
 
 def test_autoTick1():
