@@ -161,7 +161,7 @@ class SyncObj(object):
         self.__raftLog = createJournal(self.__conf.journalFile)
         if len(self.__raftLog) == 0:
             self.__raftLog.add(_bchr(_COMMAND_TYPE.NO_OP), 1, self.__raftCurrentTerm)
-        self.__raftCommitIndex = 1
+        self.__raftCommitIndex = self.__raftLog.getRaftCommitIndex()
         self.__raftLastApplied = 1
         self.__raftNextIndex = {}
         self.__lastResponseTime = {}
@@ -180,6 +180,7 @@ class SyncObj(object):
         self.__onTickCallbacksLock = threading.Lock()
 
         self.__startTime = monotonicTime()
+        self.__numOneSecondDumps = 0
         globalDnsResolver().setTimeouts(self.__conf.dnsCacheTime, self.__conf.dnsFailCacheTime)
         globalDnsResolver().setPreferredAddrFamily(self.__conf.preferredAddrType)
         self.__serializer = Serializer(self.__conf.fullDumpFile,
@@ -540,12 +541,18 @@ class SyncObj(object):
 
         if not self.__transport.ready:
             time.sleep(timeToWait)
+            self.__applyLogEntries()
             return
 
         if self.__needLoadDumpFile:
             if self.__conf.fullDumpFile is not None and os.path.isfile(self.__conf.fullDumpFile):
                 self.__loadDumpFile(clearJournal=False)
             self.__needLoadDumpFile = False
+
+        workTime = monotonicTime() - self.__startTime
+        if workTime > self.__numOneSecondDumps:
+            self.__numOneSecondDumps += 1
+            self.__raftLog.onOneSecondTimer()
 
         if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE) and self.__selfNode is not None:
             if self.__raftElectionDeadline < monotonicTime() and self.__connectedToAnyone():
@@ -575,6 +582,7 @@ class SyncObj(object):
                         count += 1
                 if count > (len(self.__otherNodes) + 1) / 2:
                     self.__raftCommitIndex = nextCommitIndex
+                    self.__raftLog.setRaftCommitIndex(self.__raftCommitIndex)
                 else:
                     break
             self.__leaderCommitIndex = self.__raftCommitIndex
@@ -587,30 +595,7 @@ class SyncObj(object):
                 self.__setState(_RAFT_STATE.FOLLOWER)
                 self.__raftLeader = None
 
-        needSendAppendEntries = False
-
-        if self.__raftCommitIndex > self.__raftLastApplied:
-            count = self.__raftCommitIndex - self.__raftLastApplied
-            entries = self.__getEntries(self.__raftLastApplied + 1, count)
-            for entry in entries:
-                try:
-                    currentTermID = entry[2]
-                    subscribers = self.__commandsWaitingCommit.pop(entry[1], [])
-                    res = self.__doApplyCommand(entry[0])
-                    for subscribeTermID, callback in subscribers:
-                        if subscribeTermID == currentTermID:
-                            callback(res, FAIL_REASON.SUCCESS)
-                        else:
-                            callback(None, FAIL_REASON.DISCARDED)
-
-                    self.__raftLastApplied += 1
-                except SyncObjExceptionWrongVer as e:
-                    logging.error('request to switch to unsupported code version (self version: %d, requested version: %d)' %
-                        (self.__selfCodeVersion, e.ver))
-
-
-            if not self.__conf.appendEntriesUseBatch:
-                needSendAppendEntries = True
+        needSendAppendEntries = self.__applyLogEntries()
 
         if self.__raftState == _RAFT_STATE.LEADER:
             if monotonicTime() > self.__newAppendEntriesTime or needSendAppendEntries:
@@ -629,6 +614,34 @@ class SyncObj(object):
                 callback()
 
         self._poller.poll(timeToWait)
+
+    def __applyLogEntries(self):
+        needSendAppendEntries = False
+
+        if self.__raftCommitIndex > self.__raftLastApplied:
+            count = self.__raftCommitIndex - self.__raftLastApplied
+            entries = self.__getEntries(self.__raftLastApplied + 1, count)
+            for entry in entries:
+                try:
+                    currentTermID = entry[2]
+                    subscribers = self.__commandsWaitingCommit.pop(entry[1], [])
+                    res = self.__doApplyCommand(entry[0])
+                    for subscribeTermID, callback in subscribers:
+                        if subscribeTermID == currentTermID:
+                            callback(res, FAIL_REASON.SUCCESS)
+                        else:
+                            callback(None, FAIL_REASON.DISCARDED)
+
+                    self.__raftLastApplied += 1
+                except SyncObjExceptionWrongVer as e:
+                    logging.error(
+                        'request to switch to unsupported code version (self version: %d, requested version: %d)' %
+                        (self.__selfCodeVersion, e.ver))
+
+            if not self.__conf.appendEntriesUseBatch:
+                needSendAppendEntries = True
+
+        return needSendAppendEntries
 
     def addOnTickCallback(self, callback):
         with self.__onTickCallbacksLock:
@@ -877,6 +890,7 @@ class SyncObj(object):
                     self.__sendNextNodeIdx(node, success=True)
 
             self.__raftCommitIndex = min(leaderCommitIndex, self.__getCurrentLogIndex())
+            self.__raftLog.setRaftCommitIndex(self.__raftCommitIndex)
 
         if message['type'] == 'apply_command':
             if 'request_id' in message:

@@ -3,7 +3,7 @@ import mmap
 import struct
 
 from .version import VERSION
-from .pickle import to_bytes
+from .pickle import to_bytes, loads, dumps
 
 class Journal(object):
 
@@ -28,12 +28,22 @@ class Journal(object):
     def _destroy(self):
         raise NotImplementedError
 
+    def setRaftCommitIndex(self, raftCommitIndex):
+        raise NotImplementedError
+
+    def getRaftCommitIndex(self):
+        raise NotImplementedError
+
+    def onOneSecondTimer(self):
+        pass
+
 
 class MemoryJournal(Journal):
 
     def __init__(self):
         self.__journal = []
         self.__bytesSize = 0
+        self.__lastCommitIndex = 0
 
     def add(self, command, idx, term):
         self.__journal.append((command, idx, term))
@@ -55,6 +65,13 @@ class MemoryJournal(Journal):
 
     def _destroy(self):
         pass
+
+    def setRaftCommitIndex(self, raftCommitIndex):
+        pass
+
+    def getRaftCommitIndex(self):
+        return 1
+
 
 
 class ResizableFile(object):
@@ -105,6 +122,27 @@ class ResizableFile(object):
         self.__mm.flush()
 
 
+class MetaStorer(object):
+    def __init__(self, path):
+        self.__path = path
+
+    def getMeta(self):
+        meta = {}
+        try:
+            meta = loads(open(self.__path, 'rb').read())
+        except:
+            pass
+        return meta
+
+    def storeMeta(self, meta):
+        with open(self.__path + '.tmp', 'wb') as f:
+            f.write(dumps(meta))
+            f.flush()
+        os.rename(self.__path + '.tmp', self.__path)
+
+    def getPath(self):
+        return self.__path
+
 
 JOURNAL_FORMAT_VERSION = 1
 APP_NAME = b'PYSYNCOBJ'
@@ -128,6 +166,9 @@ class FileJournal(Journal):
     def __init__(self, journalFile):
         self.__journalFile = ResizableFile(journalFile, defaultContent=self.__getDefaultHeader())
         self.__journal = []
+        self.__metaStorer = MetaStorer(journalFile + '.meta')
+        self.__meta = self.__metaStorer.getMeta()
+        self.__metaSaved = True
         currentOffset = FIRST_RECORD_OFFSET
         lastRecordOffset = self.__getLastRecordOffset()
         while currentOffset < lastRecordOffset:
@@ -196,6 +237,19 @@ class FileJournal(Journal):
 
     def flush(self):
         self.__journalFile.flush()
+
+    def setRaftCommitIndex(self, raftCommitIndex):
+        self.__meta['raftCommitIndex'] = raftCommitIndex
+        self.__metaSaved = False
+
+    def getRaftCommitIndex(self):
+        return self.__meta.get('raftCommitIndex', 1)
+
+    def onOneSecondTimer(self):
+        if not self.__metaSaved:
+            self.__metaStorer.storeMeta(self.__meta)
+            self.__metaSaved = True
+
 
 def createJournal(journalFile = None):
     if journalFile is None:
