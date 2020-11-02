@@ -1142,9 +1142,6 @@ def test_applyJournalAfterRestart():
     o1._destroy()
     o2._destroy()
 
-    del o1
-    del o2
-
     removeFiles(dumpFiles)
 
     o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile=dumpFiles[0], journalFile=journalFiles[0])
