@@ -1,6 +1,7 @@
 import os
 import mmap
 import struct
+import shutil
 
 from .version import VERSION
 from .pickle import to_bytes, loads, dumps
@@ -138,7 +139,7 @@ class MetaStorer(object):
         with open(self.__path + '.tmp', 'wb') as f:
             f.write(dumps(meta))
             f.flush()
-        os.rename(self.__path + '.tmp', self.__path)
+        shutil.move(self.__path + '.tmp', self.__path)
 
     def getPath(self):
         return self.__path
