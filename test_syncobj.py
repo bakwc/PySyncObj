@@ -7,6 +7,7 @@ import threading
 import sys
 import pysyncobj.pickle as pickle
 import pysyncobj.dns_resolver as dns_resolver
+import platform
 
 if sys.version_info >= (3, 0):
     xrange = range
@@ -611,7 +612,7 @@ def test_checkBigStorage():
 
     removeFiles(dumpFiles)
 
-
+@pytest.mark.skipif(sys.platform == "win32" or platform.python_implementation() != 'CPython', reason="does not run on windows or pypy")
 def test_encryptionCorrectPassword():
     assert HAS_CRYPTO
 
@@ -648,7 +649,7 @@ def test_encryptionCorrectPassword():
     o1._destroy()
     o2._destroy()
 
-
+@pytest.mark.skipif(platform.python_implementation() != 'CPython', reason="does not have crypto on pypy")
 def test_encryptionWrongPassword():
     assert HAS_CRYPTO
 
@@ -1261,7 +1262,7 @@ def test_largeCommands():
 
     removeFiles(dumpFiles)
 
-
+@pytest.mark.skipif(platform.python_implementation() != 'CPython', reason="does not have crypto on pypy")
 def test_readOnlyNodes():
     random.seed(12)
 
@@ -1364,6 +1365,7 @@ def test_readOnlyNodes():
     b2._destroy()
 
 
+@pytest.mark.skipif(platform.python_implementation() != 'CPython', reason="does not have crypto on pypy")
 def test_syncobjAdminStatus():
     assert HAS_CRYPTO
 
