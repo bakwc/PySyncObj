@@ -121,7 +121,6 @@ class TestObj(SyncObj):
 
     @replicated
     def addValue(self, value):
-        print(" === CALL ADD VALUE ===", value)
         self.__counter += value
         return self.__counter
 
