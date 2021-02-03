@@ -16,6 +16,7 @@ setup(
     long_description=long_description,
     author='Filipp Ozinov',
     author_email='fippo@mail.ru',
+    license='MIT',
     url='https://github.com/bakwc/PySyncObj',
     download_url='https://github.com/bakwc/PySyncObj/tarball/' + VERSION,
     keywords=['network', 'replication', 'raft', 'synchronization'],
