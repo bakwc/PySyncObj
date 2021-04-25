@@ -1465,6 +1465,92 @@ def test_syncobjAdminAddRemove():
     o2._destroy()
 
 
+def test_journalWithAddNodes():
+    dumpFiles = [getNextDumpFile(), getNextDumpFile(), getNextDumpFile()]
+    journalFiles = [getNextJournalFile(), getNextJournalFile(), getNextJournalFile()]
+    removeFiles(dumpFiles)
+    removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
+
+    random.seed(42)
+
+    a = [getNextAddr(), getNextAddr(), getNextAddr()]
+
+    o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile=dumpFiles[0], journalFile=journalFiles[0], dynamicMembershipChange=True)
+    o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile=dumpFiles[1], journalFile=journalFiles[1], dynamicMembershipChange=True)
+    objs = [o1, o2]
+    doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o2._isReady())
+
+    assert o1._getLeader().address in a
+    assert o1._getLeader() == o2._getLeader()
+
+    o1.addValue(150)
+    o2.addValue(200)
+
+    doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 350 and o2.getCounter() == 350)
+
+    assert o1.getCounter() == 350
+    assert o2.getCounter() == 350
+    doTicks(objs, 2)
+
+
+    trueRes = 'SUCCESS ADD ' + a[2]
+    currRes = {}
+    args = {
+        o1: ['-conn', a[0], '-add', a[2]],
+    }
+    doSyncObjAdminTicks([o1, o2], args, 10.0, currRes, stopFunc=lambda: currRes.get(o1) is not None)
+
+    assert currRes[o1] == trueRes
+
+    o3 = TestObj(a[2], [a[1], a[0]], TEST_TYPE.JOURNAL_1, dumpFile=dumpFiles[2], journalFile=journalFiles[2], dynamicMembershipChange=True)
+
+    doTicks([o1, o2, o3], 10.0, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
+
+    assert o1._isReady()
+    assert o2._isReady()
+    assert o3._isReady()
+
+    assert o3.getCounter() == 350
+
+    doTicks(objs, 2)
+
+
+    o1._destroy()
+    o2._destroy()
+    o3._destroy()
+
+    removeFiles(dumpFiles)
+
+    o1 = TestObj(a[0], [a[1]], TEST_TYPE.JOURNAL_1, dumpFile=dumpFiles[0], journalFile=journalFiles[0], dynamicMembershipChange=True)
+    o2 = TestObj(a[1], [a[0]], TEST_TYPE.JOURNAL_1, dumpFile=dumpFiles[1], journalFile=journalFiles[1], dynamicMembershipChange=True)
+    o3 = TestObj(a[2], [a[1], a[0]], TEST_TYPE.JOURNAL_1, dumpFile=dumpFiles[2], journalFile=journalFiles[2], dynamicMembershipChange=True)
+
+    objs = [o1, o2, o3]
+    doTicks(objs, 10, stopFunc=lambda: o1._isReady() and o1.getCounter() == 350 and o3._isReady() and o3.getCounter() == 350)
+
+    assert o1._isReady()
+    assert o3._isReady()
+
+    assert o1.getCounter() == 350
+    assert o3.getCounter() == 350
+
+    o2.addValue(200)
+
+    doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 550 and o3.getCounter() == 550)
+
+    assert o1.getCounter() == 550
+    assert o3.getCounter() == 550
+
+    o1._destroy()
+    o2._destroy()
+    o3._destroy()
+
+    removeFiles(dumpFiles)
+    removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
+
+
 def test_syncobjAdminSetVersion():
     random.seed(42)
 
