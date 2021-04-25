@@ -770,6 +770,14 @@ class SyncObj(object):
             if callback is not None:
                 callback(oldVer, ver)
             return
+
+        #  This is required only after node restarts and apply journal
+        # for normal case it is already done earlier and calls will be ignored
+        clusterChangeRequest = self.__parseChangeClusterRequest(command)
+        if clusterChangeRequest is not None:
+             self.__doChangeCluster(clusterChangeRequest)
+             return
+
         if commandType != _COMMAND_TYPE.REGULAR:
             return
         command = pickle.loads(command[1:])
