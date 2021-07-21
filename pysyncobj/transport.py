@@ -259,11 +259,18 @@ class TCPTransport(Transport):
         """
 
         conf = self._syncObj.conf
-        bindAddr = conf.bindAddress or getattr(self._selfNode, 'address')
-        if not bindAddr:
+        bindAddr = conf.bindAddress
+        seflAddr = getattr(self._selfNode, 'address')
+        if bindAddr is not None:
+            host, port = bindAddr.rsplit(':', 1)
+        elif seflAddr is not None:
+            host, port = seflAddr.rsplit(':', 1)
+            host = '0.0.0.0'
+        else:
             raise RuntimeError('Unable to determine bind address')
-        host, port = bindAddr.rsplit(':', 1)
-        host = globalDnsResolver().resolve(host)
+        
+        if host != '0.0.0.0':
+            host = globalDnsResolver().resolve(host)
         self._server = TcpServer(self._syncObj._poller, host, port, onNewConnection = self._onNewIncomingConnection,
                                  sendBufferSize = conf.sendBufferSize,
                                  recvBufferSize = conf.recvBufferSize,
