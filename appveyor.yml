@@ -3,9 +3,9 @@ environment:
   matrix:
 
     - PYTHON: "C:\\Python27"
-    - PYTHON: "C:\\Python34"
+#    - PYTHON: "C:\\Python34"
     - PYTHON: "C:\\Python35"
-#    - PYTHON: "C:\\Python36"
+    - PYTHON: "C:\\Python39"
 
 install:
   - "%PYTHON%\\python.exe -m pip install pytest"
