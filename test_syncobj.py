@@ -638,6 +638,8 @@ def test_encryptionCorrectPassword():
     for conn in list(o1._SyncObj__transport._connections.values()) + list(o2._SyncObj__transport._connections.values()):
         conn.disconnect()
 
+    doTicks(objs, 10)
+
     o1.addValue(100)
 
     doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 450 and o2.getCounter() == 450)
