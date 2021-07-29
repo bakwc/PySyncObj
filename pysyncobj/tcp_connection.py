@@ -108,8 +108,10 @@ class TcpConnection(object):
         return self.__fileno
 
     def disconnect(self):
+        print("Disconnect request")
+        needCallDisconnect = False
         if self.__onDisconnected is not None and self.__state != CONNECTION_STATE.DISCONNECTED:
-            self.__onDisconnected()
+            needCallDisconnect = True
         self.sendRandKey = None
         self.recvRandKey = None
         if self.__socket is not None:
@@ -121,6 +123,8 @@ class TcpConnection(object):
         self.__writeBuffer = bytes()
         self.__readBuffer = bytes()
         self.__state = CONNECTION_STATE.DISCONNECTED
+        if needCallDisconnect:
+            self.__onDisconnected()
 
     def getSendBufferSize(self):
         return len(self.__writeBuffer)
