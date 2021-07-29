@@ -24,6 +24,7 @@ class DnsCachingResolver(object):
             prevIps = ips
             ips = self.__doResolve(hostname)
             if not ips:
+                logging.warning("failed to resolve hostname: " + hostname)
                 ips = prevIps
             self.__cache[hostname] = (currTime, ips)
         return None if not ips else random.choice(ips)

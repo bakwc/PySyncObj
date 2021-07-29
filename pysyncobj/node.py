@@ -69,7 +69,7 @@ class TCPNode(Node):
         self.__address = address
         self.__host, port = address.rsplit(':', 1)
         self.__port = int(port)
-        self.__ip = globalDnsResolver().resolve(self.host)
+        #self.__ip = globalDnsResolver().resolve(self.host)
 
     @property
     def address(self):
@@ -85,7 +85,7 @@ class TCPNode(Node):
 
     @property
     def ip(self):
-        return self.__ip
+        return globalDnsResolver().resolve(self.__host)
 
     def __repr__(self):
         v = vars(self)
