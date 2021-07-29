@@ -71,6 +71,8 @@ class TcpConnection(object):
         self.__onDisconnected = onDisconnected
 
     def connect(self, host, port):
+        if host is None:
+            return False
         self.__state = CONNECTION_STATE.DISCONNECTED
         self.__fileno = None
         self.__socket = socket.socket(_getAddrType(host), socket.SOCK_STREAM)
