@@ -110,7 +110,6 @@ class TcpConnection(object):
         return self.__fileno
 
     def disconnect(self):
-        print("Disconnect request")
         needCallDisconnect = False
         if self.__onDisconnected is not None and self.__state != CONNECTION_STATE.DISCONNECTED:
             needCallDisconnect = True
