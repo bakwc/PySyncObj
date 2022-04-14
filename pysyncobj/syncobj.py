@@ -91,7 +91,7 @@ class SyncObjConsumer(object):
 # https://github.com/bakwc/PySyncObj
 
 class SyncObj(object):
-    def __init__(self, selfNode, otherNodes, conf=None, consumers=None, nodeClass = TCPNode, transport = None, transportClass = TCPTransport):
+    def __init__(self, selfNode, otherNodes, conf=None, consumers=None, nodeClass = TCPNode, transport = None, transportClass = TCPTransport, pollerClass = None):
         """
         Main SyncObj class, you should inherit your own class from it.
 
@@ -190,7 +190,11 @@ class SyncObj(object):
                                        self.__conf.deserializer,
                                        self.__conf.serializeChecker)
         self.__lastInitTryTime = 0
-        self._poller = createPoller(self.__conf.pollerType)
+
+        if pollerClass:
+            self._poller = pollerClass()
+        else:
+            self._poller = createPoller(self.__conf.pollerType)
 
         if transport is not None:
             self.__transport = transport
