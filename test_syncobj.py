@@ -271,6 +271,32 @@ def test_syncTwoObjects():
     o2._destroy()
 
 
+def test_hasQuorum():
+    random.seed(42)
+
+    a = [getNextAddr(), getNextAddr()]
+
+    o1 = TestObj(a[0], [a[1]])
+    o2 = TestObj(a[1], [a[0]])
+    objs = [o1, o2]
+
+    doTicks(objs, 10.0, stopFunc=lambda: o1._isReady() and o2._isReady())
+
+    o1.waitBinded()
+    o2.waitBinded()
+
+    o1._printStatus()
+    assert o1.hasQuorum
+
+    # Stop the second node in the cluster
+    o2._destroy()
+    doTicks(objs, 10.0, stopFunc=lambda: not o1.hasQuorum)
+
+    assert not o1.hasQuorum
+
+    o1._destroy()
+
+
 def test_singleObject():
     random.seed(42)
 

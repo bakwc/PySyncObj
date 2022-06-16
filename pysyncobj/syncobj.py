@@ -706,6 +706,26 @@ class SyncObj(object):
         """
         return self.__raftCurrentTerm
 
+    @property
+    def hasQuorum(self):
+        '''
+        Does the cluster have a quorum according to this node
+
+        :rtype: bool
+        '''
+
+        nodes = self.__otherNodes
+        node_count = len(nodes)
+        # Get number of connected nodes that participate in cluster quorum
+        connected_count = len(nodes.intersection(self.__connectedNodes))
+
+        if self.__selfNode is not None:
+            # This node participates in cluster quorum
+            connected_count += 1
+            node_count += 1
+
+        return connected_count > node_count / 2
+
     def getStatus(self):
         """Dumps different debug info about cluster to dict and return it"""
 
@@ -715,6 +735,7 @@ class SyncObj(object):
         status['self'] = self.selfNode
         status['state'] = self.__raftState
         status['leader'] = self.__raftLeader
+        status['has_quorum'] = self.hasQuorum
         status['partner_nodes_count'] = len(self.__otherNodes)
         for node in self.__otherNodes:
             status['partner_node_status_server_' + node.id] = 2 if self.isNodeConnected(node) else 0
