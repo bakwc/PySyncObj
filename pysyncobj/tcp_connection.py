@@ -152,6 +152,8 @@ class TcpConnection(object):
             if self.__state == CONNECTION_STATE.CONNECTING:
                 if self.__onConnected is not None:
                     self.__onConnected()
+                if self.__state == CONNECTION_STATE.DISCONNECTED:
+                    return
                 self.__state = CONNECTION_STATE.CONNECTED
                 self.__lastReadTime = monotonicTime()
                 return
