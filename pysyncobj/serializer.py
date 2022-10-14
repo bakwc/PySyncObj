@@ -85,7 +85,7 @@ class Serializer(object):
                 self.__serializer(tmpFile, data[1:])
             else:
                 with open(tmpFile, 'wb') as f:
-                    with gzip.GzipFile(fileobj=f) as g:
+                    with gzip.GzipFile(fileobj=f, mode='wb') as g:
                         pickle.dump(data, g)
 
             atomicReplace(tmpFile, self.__fileName)
@@ -102,7 +102,7 @@ class Serializer(object):
     def deserialize(self):
         if self.__fileName is None:
             with BytesIO(self.__inMemorySerializedData) as io:
-                with gzip.GzipFile(fileobj=io) as g:
+                with gzip.GzipFile(fileobj=io, mode='rb') as g:
                     return pickle.load(g)
 
         if self.__deserializer is not None:
