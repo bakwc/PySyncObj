@@ -119,6 +119,9 @@ class TestObj(SyncObj):
         self.__counter = 0
         self.__data = {}
 
+        if testType == TEST_TYPE.RAND_1:
+            self._SyncObj__transport._send_random_sleep_duration = 0.03
+
     @replicated
     def addValue(self, value):
         self.__counter += value
@@ -754,9 +757,17 @@ def test_randomTest1():
     o3 = TestObj(a[2], [a[0], a[1]], TEST_TYPE.RAND_1, journalFile=journalFiles[2])
     objs = [o1, o2, o3]
 
+    raft_commit_indices = [0, 0, 0]
+
     st = time.time()
     while time.time() - st < 120.0:
         doTicks(objs, random.random() * 0.3, interval=0.05)
+
+        for i in range(3):
+            new_commit_idx = objs[i]._SyncObj__raftCommitIndex
+            assert new_commit_idx >= raft_commit_indices[i]
+            raft_commit_indices[i] = new_commit_idx
+
         assert _checkSameLeader(objs)
         assert _checkSameLeader2(objs)
         for i in xrange(0, random.randint(0, 2)):
@@ -764,6 +775,12 @@ def test_randomTest1():
         newObjs = list(objs)
         newObjs.pop(random.randint(0, len(newObjs) - 1))
         doTicks(newObjs, random.random() * 0.3, interval=0.05)
+
+        for i in range(3):
+            new_commit_idx = objs[i]._SyncObj__raftCommitIndex
+            assert new_commit_idx >= raft_commit_indices[i]
+            raft_commit_indices[i] = new_commit_idx
+
         assert _checkSameLeader(objs)
         assert _checkSameLeader2(objs)
         for i in xrange(0, random.randint(0, 2)):
@@ -771,6 +788,11 @@ def test_randomTest1():
 
     if not (o1.getCounter() == o2.getCounter() == o3.getCounter()):
         print(time.time(), 'counters:', o1.getCounter(), o2.getCounter(), o3.getCounter())
+
+        # disable send delays to make test finish faster
+        for obj in objs:
+            obj._SyncObj__transport._send_random_sleep_duration = 0.00
+
     st = time.time()
     while not (o1.getCounter() == o2.getCounter() == o3.getCounter()):
         doTicks(objs, 2.0, interval=0.05)
