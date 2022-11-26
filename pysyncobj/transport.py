@@ -8,6 +8,7 @@ import functools
 import os
 import threading
 import time
+import random
 
 
 class TransportNotReadyError(Exception):
@@ -214,6 +215,7 @@ class TCPTransport(Transport):
         self._bindAttempts = 0
         self._bindOverEvent = threading.Event() # gets triggered either when the server has either been bound correctly or when the number of bind attempts exceeds the config value maxBindRetries
         self._ready = False
+        self._send_random_sleep_duration = 0
 
         self._syncObj.addOnTickCallback(self._onTick)
 
@@ -562,6 +564,8 @@ class TCPTransport(Transport):
 
         if node not in self._connections or self._connections[node].state != CONNECTION_STATE.CONNECTED:
             return False
+        if self._send_random_sleep_duration:
+            time.sleep(random.random() * self._send_random_sleep_duration)
         self._connections[node].send(message)
         if self._connections[node].state != CONNECTION_STATE.CONNECTED:
             return False

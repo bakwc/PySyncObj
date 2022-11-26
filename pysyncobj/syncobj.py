@@ -918,7 +918,9 @@ class SyncObj(object):
                     self.__loadDumpFile(clearJournal=True)
                     self.__sendNextNodeIdx(node, success=True)
 
-            self.__raftCommitIndex = min(leaderCommitIndex, self.__getCurrentLogIndex())
+            if leaderCommitIndex > self.__raftCommitIndex:
+                self.__raftCommitIndex = min(leaderCommitIndex, self.__getCurrentLogIndex())
+
             self.__raftLog.setRaftCommitIndex(self.__raftCommitIndex)
 
         if message['type'] == 'apply_command':
