@@ -574,17 +574,30 @@ class SyncObj(object):
                     self.__onBecomeLeader()
 
         if self.__raftState == _RAFT_STATE.LEADER:
-            while self.__raftCommitIndex < self.__getCurrentLogIndex():
-                nextCommitIndex = self.__raftCommitIndex + 1
+
+            commitIdx = self.__raftCommitIndex
+            nextCommitIdx = self.__raftCommitIndex
+
+            while commitIdx < self.__getCurrentLogIndex():
+                commitIdx += 1
                 count = 1
                 for node in self.__otherNodes:
-                    if self.__raftMatchIndex[node] >= nextCommitIndex:
+                    if self.__raftMatchIndex[node] >= commitIdx:
                         count += 1
-                if count > (len(self.__otherNodes) + 1) / 2:
-                    self.__raftCommitIndex = nextCommitIndex
-                    self.__raftLog.setRaftCommitIndex(self.__raftCommitIndex)
-                else:
-                    break
+                if count <= (len(self.__otherNodes) + 1) / 2:
+                    continue
+                entries = self.__getEntries(commitIdx, 1)
+                if not entries:
+                    continue
+                commitTerm = entries[0][2]
+                if commitTerm != self.__raftCurrentTerm:
+                    continue
+                nextCommitIdx = commitIdx
+
+            if self.__raftCommitIndex != nextCommitIdx:
+                self.__raftCommitIndex = nextCommitIdx
+                self.__raftLog.setRaftCommitIndex(self.__raftCommitIndex)
+
             self.__leaderCommitIndex = self.__raftCommitIndex
             deadline = monotonicTime() - self.__conf.leaderFallbackTimeout
             count = 1
