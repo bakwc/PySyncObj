@@ -585,7 +585,7 @@ class SyncObj(object):
                     if self.__raftMatchIndex[node] >= commitIdx:
                         count += 1
                 if count <= (len(self.__otherNodes) + 1) / 2:
-                    continue
+                    break
                 entries = self.__getEntries(commitIdx, 1)
                 if not entries:
                     continue
