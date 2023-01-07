@@ -921,7 +921,7 @@ class SyncObj(object):
 
                 nextNodeIdx = prevLogIdx + 1
                 if newEntries:
-                    nextNodeIdx = newEntries[-1][1]
+                    nextNodeIdx = newEntries[-1][1] + 1
 
                 self.__sendNextNodeIdx(node, nextNodeIdx=nextNodeIdx, success=True)
 
