@@ -921,7 +921,7 @@ class SyncObj(object):
 
                 nextNodeIdx = prevLogIdx + 1
                 if newEntries:
-                    nextNodeIdx = newEntries[-1][1]
+                    nextNodeIdx = newEntries[-1][1] + 1
 
                 self.__sendNextNodeIdx(node, nextNodeIdx=nextNodeIdx, success=True)
 
@@ -972,7 +972,9 @@ class SyncObj(object):
                 if reset:
                     self.__raftNextIndex[node] = nextNodeIdx
                 if success:
-                    self.__raftMatchIndex[node] = currentNodeIdx
+                    if self.__raftMatchIndex[node] < currentNodeIdx:
+                        self.__raftMatchIndex[node] = currentNodeIdx
+                        self.__raftNextIndex[node] = nextNodeIdx
                 self.__lastResponseTime[node] = monotonicTime()
 
     def __callErrCallback(self, err, callback):

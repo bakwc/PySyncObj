@@ -425,9 +425,14 @@ def test_manyActionsLogCompaction():
         o1.addValue(1)
         o2.addValue(1)
 
-    doTicks(objs, 10, stopFunc=lambda: o1.getCounter() == 1000 and \
-                                       o2.getCounter() == 1000 and \
-                                       o3.getCounter() == 1000)
+    doTicks(objs, 10, stopFunc=lambda:
+        o1.getCounter() == 1000 and
+        o2.getCounter() == 1000 and
+        o3.getCounter() == 1000 and
+        o1._getRaftLogSize() <= 100 and
+        o2._getRaftLogSize() <= 100 and
+        o3._getRaftLogSize() <= 100
+    )
 
     assert o1.getCounter() == 1000
     assert o2.getCounter() == 1000
@@ -444,8 +449,13 @@ def test_manyActionsLogCompaction():
         o1.addValue(1)
         o2.addValue(1)
 
-    doTicks(newObjs, 10, stopFunc=lambda: o1.getCounter() == 2000 and \
-                                          o2.getCounter() == 2000)
+    doTicks(newObjs, 10, stopFunc=lambda:
+        o1.getCounter() == 2000 and
+        o2.getCounter() == 2000 and
+        o1._getRaftLogSize() <= 100 and
+        o2._getRaftLogSize() <= 100 and
+        o3._getRaftLogSize() <= 100
+    )
 
     assert o1.getCounter() == 2000
     assert o2.getCounter() == 2000
