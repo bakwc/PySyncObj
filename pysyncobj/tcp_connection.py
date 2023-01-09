@@ -35,6 +35,7 @@ class TcpConnection(object):
 
         self.sendRandKey = None
         self.recvRandKey = None
+        self.recvLastTimestamp = 0
         self.encryptor = None
 
         self.__socket = socket
@@ -101,7 +102,7 @@ class TcpConnection(object):
             message = (self.sendRandKey, message)
         data = zlib.compress(pickle.dumps(message), 3)
         if self.encryptor:
-            data = self.encryptor.encrypt(data)
+            data = self.encryptor.encrypt_at_time(data, int(monotonicTime()))
         data = struct.pack('i', len(data)) + data
         self.__writeBuffer += data
         self.__trySendBuffer()
@@ -115,6 +116,7 @@ class TcpConnection(object):
             needCallDisconnect = True
         self.sendRandKey = None
         self.recvRandKey = None
+        self.recvLastTimestamp = 0
         if self.__socket is not None:
             self.__socket.close()
             self.__socket = None
@@ -232,12 +234,17 @@ class TcpConnection(object):
         data = self.__readBuffer[4:4 + l]
         try:
             if self.encryptor:
+                dataTimestamp = self.encryptor.extract_timestamp(data)
+                assert dataTimestamp >= self.recvLastTimestamp
+                self.recvLastTimestamp = dataTimestamp
+                # Unfortunately we can't get a timestamp and data in one go
                 data = self.encryptor.decrypt(data)
             message = pickle.loads(zlib.decompress(data))
             if self.recvRandKey:
                 randKey, message = message
                 assert randKey == self.recvRandKey
         except:
+            # Why no logging of security errors?
             self.disconnect()
             return None
         self.__readBuffer = self.__readBuffer[4 + l:]
