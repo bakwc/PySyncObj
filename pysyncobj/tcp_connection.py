@@ -102,7 +102,7 @@ class TcpConnection(object):
             message = (self.sendRandKey, message)
         data = zlib.compress(pickle.dumps(message), 3)
         if self.encryptor:
-            data = self.encryptor.encrypt_at_time(data, int(monotonicTime())
+            data = self.encryptor.encrypt_at_time(data, int(monotonicTime()))
         data = struct.pack('i', len(data)) + data
         self.__writeBuffer += data
         self.__trySendBuffer()
