@@ -2,6 +2,7 @@ import time
 import socket
 import zlib
 import struct
+import logging
 
 import pysyncobj.pickle as pickle
 import pysyncobj.win_inet_pton
@@ -235,16 +236,18 @@ class TcpConnection(object):
         try:
             if self.encryptor:
                 dataTimestamp = self.encryptor.extract_timestamp(data)
-                assert dataTimestamp >= self.recvLastTimestamp
+                assert dataTimestamp >= self.recvLastTimestamp, "Replay - timestamp"
                 self.recvLastTimestamp = dataTimestamp
                 # Unfortunately we can't get a timestamp and data in one go
                 data = self.encryptor.decrypt(data)
             message = pickle.loads(zlib.decompress(data))
             if self.recvRandKey:
                 randKey, message = message
-                assert randKey == self.recvRandKey
-        except:
-            # Why no logging of security errors?
+                assert randKey == self.recvRandKey, "Replay - recvRandKey"
+        except Exception as e:
+            try: peername = self.__socket.getpeername()[0]
+            except Exception as e2: peername = "(%s)" % repr(e2)
+            logging.info('Invalid message from %s, connection closing due to %s.' % (peername, repr(e))
             self.disconnect()
             return None
         self.__readBuffer = self.__readBuffer[4 + l:]
