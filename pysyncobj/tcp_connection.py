@@ -247,7 +247,7 @@ class TcpConnection(object):
         except Exception as e:
             try: peername = self.__socket.getpeername()[0]
             except Exception as e2: peername = "(%s)" % repr(e2)
-            logging.info('Invalid message from %s, connection closing due to %s.' % (peername, repr(e))
+            logging.info('Invalid message from %s, connection closing due to %s.' % (peername, repr(e)))
             self.disconnect()
             return None
         self.__readBuffer = self.__readBuffer[4 + l:]
