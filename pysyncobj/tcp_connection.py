@@ -184,9 +184,7 @@ class TcpConnection(object):
             self.disconnect()
             return
 
-        if monotonicTime() - self.__lastReadTime > self.__timeout:
-            self.disconnect()
-            return
+        self.__processConnectionTimeout()
 
         if eventType & POLL_EVENT_TYPE.READ or eventType & POLL_EVENT_TYPE.WRITE:
             if self.__socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):
@@ -225,7 +223,15 @@ class TcpConnection(object):
                 if self.__state == CONNECTION_STATE.DISCONNECTED:
                     return
 
+    def __processConnectionTimeout(self):
+        if monotonicTime() - self.__lastReadTime > self.__timeout:
+            self.disconnect()
+            return
+
     def __trySendBuffer(self):
+        self.__processConnectionTimeout()
+        if self.state == CONNECTION_STATE.DISCONNECTED:
+            return
         while self.__processSend():
             pass
 
