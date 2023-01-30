@@ -519,10 +519,13 @@ class TCPTransport(Transport):
         self._nodes.add(node)
         self._nodeAddrToNode[node.address] = node
         if self._shouldConnect(node):
-            conn = TcpConnection(poller = self._syncObj._poller,
-                                 timeout = self._syncObj.conf.connectionTimeout,
-                                 sendBufferSize = self._syncObj.conf.sendBufferSize,
-                                 recvBufferSize = self._syncObj.conf.recvBufferSize)
+            conn = TcpConnection(
+                poller = self._syncObj._poller,
+                timeout = self._syncObj.conf.connectionTimeout,
+                sendBufferSize = self._syncObj.conf.sendBufferSize,
+                recvBufferSize = self._syncObj.conf.recvBufferSize,
+                keepalive = self._syncObj.conf.tcp_keepalive,
+            )
             conn.encryptor = self._syncObj.encryptor
             conn.setOnConnectedCallback(functools.partial(self._onOutgoingConnected, conn))
             conn.setOnMessageReceivedCallback(functools.partial(self._onMessageReceived, node))
