@@ -162,6 +162,11 @@ class SyncObjConf(object):
         #: onCodeVersionChanged(oldVer, newVer)
         self.onCodeVersionChanged = kwargs.get('onCodeVersionChanged', None)
 
+        #: TCP socket keepalive
+        #: (keepalive_time_seconds, probe_intervals_seconds, max_fails_count)
+        #: Set to None to disable
+        self.tcp_keepalive = kwargs.get('tcp_keepalive', (16, 3, 5))
+
     def validate(self):
         assert self.autoTickPeriod > 0
         assert self.commandsQueueSize >= 0
@@ -184,3 +189,9 @@ class SyncObjConf(object):
         if self.serializer is not None:
             assert self.fullDumpFile is not None
         assert self.preferredAddrType in ('ipv4', 'ipv6', None)
+        if self.tcp_keepalive is not None:
+            assert isinstance(self.tcp_keepalive, tuple)
+            assert len(self.tcp_keepalive) == 3
+            for i in range(3):
+                assert isinstance(self.tcp_keepalive[i], int)
+                assert self.tcp_keepalive[i] > 0

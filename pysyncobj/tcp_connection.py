@@ -1,5 +1,6 @@
 import time
 import socket
+from sys import platform
 import zlib
 import struct
 
@@ -28,11 +29,37 @@ def _getAddrType(addr):
         pass
     raise Exception('unknown address type')
 
+import socket
+
+def set_keepalive_linux(sock, after_idle_sec=1, interval_sec=3, max_fails=5):
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, after_idle_sec)
+    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, interval_sec)
+    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, max_fails)
+
+def set_keepalive_osx(sock, after_idle_sec=1, interval_sec=3, max_fails=5):
+    TCP_KEEPALIVE = 0x10
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    sock.setsockopt(socket.IPPROTO_TCP, TCP_KEEPALIVE, interval_sec)
+
+def set_keepalive_windows(sock, after_idle_sec=1, interval_sec=3, max_fails=5):
+    sock.ioctl(socket.SIO_KEEPALIVE_VALS, (1, after_idle_sec * 1000, interval_sec * 1000))
+
+def set_keepalive(sock, after_idle_sec=1, interval_sec=3, max_fails=5):
+    print(' === setting keepalive', after_idle_sec)
+    if platform == "linux" or platform == "linux2":
+        set_keepalive_linux(sock, after_idle_sec, interval_sec, max_fails)
+    elif platform == "darwin":
+        set_keepalive_osx(sock, after_idle_sec, interval_sec, max_fails)
+    elif platform == "win32":
+        set_keepalive_windows(sock, after_idle_sec, interval_sec, max_fails)
+
+
 class TcpConnection(object):
 
     def __init__(self, poller, onMessageReceived = None, onConnected = None, onDisconnected = None,
-                 socket=None, timeout=10.0, sendBufferSize = 2 ** 13, recvBufferSize = 2 ** 13):
-
+                 socket=None, timeout=10.0, sendBufferSize = 2 ** 13, recvBufferSize = 2 ** 13,
+                 keepalive=None):
         self.sendRandKey = None
         self.recvRandKey = None
         self.recvLastTimestamp = 0
@@ -44,10 +71,12 @@ class TcpConnection(object):
         self.__lastReadTime = monotonicTime()
         self.__timeout = timeout
         self.__poller = poller
+        self.__keepalive = keepalive
         if socket is not None:
             self.__socket = socket
             self.__fileno = socket.fileno()
             self.__state = CONNECTION_STATE.CONNECTED
+            self.setSockoptKeepalive()
             self.__poller.subscribe(self.__fileno,
                                      self.__processConnection,
                                      POLL_EVENT_TYPE.READ | POLL_EVENT_TYPE.WRITE | POLL_EVENT_TYPE.ERROR)
@@ -61,6 +90,18 @@ class TcpConnection(object):
         self.__onDisconnected = onDisconnected
         self.__sendBufferSize = sendBufferSize
         self.__recvBufferSize = recvBufferSize
+
+    def setSockoptKeepalive(self):
+        if self.__socket is None:
+            return
+        if self.__keepalive is None:
+            return
+        set_keepalive(
+            self.__socket,
+            self.__keepalive[0],
+            self.__keepalive[1],
+            self.__keepalive[2],
+        )
 
     def setOnConnectedCallback(self, onConnected):
         self.__onConnected = onConnected
@@ -80,6 +121,7 @@ class TcpConnection(object):
         self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self.__sendBufferSize)
         self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.__recvBufferSize)
         self.__socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self.setSockoptKeepalive()
         self.__socket.setblocking(0)
         self.__readBuffer = bytes()
         self.__writeBuffer = bytes()
@@ -142,9 +184,7 @@ class TcpConnection(object):
             self.disconnect()
             return
 
-        if monotonicTime() - self.__lastReadTime > self.__timeout:
-            self.disconnect()
-            return
+        self.__processConnectionTimeout()
 
         if eventType & POLL_EVENT_TYPE.READ or eventType & POLL_EVENT_TYPE.WRITE:
             if self.__socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):
@@ -183,7 +223,15 @@ class TcpConnection(object):
                 if self.__state == CONNECTION_STATE.DISCONNECTED:
                     return
 
+    def __processConnectionTimeout(self):
+        if monotonicTime() - self.__lastReadTime > self.__timeout:
+            self.disconnect()
+            return
+
     def __trySendBuffer(self):
+        self.__processConnectionTimeout()
+        if self.state == CONNECTION_STATE.DISCONNECTED:
+            return
         while self.__processSend():
             pass
 
