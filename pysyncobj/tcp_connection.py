@@ -46,7 +46,6 @@ def set_keepalive_windows(sock, after_idle_sec=1, interval_sec=3, max_fails=5):
     sock.ioctl(socket.SIO_KEEPALIVE_VALS, (1, after_idle_sec * 1000, interval_sec * 1000))
 
 def set_keepalive(sock, after_idle_sec=1, interval_sec=3, max_fails=5):
-    print(' === setting keepalive', after_idle_sec)
     if platform == "linux" or platform == "linux2":
         set_keepalive_linux(sock, after_idle_sec, interval_sec, max_fails)
     elif platform == "darwin":
