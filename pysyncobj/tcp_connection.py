@@ -184,6 +184,8 @@ class TcpConnection(object):
             return
 
         self.__processConnectionTimeout()
+        if self.state == CONNECTION_STATE.DISCONNECTED:
+            return
 
         if eventType & POLL_EVENT_TYPE.READ or eventType & POLL_EVENT_TYPE.WRITE:
             if self.__socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):
