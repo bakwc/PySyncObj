@@ -3,16 +3,21 @@ import socket
 from .poller import POLL_EVENT_TYPE
 from .tcp_connection import TcpConnection, _getAddrType
 
+
 class SERVER_STATE:
     UNBINDED = 0,
     BINDED = 1
 
+
 class TcpServer(object):
 
-    def __init__(self, poller, host, port, onNewConnection,
-                 sendBufferSize = 2 ** 13,
-                 recvBufferSize = 2 ** 13,
-                 connectionTimeout = 3.5,):
+    def __init__(
+            self, poller, host, port, onNewConnection,
+            sendBufferSize = 2 ** 13,
+            recvBufferSize = 2 ** 13,
+            connectionTimeout = 3.5,
+            keepalive = None,
+    ):
         self.__poller = poller
         self.__host = host
         self.__port = int(port)
@@ -21,6 +26,7 @@ class TcpServer(object):
         self.__recvBufferSize = recvBufferSize
         self.__socket = None
         self.__fileno = None
+        self.__keepalive = keepalive
         self.__state = SERVER_STATE.UNBINDED
         self.__onNewConnectionCallback = onNewConnection
         self.__connectionTimeout = connectionTimeout
@@ -56,11 +62,14 @@ class TcpServer(object):
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.__recvBufferSize)
                 sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 sock.setblocking(0)
-                conn = TcpConnection(poller=self.__poller,
-                                     socket=sock,
-                                     timeout=self.__connectionTimeout,
-                                     sendBufferSize=self.__sendBufferSize,
-                                     recvBufferSize=self.__recvBufferSize)
+                conn = TcpConnection(
+                    poller=self.__poller,
+                    socket=sock,
+                    timeout=self.__connectionTimeout,
+                    sendBufferSize=self.__sendBufferSize,
+                    recvBufferSize=self.__recvBufferSize,
+                    keepalive=self.__keepalive,
+                )
                 self.__onNewConnectionCallback(conn)
             except socket.error as e:
                 if e.errno not in (socket.errno.EAGAIN, socket.errno.EWOULDBLOCK):
