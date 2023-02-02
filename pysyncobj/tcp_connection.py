@@ -245,8 +245,10 @@ class TcpConnection(object):
                 randKey, message = message
                 assert randKey == self.recvRandKey, "Replay - recvRandKey"
         except Exception as e:
-            try: peername = self.__socket.getpeername()[0]
-            except Exception as e2: peername = "(%s)" % repr(e2)
+            try:
+                peername = self.__socket.getpeername()[0]
+            except Exception as e2:
+                peername = "(%s)" % repr(e2)
             logging.info('Invalid message from %s, connection closing due to %s.' % (peername, repr(e)))
             self.disconnect()
             return None
