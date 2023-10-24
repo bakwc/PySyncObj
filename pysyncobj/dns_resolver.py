@@ -4,6 +4,8 @@ import random
 import logging
 from .monotonic import monotonic as monotonicTime
 
+logger = logging.getLogger(__name__)
+
 
 class DnsCachingResolver(object):
     def __init__(self, cacheTime, failCacheTime):
@@ -24,7 +26,7 @@ class DnsCachingResolver(object):
             prevIps = ips
             ips = self.__doResolve(hostname)
             if not ips:
-                logging.warning("failed to resolve hostname: " + hostname)
+                logger.warning("failed to resolve hostname: " + hostname)
                 ips = prevIps
             self.__cache[hostname] = (currTime, ips)
         return None if not ips else random.choice(ips)
@@ -49,7 +51,7 @@ class DnsCachingResolver(object):
             if not ips:
                 ips = list(set([addr[4][0] for addr in addrs]))
         except socket.gaierror:
-            logging.warning('failed to resolve host %s', hostname)
+            logger.warning('failed to resolve host %s', hostname)
             ips = []
         return ips
 

@@ -7,6 +7,8 @@ from io import BytesIO
 from .atomic_replace import atomicReplace
 from .config import SERIALIZER_STATE
 
+logger = logging.getLogger(__name__)
+
 
 class Serializer(object):
     def __init__(self, fileName, transmissionBatchSize, tryUseFork,
@@ -131,7 +133,7 @@ class Serializer(object):
                         'transmitted': 0,
                     }
             except:
-                logging.exception('Failed to open file for transmission')
+                logger.exception('Failed to open file for transmission')
                 self.__transmissions.pop(transmissionID, None)
                 return None
         isFirst = transmission['transmitted'] == 0
@@ -142,7 +144,7 @@ class Serializer(object):
             else:
                 data = transmission['file'].read(self.__transmissionBatchSize)
         except:
-            logging.exception('Error reading transmission file')
+            logger.exception('Error reading transmission file')
             self.__transmissions.pop(transmissionID, None)
             return False
         size = len(data)
@@ -178,7 +180,7 @@ class Serializer(object):
             try:
                 self.__incomingTransmissionFile = open(tmpFile, 'wb')
             except:
-                logging.exception('Failed to open file for incoming transition')
+                logger.exception('Failed to open file for incoming transition')
                 self.__incomingTransmissionFile = None
                 return False
         elif self.__incomingTransmissionFile is None:
@@ -186,7 +188,7 @@ class Serializer(object):
         try:
             self.__incomingTransmissionFile.write(data)
         except:
-            logging.exception('Failed to write incoming transition data')
+            logger.exception('Failed to write incoming transition data')
             self.__incomingTransmissionFile = None
             return False
         if isLast:
@@ -195,7 +197,7 @@ class Serializer(object):
             try:
                 atomicReplace(tmpFile, self.__fileName)
             except:
-                logging.exception('Failed to rename temporary incoming transition file')
+                logger.exception('Failed to rename temporary incoming transition file')
                 return False
             return True
         return False
