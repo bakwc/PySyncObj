@@ -45,6 +45,8 @@ from .version import VERSION
 from .fast_queue import FastQueue
 from .monotonic import monotonic as monotonicTime
 
+logger = logging.getLogger(__name__)
+
 
 class _RAFT_STATE:
     FOLLOWER = 0
@@ -277,7 +279,7 @@ class SyncObj(object):
                 while not self.__transport.ready:
                     self.__transport.tryGetReady()
             except TransportNotReadyError:
-                logging.exception('failed to perform initialization')
+                logger.exception('failed to perform initialization')
                 raise SyncObjException('BindError') # Backwards compatibility
 
     def destroy(self):
@@ -505,7 +507,7 @@ class SyncObj(object):
         try:
             self.__transport.tryGetReady()
         except TransportNotReadyError:
-            logging.exception('failed to perform initialization')
+            logger.exception('failed to perform initialization')
             return
         finally:
             self.__initialised.set()
@@ -647,7 +649,7 @@ class SyncObj(object):
 
                     self.__raftLastApplied += 1
                 except SyncObjExceptionWrongVer as e:
-                    logging.error(
+                    logger.error(
                         'request to switch to unsupported code version (self version: %d, requested version: %d)' %
                         (self.__selfCodeVersion, e.ver))
 
@@ -778,7 +780,7 @@ class SyncObj(object):
         """Dumps different debug info about cluster to default logger"""
         status = self.getStatus()
         for k, v in iteritems(status):
-            logging.info('%s: %s' % (str(k), str(v)))
+            logger.info('%s: %s' % (str(k), str(v)))
 
     def _printStatus(self):
         self.printStatus()
@@ -1318,7 +1320,7 @@ class SyncObj(object):
             self.__lastSerializedEntry = serializeID
 
         if serializeState == SERIALIZER_STATE.FAILED:
-            logging.warning('Failed to store full dump')
+            logger.warning('Failed to store full dump')
 
         if serializeState != SERIALIZER_STATE.NOT_SERIALIZING:
             return
@@ -1390,7 +1392,7 @@ class SyncObj(object):
                 self.__updateClusterConfiguration([node for node in data[3] if node != self.__selfNode])
             self.__onSetCodeVersion(0)
         except:
-            logging.exception('failed to load full dump')
+            logger.exception('failed to load full dump')
 
     def __updateClusterConfiguration(self, newNodes):
         # newNodes: list of Node or node ID
