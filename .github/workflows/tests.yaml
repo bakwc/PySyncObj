@@ -16,4 +16,5 @@ jobs:
       - name: run_tests
         run: >
           ls -la &&
+          python3 -m pip install -U pytest &&
           python3 -m pytest -v -s test_syncobj.py
