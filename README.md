@@ -2,7 +2,7 @@
 
 [![Build Status][travis-image]][travis] [![Windows Build Status][appveyor-image]][appveyor] [![Coverage Status][coverage-image]][coverage] [![Release][release-image]][releases] [![License][license-image]][license] [![gitter][gitter-image]][gitter] [![docs][docs-image]][docs]
 
-[travis-image]: https://travis-ci.org/bakwc/PySyncObj.svg?branch=master
+[travis-image]: https://github.com/bakwc/PySyncObj/actions/workflows/tests.yaml/badge.svg
 [travis]: https://travis-ci.org/bakwc/PySyncObj
 
 [appveyor-image]: https://ci.appveyor.com/api/projects/status/github/bakwc/pysyncobj?branch=master&svg=true
