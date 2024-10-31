@@ -304,10 +304,7 @@ class SyncObj(object):
         Correctly destroy SyncObj. Stop autoTickThread, close connections, etc. and ensure the threads are gone.
         """
         self.destroy()
-        count = 0
-        while self.tick_thread_alive():
-            time.sleep(.1)
-            count += 1
+        self.__thread.join()
 
     def waitReady(self):
         """
