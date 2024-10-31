@@ -291,6 +291,24 @@ class SyncObj(object):
         else:
             self._doDestroy()
 
+    def tick_thread_alive(self):
+        """
+        Check if the tick thread is alive.
+        """
+        if self.__thread and self.__thread.is_alive():
+            return True
+        return False
+
+    def destroy_synchronous(self):
+        """
+        Correctly destroy SyncObj. Stop autoTickThread, close connections, etc. and ensure the threads are gone.
+        """
+        self.destroy()
+        count = 0
+        while self.tick_thread_alive():
+            time.sleep(.1)
+            count += 1
+
     def waitReady(self):
         """
         Waits until the transport is ready for operation.
