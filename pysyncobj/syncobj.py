@@ -534,7 +534,12 @@ class SyncObj(object):
                 if self.__destroying:
                     self._doDestroy()
                     break
-                self._onTick(self.__conf.autoTickPeriod)
+                try:
+                    self._onTick(self.__conf.autoTickPeriod)
+                except Exception:
+                    # log, wait a little and retry
+                    logger.exception('failed _onTick in _autoTickThread')
+                    time.sleep(self.__conf.autoTickPeriod)
         except ReferenceError:
             pass
 
