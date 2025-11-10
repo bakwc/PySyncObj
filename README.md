@@ -32,7 +32,7 @@ PySyncObj is a python library for building fault-tolerant distributed systems. I
 - In-memory and on-disk serialization - you can use in-memory mode for small data and on-disk for big one
 - Encryption - you can set password and use it in external network
 - Python2 and Python3 on linux, macos and windows - no dependencies required (only optional one, eg. cryptography)
-- Configurable event loop - it can works in separate thread with it's own event loop - or you can call onTick function inside your own one
+- Configurable event loop - it can work in separate thread with it's own event loop - or you can call onTick function inside your own one
 - Convenient interface - you can easily transform arbitrary class into a replicated one (see example below).
 
 ## Content
