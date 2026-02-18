@@ -64,7 +64,7 @@ _bchr = functools.partial(struct.pack, 'B')
 
 class SyncObjException(Exception):
     def __init__(self, errorCode, *args, **kwargs):
-        Exception.__init__(self, *args, **kwargs)
+        Exception.__init__(self, errorCode, *args, **kwargs)
         self.errorCode = errorCode
 
 class SyncObjExceptionWrongVer(SyncObjException):
