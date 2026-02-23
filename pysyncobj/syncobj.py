@@ -974,8 +974,15 @@ class SyncObj(object):
                 else:
                     idx = message['log_idx']
                     term = message['log_term']
-                    assert idx > self.__raftLastApplied
-                    self.__commandsWaitingCommit[idx].append((term, callback))
+                    if idx <= self.__raftLastApplied:
+                        # Stale apply_command_response:
+                        # The log position was already applied (e.g. via snapshot installed after leader reconnect)
+                        # before this response was processed. Or the leader was restarted without notice (and remains leader).
+                        # The command outcome cannot be tracked; signal the caller so it can retry rather than hanging
+                        # forever.
+                        callback(None, FAIL_REASON.DISCARDED)
+                    else:
+                        self.__commandsWaitingCommit[idx].append((term, callback))
 
         if self.__raftState == _RAFT_STATE.CANDIDATE:
             if message['type'] == 'response_vote' and message['term'] == self.__raftCurrentTerm:
