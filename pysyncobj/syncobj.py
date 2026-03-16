@@ -980,7 +980,7 @@ class SyncObj(object):
                         # before this response was processed. Or the leader was restarted without notice (and remains leader).
                         # The command outcome cannot be tracked; signal the caller so it can retry rather than hanging
                         # forever.
-                        callback(None, FAIL_REASON.DISCARDED)
+                        callback(None, FAIL_REASON.UNKNOWN_OUTCOME)
                     else:
                         self.__commandsWaitingCommit[idx].append((term, callback))
 
