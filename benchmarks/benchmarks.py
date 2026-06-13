@@ -28,7 +28,7 @@ def memoize(fileName):
     return doMemoize
 
 def singleBenchmark(requestsPerSecond, requestSize, numNodes, numNodesReadonly = 0, delay = False):
-    rpsPerNode = requestsPerSecond / (numNodes + numNodesReadonly)
+    rpsPerNode = int(requestsPerSecond / (numNodes + numNodesReadonly))
     cmd = [sys.executable, 'testobj_delay.py' if delay else 'testobj.py', str(rpsPerNode), str(requestSize)]
     #cmd = 'python2.7 -m cProfile -s time testobj.py %d %d' % (rpsPerNode, requestSize)
     processes = []
@@ -75,7 +75,7 @@ def detectMaxRps(requestSize, numNodes):
         res = doDetectMaxRps(requestSize, numNodes)
         print('iteration %d, current max %d' % (i, res))
         results.append(res)
-    return sorted(results)[len(results) / 2]
+    return sorted(results)[int(len(results) / 2)]
 
 def printUsage():
     print('Usage: %s mode(delay/rps/custom)' % sys.argv[0])
