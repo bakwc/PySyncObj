@@ -2311,3 +2311,83 @@ def test_filterParners():
 
     o1 = TestObj(a[0], [a[1], a[0]])
     assert len(o1._SyncObj__otherNodes) == 1
+
+
+def test_transferLeadership():
+    random.seed(7)
+
+    a = [getNextAddr(), getNextAddr(), getNextAddr()]
+
+    o1 = TestObj(a[0], [a[1], a[2]], testBindAddr=True)
+    o2 = TestObj(a[1], [a[2], a[0]], testBindAddr=True)
+    o3 = TestObj(a[2], [a[0], a[1]], testBindAddr=True)
+    objs = [o1, o2, o3]
+
+    doTicks(objs, 15.0, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
+
+    assert o1._isReady() and o2._isReady() and o3._isReady()
+    assert o1._getLeader() == o2._getLeader() == o3._getLeader()
+
+    leaderAddr = o1._getLeader()
+    leader = next(o for o in objs if o._SyncObj__selfNode == leaderAddr)
+    target = next(o for o in objs if o._SyncObj__selfNode != leaderAddr)
+    targetAddr = target._SyncObj__selfNode
+
+    result = {}
+    leader.transferLeadership(targetAddr, callback=lambda res, err: result.update(err=err))
+
+    # All nodes keep ticking, so the outgoing leader keeps sending heartbeats
+    # while the transfer plays out - the heartbeats must not postpone the
+    # forced election (otherwise the transfer would silently never complete).
+    doTicks(objs, 15.0, stopFunc=lambda: o1._getLeader() == targetAddr and
+                                         o2._getLeader() == targetAddr and
+                                         o3._getLeader() == targetAddr)
+
+    assert result.get('err') == FAIL_REASON.SUCCESS
+    assert o1._getLeader() == targetAddr
+    assert o2._getLeader() == targetAddr
+    assert o3._getLeader() == targetAddr
+
+    # The cluster is still functional after the transfer.
+    target.addValue(42)
+    doTicks(objs, 15.0, stopFunc=lambda: o1.getCounter() == 42 and
+                                         o2.getCounter() == 42 and o3.getCounter() == 42)
+    assert o1.getCounter() == 42
+    assert o2.getCounter() == 42
+    assert o3.getCounter() == 42
+
+    o1._destroy()
+    o2._destroy()
+    o3._destroy()
+
+
+def test_transferLeadershipFromNonLeaderIsDenied():
+    random.seed(7)
+
+    a = [getNextAddr(), getNextAddr(), getNextAddr()]
+
+    o1 = TestObj(a[0], [a[1], a[2]], testBindAddr=True)
+    o2 = TestObj(a[1], [a[2], a[0]], testBindAddr=True)
+    o3 = TestObj(a[2], [a[0], a[1]], testBindAddr=True)
+    objs = [o1, o2, o3]
+
+    doTicks(objs, 15.0, stopFunc=lambda: o1._isReady() and o2._isReady() and o3._isReady())
+
+    assert o1._isReady() and o2._isReady() and o3._isReady()
+
+    leaderAddr = o1._getLeader()
+    follower = next(o for o in objs if o._SyncObj__selfNode != leaderAddr)
+    other = next(o for o in objs
+                 if o._SyncObj__selfNode != leaderAddr and o is not follower)
+
+    result = {}
+    follower.transferLeadership(other._SyncObj__selfNode,
+                                callback=lambda res, err: result.update(err=err))
+
+    assert result.get('err') == FAIL_REASON.NOT_LEADER
+    # Leadership is unchanged.
+    assert o1._getLeader() == leaderAddr
+
+    o1._destroy()
+    o2._destroy()
+    o3._destroy()

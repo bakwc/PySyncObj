@@ -160,6 +160,9 @@ class SyncObj(object):
         self.__votesCount = 0
         self.__raftLeader = None
         self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
+        # Set while a leadership transfer (Raft 'TimeoutNow') is pending, to stop
+        # the outgoing leader's heartbeats from postponing the forced election.
+        self.__transferInProgress = False
         self.__raftLog = createJournal(self.__conf.journalFile)
         if len(self.__raftLog) == 0:
             self.__raftLog.add(_bchr(_COMMAND_TYPE.NO_OP), 1, self.__raftCurrentTerm)
@@ -624,6 +627,7 @@ class SyncObj(object):
         if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE) and self.__selfNode is not None:
             if self.__raftElectionDeadline < monotonicTime() and self.__connectedToAnyone():
                 self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
+                self.__transferInProgress = False
                 self.__raftLeader = None
                 self.__setState(_RAFT_STATE.CANDIDATE)
                 self.__raftCurrentTerm += 1
@@ -903,6 +907,7 @@ class SyncObj(object):
             # immediate election, but only on request of the current leader.
             if message['term'] >= self.__raftCurrentTerm and node == self.__raftLeader:
                 self.__raftElectionDeadline = 0
+                self.__transferInProgress = True
 
         if message['type'] == 'request_vote' and self.__selfNode is not None:
 
@@ -933,7 +938,13 @@ class SyncObj(object):
                     })
 
         if message['type'] == 'append_entries' and message['term'] >= self.__raftCurrentTerm:
-            self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
+            if message['term'] > self.__raftCurrentTerm:
+                # A new leader at a higher term supersedes any pending transfer.
+                self.__transferInProgress = False
+            if not self.__transferInProgress:
+                # While a transfer is pending, ignore same-term heartbeats from
+                # the outgoing leader so they can't postpone the forced election.
+                self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
             if self.__raftLeader != node:
                 self.__onLeaderChanged()
             self.__raftLeader = node
