@@ -23,6 +23,8 @@ def executeAdminCommand(args):
     parser.add_argument('-add', action='store', dest='add', help='send command \'add\'')
     parser.add_argument('-remove', action='store', dest='remove', help='send command \'remove\'')
     parser.add_argument('-set_version', action='store', dest='version', type=int, help='set cluster code version')
+    parser.add_argument('-transfer', action='store', dest='transfer', nargs='?', const='', default=None,
+                        help='transfer leadership to the given node (or auto-select if omitted); must connect to the current leader')
 
     data = parser.parse_args(args)
     if not checkCorrectAddress(data.connection):
@@ -40,6 +42,8 @@ def executeAdminCommand(args):
         message = ['remove', data.remove]
     elif data.version is not None:
         message = ['set_version', data.version]
+    elif data.transfer is not None:
+        message = ['transfer', data.transfer]
     else:
         return 'invalid command'
 
