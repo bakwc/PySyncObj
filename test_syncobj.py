@@ -849,6 +849,84 @@ def test_randomTest1():
     removeFiles([e + '.meta' for e in journalFiles])
 
 
+def test_simultaneousRestartDataDivergence():
+    # If raft persistent state (currentTerm, votedFor) is lost on restart, then after a
+    # simultaneous restart of all members the terms restart from 1 while journals still
+    # contain entries with higher terms. A member that starts slightly later can then
+    # out-vote the new leader with its stale (but high-term) log and truncate entries
+    # that were already committed and applied by the other members, permanently
+    # diverging their state machines while the raft log stays in sync.
+    random.seed(42)
+
+    a = [getNextAddr(), getNextAddr(), getNextAddr()]
+    journalFiles = [getNextJournalFile(), getNextJournalFile(), getNextJournalFile()]
+    removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
+
+    def createObj(i):
+        return TestObj(a[i], [a[j] for j in range(3) if j != i],
+                       TEST_TYPE.JOURNAL_1, journalFile=journalFiles[i])
+
+    # Phase 1: build some history with lastLogTerm >= 2, so that the terms of a fresh
+    # post-restart election are lower than the terms already stored in the journals.
+    objs = [createObj(0), createObj(1), createObj(2)]
+    doTicks(objs, 10.0, stopFunc=lambda: all(o._isReady() for o in objs))
+    assert all(o._isReady() for o in objs)
+
+    # force a re-election to bump the term above 1
+    oldTerm = max(o._getTerm() for o in objs)
+    follower = [o for o in objs if not o._isLeader()][0]
+    follower._SyncObj__raftElectionDeadline = 0
+    doTicks(objs, 10.0, stopFunc=lambda: max(o._getTerm() for o in objs) > oldTerm and
+                                         any(o._isLeader() for o in objs))
+    assert max(o._getTerm() for o in objs) >= 2
+
+    objs[0].addKeyValue('k1', 'pre')
+    doTicks(objs, 10.0, stopFunc=lambda: all(o.getValue('k1') == 'pre' for o in objs))
+    assert all(o.getValue('k1') == 'pre' for o in objs)
+
+    # let the journal meta be stored (it is saved on a one-second timer), then stop all
+    doTicks(objs, 2.5)
+    for o in objs:
+        o._destroy()
+    time.sleep(0.1)
+
+    # Phase 2: members 0 and 2 restart quickly, member 1 is slow to start.
+    o0 = createObj(0)
+    o2 = createObj(2)
+    doTicks([o0, o2], 10.0, stopFunc=lambda: o0._isLeader() or o2._isLeader())
+    assert o0._isLeader() or o2._isLeader()
+
+    # a write is committed and applied by the two started members
+    (o0 if o0._isLeader() else o2).addKeyValue('w1', 'post')
+    doTicks([o0, o2], 10.0, stopFunc=lambda: o0.getValue('w1') == 'post' and
+                                             o2.getValue('w1') == 'post')
+    assert o0.getValue('w1') == 'post'
+    assert o2.getValue('w1') == 'post'
+
+    # Phase 3: member 1 finally starts and tries to become leader. Member 0 (the
+    # current leader) is frozen (not ticked) so member 1 only needs member 2's vote,
+    # which makes the race deterministic. With a stale log whose last term is higher
+    # than the new entries' term it must NOT win; member 2 (with the up-to-date log)
+    # must win instead and replicate the data to member 1.
+    o1 = createObj(1)
+    doTicks([o1, o2], 15.0, stopFunc=lambda: o1._isLeader() or o1.getValue('w1') == 'post')
+
+    # Everybody ticks again; the cluster must converge with no data loss.
+    objs = [o0, o1, o2]
+    doTicks(objs, 20.0, stopFunc=lambda: all(o.getValue('w1') == 'post' for o in objs))
+
+    for o in objs:
+        assert o.getValue('k1') == 'pre'
+        assert o.getValue('w1') == 'post'
+
+    for o in objs:
+        o._destroy()
+    time.sleep(0.1)
+    removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
+
+
 # Ensure that raftLog after serialization is the same as in serialized data
 def test_logCompactionRegressionTest1():
     random.seed(42)
@@ -1167,6 +1245,33 @@ def test_journalTest2():
     assert len(journal) == 1
     assert journal[0] == (b'cmd2', 2, 0)
     journal._destroy()
+    removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
+
+
+def test_journalKeepsCurrentTermAndVote():
+    journalFiles = [getNextJournalFile()]
+    removeFiles(journalFiles)
+    removeFiles([e + '.meta' for e in journalFiles])
+
+    journal = createJournal(journalFiles[0])
+    # defaults for a fresh (or legacy, pre-term-persistence) journal
+    assert journal.getCurrentTerm() == 0
+    assert journal.getVotedForNodeId() is None
+    journal.setCurrentTerm(5, 'localhost:1234')
+    journal._destroy()
+
+    journal = createJournal(journalFiles[0])
+    assert journal.getCurrentTerm() == 5
+    assert journal.getVotedForNodeId() == 'localhost:1234'
+    journal.setCurrentTerm(6, None)
+    journal._destroy()
+
+    journal = createJournal(journalFiles[0])
+    assert journal.getCurrentTerm() == 6
+    assert journal.getVotedForNodeId() is None
+    journal._destroy()
+
     removeFiles(journalFiles)
     removeFiles([e + '.meta' for e in journalFiles])
 

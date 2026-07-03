@@ -35,6 +35,15 @@ class Journal(object):
     def getRaftCommitIndex(self):
         raise NotImplementedError
 
+    def setCurrentTerm(self, term, votedForNodeId):
+        raise NotImplementedError
+
+    def getCurrentTerm(self):
+        raise NotImplementedError
+
+    def getVotedForNodeId(self):
+        raise NotImplementedError
+
     def onOneSecondTimer(self):
         pass
 
@@ -45,6 +54,8 @@ class MemoryJournal(Journal):
         self.__journal = []
         self.__bytesSize = 0
         self.__lastCommitIndex = 0
+        self.__currentTerm = 0
+        self.__votedForNodeId = None
 
     def add(self, command, idx, term):
         self.__journal.append((command, idx, term))
@@ -72,6 +83,16 @@ class MemoryJournal(Journal):
 
     def getRaftCommitIndex(self):
         return 1
+
+    def setCurrentTerm(self, term, votedForNodeId):
+        self.__currentTerm = term
+        self.__votedForNodeId = votedForNodeId
+
+    def getCurrentTerm(self):
+        return self.__currentTerm
+
+    def getVotedForNodeId(self):
+        return self.__votedForNodeId
 
 
 
@@ -245,6 +266,20 @@ class FileJournal(Journal):
 
     def getRaftCommitIndex(self):
         return self.__meta.get('raftCommitIndex', 1)
+
+    def setCurrentTerm(self, term, votedForNodeId):
+        self.__meta['currentTerm'] = term
+        self.__meta['votedForNodeId'] = votedForNodeId
+        # Raft requires currentTerm and votedFor to be durable before any message
+        # reflecting them (vote request/grant) is sent, so store synchronously.
+        self.__metaStorer.storeMeta(self.__meta)
+        self.__metaSaved = True
+
+    def getCurrentTerm(self):
+        return self.__meta.get('currentTerm', 0)
+
+    def getVotedForNodeId(self):
+        return self.__meta.get('votedForNodeId', None)
 
     def onOneSecondTimer(self):
         if not self.__metaSaved:
