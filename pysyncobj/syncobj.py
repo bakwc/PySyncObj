@@ -160,6 +160,9 @@ class SyncObj(object):
         self.__votesCount = 0
         self.__raftLeader = None
         self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
+        # Set while a leadership transfer (Raft 'TimeoutNow') is pending, to stop
+        # the outgoing leader's heartbeats from postponing the forced election.
+        self.__transferInProgress = False
         self.__raftLog = createJournal(self.__conf.journalFile)
         if len(self.__raftLog) == 0:
             self.__raftLog.add(_bchr(_COMMAND_TYPE.NO_OP), 1, self.__raftCurrentTerm)
@@ -214,6 +217,7 @@ class SyncObj(object):
         self.__transport.setOnUtilityMessageCallback('add', self._addNodeToCluster)
         self.__transport.setOnUtilityMessageCallback('remove', self._removeNodeFromCluster)
         self.__transport.setOnUtilityMessageCallback('set_version', self._setCodeVersion)
+        self.__transport.setOnUtilityMessageCallback('transfer', self._transferLeadership)
 
         self._methodToID = {}
         self._idToMethod = {}
@@ -408,6 +412,50 @@ class SyncObj(object):
         else:
             self.removeNodeFromCluster(node, callback)
 
+    def transferLeadership(self, node=None, callback=None):
+        """Gracefully transfer raft leadership to another node (Raft 'TimeoutNow').
+
+        Must be called on the current leader. The target node must be fully
+        caught up (matchIndex == leader's last log index), otherwise the
+        request is denied. If node is None, the most caught-up connected
+        follower is selected automatically. Async and best-effort: a
+        successful callback only means the request was sent; poll
+        getStatus()['leader'] to confirm the transfer completed.
+
+        :param node: target node object or 'nodeHost:nodePort' (None = auto)
+        :type node: Node | str | None
+        :param callback: will be called on success or fail
+        :type callback: function(`FAIL_REASON <#pysyncobj.FAIL_REASON>`_, None)
+        """
+        if self.__raftState != _RAFT_STATE.LEADER:
+            self.__callErrCallback(FAIL_REASON.NOT_LEADER, callback)
+            return
+        if node is not None and not isinstance(node, Node):
+            node = self.__nodeClass(node)
+        if node is None:
+            candidates = [(self.__raftMatchIndex.get(n, 0), n.id, n)
+                          for n in self.__otherNodes if n in self.__connectedNodes]
+            if not candidates:
+                self.__callErrCallback(FAIL_REASON.REQUEST_DENIED, callback)
+                return
+            node = max(candidates)[2]
+        if node == self.__selfNode or node not in self.__otherNodes:
+            self.__callErrCallback(FAIL_REASON.REQUEST_DENIED, callback)
+            return
+        if self.__raftMatchIndex.get(node, 0) != self.__getCurrentLogIndex():
+            # target is not fully synced - transferring would fail the election
+            self.__callErrCallback(FAIL_REASON.REQUEST_DENIED, callback)
+            return
+        self.__transport.send(node, {
+            'type': 'timeout_now',
+            'term': self.__raftCurrentTerm,
+        })
+        if callback is not None:
+            callback(None, FAIL_REASON.SUCCESS)
+
+    def _transferLeadership(self, args, callback):
+        self.transferLeadership(args[0] if args and args[0] else None, callback)
+
     def __onSetCodeVersion(self, newVersion):
         methods = [m for m in dir(self) if callable(getattr(self, m)) and\
                    getattr(getattr(self, m), 'replicated', False) and \
@@ -586,6 +634,7 @@ class SyncObj(object):
         if self.__raftState in (_RAFT_STATE.FOLLOWER, _RAFT_STATE.CANDIDATE) and self.__selfNode is not None:
             if self.__raftElectionDeadline < monotonicTime() and self.__connectedToAnyone():
                 self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
+                self.__transferInProgress = False
                 self.__raftLeader = None
                 self.__setState(_RAFT_STATE.CANDIDATE)
                 self.__setCurrentTerm(self.__raftCurrentTerm + 1, self.__selfNode.id)
@@ -859,6 +908,13 @@ class SyncObj(object):
 
     def __onMessageReceived(self, node, message):
 
+        if message['type'] == 'timeout_now' and self.__selfNode is not None:
+            # Graceful leadership transfer (Raft 'TimeoutNow'): trigger an
+            # immediate election, but only on request of the current leader.
+            if message['term'] >= self.__raftCurrentTerm and node == self.__raftLeader:
+                self.__raftElectionDeadline = 0
+                self.__transferInProgress = True
+
         if message['type'] == 'request_vote' and self.__selfNode is not None:
 
             if message['term'] > self.__raftCurrentTerm:
@@ -887,7 +943,13 @@ class SyncObj(object):
                     })
 
         if message['type'] == 'append_entries' and message['term'] >= self.__raftCurrentTerm:
-            self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
+            if message['term'] > self.__raftCurrentTerm:
+                # A new leader at a higher term supersedes any pending transfer.
+                self.__transferInProgress = False
+            if not self.__transferInProgress:
+                # While a transfer is pending, ignore same-term heartbeats from
+                # the outgoing leader so they can't postpone the forced election.
+                self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
             if self.__raftLeader != node:
                 self.__onLeaderChanged()
             self.__raftLeader = node
