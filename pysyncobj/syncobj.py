@@ -163,6 +163,13 @@ class SyncObj(object):
         self.__raftLog = createJournal(self.__conf.journalFile)
         if len(self.__raftLog) == 0:
             self.__raftLog.add(_bchr(_COMMAND_TYPE.NO_OP), 1, self.__raftCurrentTerm)
+        # Restore raft persistent state (see raft paper §5 - currentTerm and votedFor
+        # must survive restarts, otherwise already-committed entries may be overwritten
+        # by a stale member after a simultaneous restart of the cluster). The max() with
+        # the last log term covers journals written by versions that did not store the
+        # term: currentTerm is always >= the term of the last log entry.
+        self.__raftCurrentTerm = max(self.__raftLog.getCurrentTerm(), self.__getCurrentLogTerm())
+        self.__votedForNodeId = self.__raftLog.getVotedForNodeId()
         self.__raftCommitIndex = self.__raftLog.getRaftCommitIndex()
         self.__raftLastApplied = 1
         self.__raftNextIndex = {}
@@ -581,8 +588,7 @@ class SyncObj(object):
                 self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
                 self.__raftLeader = None
                 self.__setState(_RAFT_STATE.CANDIDATE)
-                self.__raftCurrentTerm += 1
-                self.__votedForNodeId = self.__selfNode.id
+                self.__setCurrentTerm(self.__raftCurrentTerm + 1, self.__selfNode.id)
                 self.__votesCount = 1
                 for node in self.__otherNodes:
                     self.__transport.send(node, {
@@ -856,8 +862,7 @@ class SyncObj(object):
         if message['type'] == 'request_vote' and self.__selfNode is not None:
 
             if message['term'] > self.__raftCurrentTerm:
-                self.__raftCurrentTerm = message['term']
-                self.__votedForNodeId = None
+                self.__setCurrentTerm(message['term'], None)
                 self.__setState(_RAFT_STATE.FOLLOWER)
                 self.__raftLeader = None
 
@@ -873,7 +878,7 @@ class SyncObj(object):
                     if self.__votedForNodeId is not None:
                         return
 
-                    self.__votedForNodeId = node.id
+                    self.__setCurrentTerm(self.__raftCurrentTerm, node.id)
 
                     self.__raftElectionDeadline = monotonicTime() + self.__generateRaftTimeout()
                     self.__transport.send(node, {
@@ -887,8 +892,7 @@ class SyncObj(object):
                 self.__onLeaderChanged()
             self.__raftLeader = node
             if message['term'] > self.__raftCurrentTerm:
-                self.__raftCurrentTerm = message['term']
-                self.__votedForNodeId = None
+                self.__setCurrentTerm(message['term'], None)
             self.__setState(_RAFT_STATE.FOLLOWER)
             newEntries = message.get('entries', [])
             serialized = message.get('serialized', None)
@@ -930,6 +934,11 @@ class SyncObj(object):
                             if clusterChangeRequest is not None:
                                 self.__doChangeCluster(clusterChangeRequest, reverse=True)
 
+                    if prevLogIdx + 1 <= self.__raftLastApplied:
+                        logger.critical(
+                            'truncating already-applied log entries from index %d '
+                            '(last applied: %d) - state machine may have diverged from '
+                            'other cluster members', prevLogIdx + 1, self.__raftLastApplied)
                     self.__deleteEntriesFrom(prevLogIdx + 1)
                 for entry in newEntries:
                     self.__raftLog.add(*entry)
@@ -952,6 +961,11 @@ class SyncObj(object):
                 if self.__serializer.setTransmissionData(serialized):
                     self.__loadDumpFile(clearJournal=True)
                     self.__sendNextNodeIdx(node, success=True)
+
+            # If the log was truncated below the commit index, don't persist a commit
+            # index covering entries that are no longer the committed ones.
+            if self.__raftCommitIndex > self.__getCurrentLogIndex():
+                self.__raftCommitIndex = self.__getCurrentLogIndex()
 
             if leaderCommitIndex > self.__raftCommitIndex:
                 self.__raftCommitIndex = min(leaderCommitIndex, self.__getCurrentLogIndex())
@@ -1154,6 +1168,11 @@ class SyncObj(object):
             self.__sendAppendEntries()
 
         self.__sendAppendEntries()
+
+    def __setCurrentTerm(self, term, votedForNodeId):
+        self.__raftCurrentTerm = term
+        self.__votedForNodeId = votedForNodeId
+        self.__raftLog.setCurrentTerm(term, votedForNodeId)
 
     def __setState(self, newState):
         oldState = self.__raftState
