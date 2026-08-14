@@ -62,7 +62,7 @@ if __name__ == '__main__':
 
     while time.time() - startTime < 25.0:
         st = time.time()
-        for i in xrange(0, numCommands):
+        for i in range(0, numCommands):
             obj.testMethod(getRandStr(cmdSize), callback=clbck)
             _g_sent += 1
         delta = time.time() - st
