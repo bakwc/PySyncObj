@@ -1496,6 +1496,14 @@ class SyncObj(object):
 
             self.__raftLastApplied = data[1][1]
 
+            if self.__raftCommitIndex > self.__getCurrentLogIndex():
+                logger.warning('raftCommitIndex (%d) exceeds journal end (%d) after loading dump, '
+                               'likely due to unsynced journal entries lost on crash; '
+                               'clamping to journal end',
+                               self.__raftCommitIndex, self.__getCurrentLogIndex())
+                self.__raftCommitIndex = self.__getCurrentLogIndex()
+                self.__raftLog.setRaftCommitIndex(self.__raftCommitIndex)
+
             if self.__conf.dynamicMembershipChange:
                 self.__updateClusterConfiguration([node for node in data[3] if node != self.__selfNode])
             self.__onSetCodeVersion(0)
