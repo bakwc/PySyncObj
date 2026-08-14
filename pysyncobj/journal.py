@@ -111,17 +111,18 @@ class ResizableFile(object):
         if currSize < initialSize:
             try:
                 self.__mm.resize(initialSize)
-            except SystemError:
+            except (SystemError, OSError):
                 self.__extand(initialSize - currSize)
 
     def write(self, offset, values):
         size = len(values)
-        currSize = self.__mm.size()
-        if offset + size > self.__mm.size():
+        while offset + size > self.__mm.size():
+            currSize = self.__mm.size()
+            newSize = max(int(currSize * self.__resizeFactor), offset + size)
             try:
-                self.__mm.resize(int(self.__mm.size() * self.__resizeFactor))
-            except SystemError:
-                self.__extand(int(self.__mm.size() * self.__resizeFactor) - currSize)
+                self.__mm.resize(newSize)
+            except (SystemError, OSError):
+                self.__extand(newSize - currSize)
         self.__mm[offset:offset + size] = values
 
     def read(self, offset, size):
