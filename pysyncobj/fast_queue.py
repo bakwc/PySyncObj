@@ -15,7 +15,7 @@ class FastQueue(object):
 
     def put_nowait(self, value):
         with self.__lock:
-            if len(self.__queue) > self.__maxSize:
+            if self.__maxSize > 0 and len(self.__queue) >= self.__maxSize:
                 raise Queue.Full()
             self.__queue.append(value)
 
