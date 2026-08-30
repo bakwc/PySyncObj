@@ -324,7 +324,7 @@ class ReplQueue(SyncObjConsumer):
 
     def full(self):
         """True if queue is full"""
-        return len(self.__data) == self.__maxsize
+        return self.__maxsize > 0 and len(self.__data) >= self.__maxsize
 
     @replicated
     def put(self, item):
@@ -373,7 +373,7 @@ class ReplPriorityQueue(SyncObjConsumer):
 
     def full(self):
         """True if queue is full"""
-        return len(self.__data) == self.__maxsize
+        return self.__maxsize > 0 and len(self.__data) >= self.__maxsize
 
     @replicated
     def put(self, item):
