@@ -1,5 +1,6 @@
 from __future__ import print_function
 import os
+import stat
 import time
 import pytest
 import random
@@ -20,6 +21,8 @@ from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON, _COMMAND_TY
 from pysyncobj.syncobj_admin import executeAdminCommand
 from pysyncobj.batteries import ReplCounter, ReplList, ReplDict, ReplSet, ReplLockManager, ReplQueue, ReplPriorityQueue
 from pysyncobj.node import TCPNode
+from pysyncobj.serializer import Serializer
+from pysyncobj.config import SERIALIZER_STATE
 from collections import defaultdict
 
 logging.basicConfig(format=u'[%(asctime)s %(filename)s:%(lineno)d %(levelname)s]  %(message)s', level=logging.DEBUG)
@@ -589,6 +592,77 @@ def test_checkDumpToFile():
     if hasattr(os, 'fork'):
         checkDumpToFile(True)
     checkDumpToFile(False)
+
+
+def storeSnapshot(serializer, data, incoming=False):
+    if incoming:
+        source = Serializer(None, 65536, False, None, None, None)
+        source.serialize(data, 1)
+        assert source.checkSerializing()[0] == SERIALIZER_STATE.SUCCESS
+        assert not serializer.setTransmissionData(source.getTransmissionData(1))
+        return serializer.setTransmissionData(source.getTransmissionData(1))
+
+    serializer.serialize(data, 1)
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        state, _ = serializer.checkSerializing()
+        if state != SERIALIZER_STATE.SERIALIZING:
+            assert state in (SERIALIZER_STATE.SUCCESS, SERIALIZER_STATE.FAILED)
+            return state == SERIALIZER_STATE.SUCCESS
+        time.sleep(0.01)
+    pytest.fail('Snapshot serializer did not finish')
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX snapshot durability')
+@pytest.mark.parametrize('incoming', [False, True])
+def test_snapshotPublicationIsDurable(tmpdir, monkeypatch, incoming):
+    # A visible rename alone does not make a snapshot survive power loss.
+    # Both contents and directory entry must be synced before reporting success.
+    target = str(tmpdir.join('snapshot.dump'))
+    serializer = Serializer(target, 65536, False, None, None, None)
+    data = {'marker': 'committed-before-crash'}
+    events = []
+    fsync, rename = os.fsync, os.rename
+
+    def sync(fd):
+        events.append('directory' if stat.S_ISDIR(os.fstat(fd).st_mode) else 'file')
+        fsync(fd)
+
+    def replace(old, new):
+        assert events == ['file']
+        rename(old, new)
+        events.append('rename')
+
+    monkeypatch.setattr(os, 'fsync', sync)
+    monkeypatch.setattr(os, 'rename', replace)
+    assert storeSnapshot(serializer, data, incoming)
+    assert events == ['file', 'rename', 'directory']
+    assert serializer.deserialize() == data
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX snapshot durability')
+@pytest.mark.parametrize('mode', ['local', 'fork', 'incoming'])
+@pytest.mark.parametrize('failedSync', ['file', 'directory'])
+def test_snapshotSyncFailure(tmpdir, monkeypatch, mode, failedSync):
+    if mode == 'fork' and not hasattr(os, 'fork'):
+        pytest.skip('fork is not available')
+    target = str(tmpdir.join('snapshot.dump'))
+    with open(target, 'wb') as stream:
+        stream.write(b'previous snapshot')
+    serializer = Serializer(target, 65536, mode == 'fork', None, None, None)
+    fsync = os.fsync
+
+    def sync(fd):
+        kind = 'directory' if stat.S_ISDIR(os.fstat(fd).st_mode) else 'file'
+        if kind == failedSync:
+            raise OSError('Injected snapshot sync failure')
+        fsync(fd)
+
+    monkeypatch.setattr(os, 'fsync', sync)
+    assert not storeSnapshot(serializer, {'marker': 'new snapshot'}, mode == 'incoming')
+    if failedSync == 'file':
+        with open(target, 'rb') as stream:
+            assert stream.read() == b'previous snapshot'
 
 
 def getRandStr():

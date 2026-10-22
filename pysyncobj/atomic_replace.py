@@ -30,4 +30,17 @@ if hasattr(ctypes, 'windll'):     # pragma: no cover
         CloseHandle(ta)
         return bool(res)
 else:
-    atomicReplace = os.rename
+    def atomicReplace(oldPath, newPath):
+        # Journal compaction may follow immediately after snapshot publication.
+        # Persist the contents before rename and the directory before success.
+        with open(oldPath, 'rb') as f:
+            os.fsync(f.fileno())
+
+        os.rename(oldPath, newPath)
+
+        directory = os.path.dirname(os.path.abspath(newPath))
+        fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
